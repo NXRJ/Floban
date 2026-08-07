@@ -199,6 +199,152 @@
       flowReasonWrap.classList.toggle('hidden', flowInput.value === 'normal');
     });
 
+    var relOps = [];
+    var selfRef = isEdit && card ? { boardId: KB.State.activeBoard().id, cardId: card.id } : null;
+
+    function allCardsForSearch() {
+      var list = [];
+      KB.State.boards().forEach(function (board) {
+        board.columns.forEach(function (column) {
+          column.cards.forEach(function (c) {
+            list.push({ boardId: board.id, boardName: board.name, columnTitle: column.title, card: c });
+          });
+        });
+      });
+      return list;
+    }
+
+    function linkedKeys(list) {
+      return (list || []).map(function (ref) { return ref.boardId + ':' + ref.cardId; });
+    }
+
+    function cardTitle(boardId, cardId) {
+      var state = KB.State.data();
+      var card = KB.Core.Relations.findCard(state, boardId, cardId);
+      return card ? card.title : '(missing card)';
+    }
+
+    function relRow(ref, kind, onRemove) {
+      var row = h('div', { class: 'rel-row' });
+      var board = KB.State.data().boards.find(function (b) { return b.id === ref.boardId; });
+      var label = h('span', { class: 'rel-label' });
+      label.textContent = cardTitle(ref.boardId, ref.cardId);
+      var boardTag = h('span', { class: 'rel-board' });
+      boardTag.textContent = board ? board.name : '?';
+      var remove = h('button', { type: 'button', class: 'btn icon sm danger-ghost', title: 'Remove link' });
+      remove.innerHTML = icon('x');
+      remove.addEventListener('click', function () {
+        row.remove();
+        relOps.push({ kind: kind, remove: true, ref: ref });
+      });
+      row.appendChild(label);
+      row.appendChild(boardTag);
+      row.appendChild(h('span', { class: 'spacer' }));
+      row.appendChild(remove);
+      return row;
+    }
+
+    function relSearch(kind, excludeKeys) {
+      var wrap = h('div', { class: 'rel-search' });
+      var input = h('input', { type: 'text', placeholder: 'Search cards across boards…', maxlength: 100, 'aria-label': 'Search cards to link' });
+      var results = h('div', { class: 'rel-results' });
+      wrap.appendChild(input);
+      wrap.appendChild(results);
+
+      function render(query) {
+        results.innerHTML = '';
+        var q = (query || '').trim().toLowerCase();
+        if (!q) return;
+        var excluded = new Set(excludeKeys());
+        var matches = allCardsForSearch().filter(function (entry) {
+          var key = entry.boardId + ':' + entry.card.id;
+          if (excluded.has(key)) return false;
+          if (selfRef && key === selfRef.boardId + ':' + selfRef.cardId) return false;
+          return String(entry.card.title).toLowerCase().indexOf(q) !== -1;
+        }).slice(0, 8);
+        matches.forEach(function (entry) {
+          var item = h('button', { type: 'button', class: 'rel-result' });
+          item.textContent = entry.boardName + ' · ' + entry.columnTitle + ' · ' + entry.card.title;
+          item.addEventListener('click', function () {
+            relOps.push({ kind: kind, remove: false, ref: { boardId: entry.boardId, cardId: entry.card.id } });
+            input.value = '';
+            results.innerHTML = '';
+            refreshRelations();
+          });
+          results.appendChild(item);
+        });
+        if (q && matches.length === 0) {
+          var none = h('div', { class: 'rel-none' });
+          none.textContent = 'No matches';
+          results.appendChild(none);
+        }
+      }
+
+      input.addEventListener('input', function () { render(input.value); });
+      return wrap;
+    }
+
+    var blockerBox = h('div', { class: 'rel-list' });
+    var relatedBox = h('div', { class: 'rel-list' });
+    var blocksBox = h('div', { class: 'rel-list' });
+
+    function refreshRelations() {
+      var state = KB.State.data();
+      blockerBox.innerHTML = '';
+      relatedBox.innerHTML = '';
+      blocksBox.innerHTML = '';
+      if (!selfRef) return;
+      var card = KB.Core.Relations.findCard(state, selfRef.boardId, selfRef.cardId);
+      if (!card) return;
+      card.dependencies.blockers.forEach(function (ref) {
+        blockerBox.appendChild(relRow(ref, 'blocker', null));
+      });
+      card.dependencies.related.forEach(function (ref) {
+        relatedBox.appendChild(relRow(ref, 'related', null));
+      });
+      KB.Core.Relations.getCardsBlockedBy(state, selfRef).forEach(function (entry) {
+        var row = h('div', { class: 'rel-row rel-blocked-by' });
+        var label = h('span', { class: 'rel-label' });
+        label.textContent = cardTitle(entry.boardId, entry.cardId);
+        var boardTag = h('span', { class: 'rel-board' });
+        boardTag.textContent = entry.boardId === selfRef.boardId ? '' : (KB.State.data().boards.find(function (b) { return b.id === entry.boardId; }) || {}).name || '';
+        row.appendChild(label);
+        row.appendChild(boardTag);
+        blocksBox.appendChild(row);
+      });
+      if (blocksBox.children.length === 0) {
+        var none = h('span', { class: 'form-hint' });
+        none.textContent = 'Nothing is blocked by this card yet.';
+        blocksBox.appendChild(none);
+      }
+    }
+
+    var relSection = h('div', { class: 'rel-section' });
+    var relTitle = h('span', { class: 'check-editor-title', textContent: 'Relationships' });
+    relSection.appendChild(relTitle);
+    if (isEdit) {
+      var blockedByTitle = h('p', { class: 'rel-side-title', textContent: 'Blocked by' });
+      relSection.appendChild(blockedByTitle);
+      relSection.appendChild(blockerBox);
+      relSection.appendChild(relSearch('blocker', function () {
+        return linkedKeys(card && card.dependencies && card.dependencies.blockers);
+      }));
+      var blocksTitle = h('p', { class: 'rel-side-title', textContent: 'Blocks' });
+      relSection.appendChild(blocksTitle);
+      relSection.appendChild(blocksBox);
+      var relatedTitle = h('p', { class: 'rel-side-title', textContent: 'Related' });
+      relSection.appendChild(relatedTitle);
+      relSection.appendChild(relatedBox);
+      relSection.appendChild(relSearch('related', function () {
+        return linkedKeys(card && card.dependencies && card.dependencies.related);
+      }));
+    } else {
+      var hint = h('p', { class: 'form-hint' });
+      hint.textContent = 'Save the card first, then reopen it to link dependencies.';
+      relSection.appendChild(hint);
+    }
+    form.appendChild(fieldBlock('', relSection));
+
     var checklistState = card && card.checklist ? card.checklist.map(function (item) {
       return { id: item.id, text: item.text, done: Boolean(item.done) };
     }) : [];
@@ -240,6 +386,8 @@
       newName.value = '';
       KB.UI.toast('Label added', 'success');
     });
+
+    refreshRelations();
 
     function collect() {
       return {
@@ -323,6 +471,15 @@
         return;
       }
       if (isEdit) {
+        relOps.forEach(function (op) {
+          if (op.kind === 'blocker') {
+            if (op.remove) KB.State.removeBlocker(columnId, card.id, op.ref.boardId, op.ref.cardId);
+            else KB.State.addBlocker(columnId, card.id, op.ref.boardId, op.ref.cardId);
+          } else if (op.kind === 'related') {
+            if (op.remove) KB.State.removeRelated(columnId, card.id, op.ref.boardId, op.ref.cardId);
+            else KB.State.addRelated(columnId, card.id, op.ref.boardId, op.ref.cardId);
+          }
+        });
         KB.State.updateCardWithFlow(columnId, card.id, data, flowInput.value, flowReasonInput.value.trim());
         KB.UI.toast('Changes saved', 'success');
       } else {

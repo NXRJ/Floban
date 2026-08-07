@@ -91,6 +91,8 @@
     KB.el('priority-filter').value = '';
     KB.el('size-filter').value = '';
     KB.el('flow-filter').value = '';
+    KB.el('ready-filter').checked = false;
+    KB.el('depblocked-filter').checked = false;
     KB.Filters.selected.clear();
     refresh();
   }
@@ -296,6 +298,8 @@
     KB.el('priority-filter').addEventListener('change', refresh);
     KB.el('size-filter').addEventListener('change', refresh);
     KB.el('flow-filter').addEventListener('change', refresh);
+    KB.el('ready-filter').addEventListener('change', refresh);
+    KB.el('depblocked-filter').addEventListener('change', refresh);
     KB.el('sort-select').addEventListener('change', function () {
       KB.Filters.setSortMode(this.value);
       if (KB.Filters.sortActive()) {

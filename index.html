@@ -97,6 +97,12 @@
     <select id="priority-filter" aria-label="Filter by priority" title="Filter by priority"></select>
     <select id="size-filter" aria-label="Filter by size" title="Filter by size"></select>
     <select id="flow-filter" aria-label="Filter by flow state" title="Filter by flow state"></select>
+    <label class="filter-check" title="Only cards whose blockers are all done">
+      <input type="checkbox" id="ready-filter" aria-label="Ready to pull"> Ready
+    </label>
+    <label class="filter-check" title="Only cards with unresolved blockers">
+      <input type="checkbox" id="depblocked-filter" aria-label="Dependency blocked"> Dep. blocked
+    </label>
     <select id="sort-select" aria-label="Sort cards" title="Sort cards"></select>
     <div id="label-filters" class="label-filters" aria-label="Filter by label"></div>
     <button id="clear-filters" class="btn" type="button">Clear filters</button>
