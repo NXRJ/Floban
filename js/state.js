@@ -347,6 +347,44 @@
     });
   }
 
+  function evaluateMove(columnId, cardId, targetColumnId, opts) {
+    var board = activeBoard();
+    var source = findColumn(columnId);
+    var target = findColumn(targetColumnId);
+    var card = findCard(columnId, cardId);
+    if (!source || !target || !card) return null;
+    return KB.Core.Policies.evaluateMovePolicy(data(), { boardId: board.id, cardId: cardId }, { boardId: board.id, columnId: targetColumnId }, {
+      sourceColumn: source,
+      confirmed: opts && opts.confirmed,
+      overrideReason: opts && opts.overrideReason
+    });
+  }
+
+  function moveCardChecked(columnId, cardId, targetColumnId, toIndex, opts) {
+    var evaluation = evaluateMove(columnId, cardId, targetColumnId, opts);
+    if (!evaluation) return { ok: false, reason: 'move-unavailable' };
+    if (!evaluation.allowed) return { ok: false, reason: 'policy', evaluation: evaluation };
+    var value = moveCard(columnId, cardId, targetColumnId, toIndex);
+    if (value === null) return { ok: false, reason: 'move-failed' };
+    return { ok: true, value: value };
+  }
+
+  function restoreCardChecked(cardId, opts) {
+    var board = activeBoard();
+    var index = board.archive.cards.findIndex(function (c) { return c.id === cardId; });
+    if (index === -1) return { ok: false, reason: 'card-not-found' };
+    var card = board.archive.cards[index];
+    var column = findColumn(card.columnId) || board.columns[0] || null;
+    if (column) {
+      var evaluation = KB.Core.Policies.evaluateMovePolicy(data(), { boardId: board.id, cardId: cardId }, { boardId: board.id, columnId: column.id }, {
+        confirmed: opts && opts.confirmed,
+        overrideReason: opts && opts.overrideReason
+      });
+      if (!evaluation.allowed) return { ok: false, reason: 'policy', evaluation: evaluation };
+    }
+    return { ok: true, value: restoreCard(cardId) };
+  }
+
   function duplicateCard(columnId, cardId) {
     return commit(function (current) {
       return KB.Core.Operations.duplicateCard(current, { columnId: columnId, cardId: cardId }, deps());
@@ -579,6 +617,9 @@
     setFlowState: setFlowState,
     updateCardWithFlow: updateCardWithFlow,
     moveCard: moveCard,
+    evaluateMove: evaluateMove,
+    moveCardChecked: moveCardChecked,
+    restoreCardChecked: restoreCardChecked,
     duplicateCard: duplicateCard,
     archiveCard: archiveCard,
     restoreCard: restoreCard,
