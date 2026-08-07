@@ -1,0 +1,87 @@
+{
+  "version": 2,
+  "theme": 42,
+  "activeBoardId": "does-not-exist",
+  "boards": [
+    {
+      "id": "board-1",
+      "name": "Broken Board",
+      "labels": [
+        null,
+        { "id": "l-ok", "name": "OK", "color": "#a9e020" },
+        { "id": "l-bad", "name": "Bad color", "color": "url(https://example.com/x.png)" },
+        { "name": "No id", "color": "#3fd7e0" }
+      ],
+      "templates": [
+        null,
+        { "id": "tpl-1", "title": "Good", "description": "x", "labels": ["l-ok"], "assignee": "Sam", "checklist": [] },
+        { "name": "No id", "title": "", "description": "", "labels": [], "assignee": "", "checklist": [] }
+      ],
+      "columns": [
+        {
+          "id": "col-1",
+          "title": "To Do",
+          "wipLimit": "3",
+          "collapsed": "yes",
+          "cards": [
+            {
+              "id": "card-1",
+              "columnId": "col-1",
+              "title": "Corrupt card",
+              "due": 123,
+              "checklist": "oops",
+              "labels": "oops",
+              "assignee": { "evil": true },
+              "createdAt": 100,
+              "updatedAt": 100,
+              "movedAt": null
+            },
+            {
+              "id": "card-2",
+              "columnId": "col-1",
+              "title": "Missing fields",
+              "createdAt": 200,
+              "updatedAt": 200
+            },
+            null
+          ]
+        },
+        {
+          "title": "No id column"
+        }
+      ],
+      "archive": {
+        "cards": [
+          {
+            "id": "archived-1",
+            "columnId": "col-1",
+            "title": "Archived corrupt",
+            "labels": 5,
+            "createdAt": 300,
+            "updatedAt": 300
+          }
+        ],
+        "columns": [
+          {
+            "id": "arch-col-1",
+            "title": "Archived column",
+            "cards": [
+              {
+                "id": "arch-col-card-1",
+                "columnId": "arch-col-1",
+                "title": "Nested corrupt",
+                "checklist": null,
+                "createdAt": 400,
+                "updatedAt": 400
+              }
+            ]
+          },
+          {
+            "title": "Archived no id",
+            "cards": null
+          }
+        ]
+      }
+    }
+  ]
+}

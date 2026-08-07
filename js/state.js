@@ -11,59 +11,32 @@
     return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
   }
 
+  function now() {
+    return Date.now();
+  }
+
+  function deps() {
+    return { uid: uid, now: now };
+  }
+
   function freshCard(columnId, overrides) {
-    return Object.assign({
-      id: uid(),
-      columnId: columnId,
-      title: '',
-      description: '',
-      labels: [],
-      assignee: '',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      movedAt: Date.now(),
-      due: '',
-      checklist: [],
-      archivedAt: null,
-      fromColumn: ''
-    }, overrides || {});
+    return KB.Core.Model.createCard(columnId, overrides, deps());
   }
 
   function freshColumn(overrides) {
-    return Object.assign({
-      id: uid(),
-      title: '',
-      isDone: false,
-      wipLimit: 0,
-      collapsed: false,
-      cards: []
-    }, overrides || {});
+    return KB.Core.Model.createColumn(overrides, deps());
   }
 
   function freshLabel(name, color) {
-    return { id: uid(), name: name, color: color };
+    return KB.Core.Model.createLabel(name, color, deps());
   }
 
   function freshBoard(name) {
-    return {
-      id: uid(),
-      name: name || 'New board',
-      labels: [],
-      templates: [],
-      columns: [],
-      archive: { cards: [], columns: [] }
-    };
+    return KB.Core.Model.createBoard(name, deps());
   }
 
   function freshTemplate(overrides) {
-    return Object.assign({
-      id: uid(),
-      title: '',
-      description: '',
-      labels: [],
-      assignee: '',
-      checklist: []
-    }, overrides || {});
+    return KB.Core.Model.createTemplate(overrides, deps());
   }
 
   function defaults() {
@@ -128,114 +101,18 @@
     };
   }
 
-  function normalizeColumn(column) {
-    if (typeof column.wipLimit !== 'number') column.wipLimit = 0;
-    if (typeof column.collapsed !== 'boolean') column.collapsed = false;
-    if (!Array.isArray(column.cards)) column.cards = [];
-    column.cards.forEach(normalizeCard);
-    return column;
-  }
-
-  function normalizeCard(card) {
-    if (typeof card.due !== 'string') card.due = '';
-    if (!Array.isArray(card.checklist)) card.checklist = [];
-    if (!Array.isArray(card.labels)) card.labels = [];
-    card.labels = card.labels.filter(function (id) { return typeof id === 'string'; });
-    if (typeof card.assignee !== 'string') card.assignee = '';
-    if (typeof card.movedAt !== 'number') card.movedAt = card.createdAt || Date.now();
-    return card;
-  }
-
-  function normalizeLabel(label) {
-    if (!label || typeof label.id !== 'string') return null;
-    if (typeof label.name !== 'string') label.name = '';
-    if (!/^#[0-9a-fA-F]{6}$/.test(label.color || '')) label.color = '#6d30d6';
-    return label;
-  }
-
-  function normalizeTemplate(template) {
-    if (!template || typeof template !== 'object') return null;
-    return {
-      id: typeof template.id === 'string' ? template.id : uid(),
-      title: typeof template.title === 'string' ? template.title : (typeof template.name === 'string' ? template.name : ''),
-      description: typeof template.description === 'string' ? template.description : '',
-      labels: Array.isArray(template.labels) ? template.labels.filter(function (id) { return typeof id === 'string'; }) : [],
-      assignee: typeof template.assignee === 'string' ? template.assignee : '',
-      checklist: Array.isArray(template.checklist) ? template.checklist : []
-    };
-  }
-
-  function normalizeBoard(board) {
-    if (!Array.isArray(board.templates)) board.templates = [];
-    board.templates = board.templates.map(normalizeTemplate).filter(Boolean);
-    if (!Array.isArray(board.labels)) board.labels = [];
-    board.labels = board.labels.map(normalizeLabel).filter(Boolean);
-    if (!Array.isArray(board.columns)) board.columns = [];
-    if (!board.archive || !Array.isArray(board.archive.cards)) {
-      board.archive = { cards: [], columns: [] };
-    }
-    if (!Array.isArray(board.archive.columns)) board.archive.columns = [];
-    board.columns.forEach(normalizeColumn);
-    board.archive.cards.forEach(normalizeCard);
-    board.archive.columns.forEach(function (entry) {
-      (entry.cards || []).forEach(normalizeCard);
-    });
-    return board;
-  }
-
-  function adoptBoardShape(raw, name) {
-    var board = freshBoard(name);
-    board.labels = (raw.labels || []).map(normalizeLabel).filter(Boolean);
-    board.templates = (raw.templates || []).map(normalizeTemplate).filter(Boolean);
-    board.columns = (raw.columns || []).map(function (column) {
-      return normalizeColumn({
-        id: column.id || uid(),
-        title: column.title || '',
-        isDone: Boolean(column.isDone),
-        wipLimit: column.wipLimit || 0,
-        collapsed: Boolean(column.collapsed),
-        cards: (column.cards || []).map(function (card) {
-          return normalizeCard(freshCard(column.id, card));
-        })
-      });
-    });
-    board.archive = {
-      cards: (raw.archive && raw.archive.cards || []).map(function (card) {
-        return normalizeCard(freshCard(card.columnId, card));
-      }),
-      columns: (raw.archive && raw.archive.columns || []).map(function (entry) {
-        var cards = (entry.cards || []).map(function (card) {
-          return normalizeCard(freshCard(entry.id, card));
-        });
-        return Object.assign({}, entry, { id: entry.id || uid(), cards: cards });
-      })
-    };
-    return board;
-  }
-
-  function migrateV1(old) {
-    var board = adoptBoardShape(old, 'My Board');
-    return {
-      version: 2,
-      theme: old.theme || 'dark',
-      activeBoardId: board.id,
-      boards: [board]
-    };
-  }
-
   function load() {
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         var parsed = JSON.parse(raw);
         if (parsed && parsed.version === 1 && Array.isArray(parsed.columns)) {
-          state = migrateV1(parsed);
+          state = KB.Core.Migration.migrateV1(parsed, deps());
           save();
           return;
         }
         if (parsed && parsed.version === 2 && Array.isArray(parsed.boards) && parsed.boards.length > 0) {
-          state = parsed;
-          normalize();
+          state = KB.Core.Migration.normalizeState(parsed, deps());
           save();
           return;
         }
@@ -245,14 +122,6 @@
     }
     state = defaults();
     save();
-  }
-
-  function normalize() {
-    state.boards.forEach(normalizeBoard);
-    if (!state.boards.some(function (b) { return b.id === state.activeBoardId; })) {
-      state.activeBoardId = state.boards[0].id;
-    }
-    if (typeof state.theme !== 'string') state.theme = 'dark';
   }
 
   function save() {
@@ -619,28 +488,21 @@
   }
 
   function importAll(text) {
-    try {
-      var parsed = JSON.parse(text);
-      if (!parsed) return false;
-      if (Array.isArray(parsed.boards) && parsed.version === 2 && parsed.boards.length > 0) {
-        pushHistory();
-        state = parsed;
-        normalize();
-        save();
-        return 'all';
-      }
-      if (Array.isArray(parsed.columns) && Array.isArray(parsed.labels)) {
-        var board = adoptBoardShape(parsed, parsed.name || 'Imported board');
-        pushHistory();
-        state.boards.push(board);
-        state.activeBoardId = board.id;
-        save();
-        return 'board';
-      }
-      return false;
-    } catch (err) {
-      return false;
+    var result = KB.Core.Migration.parseImportPayload(text, state, deps());
+    if (result.kind === 'all') {
+      pushHistory();
+      state = result.state;
+      save();
+      return 'all';
     }
+    if (result.kind === 'board') {
+      pushHistory();
+      state.boards.push(result.board);
+      state.activeBoardId = result.board.id;
+      save();
+      return 'board';
+    }
+    return false;
   }
 
   function data() {
