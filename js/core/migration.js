@@ -34,6 +34,23 @@
       return out;
     }
 
+    function normalizeChecklistItem(item, deps) {
+      var d = resolveDeps(deps);
+      if (!item || typeof item !== 'object') return null;
+      return {
+        id: typeof item.id === 'string' && item.id ? item.id : d.uid(),
+        text: typeof item.text === 'string' ? item.text : '',
+        done: Boolean(item.done)
+      };
+    }
+
+    function normalizeChecklist(checklist, deps) {
+      if (!Array.isArray(checklist)) return [];
+      return checklist.map(function (item) {
+        return normalizeChecklistItem(item, deps);
+      }).filter(Boolean);
+    }
+
     function normalizeCard(card, deps) {
       var d = resolveDeps(deps);
       if (!card || typeof card !== 'object') return null;
@@ -42,7 +59,7 @@
       if (typeof out.columnId !== 'string') out.columnId = '';
       if (typeof out.title !== 'string') out.title = '';
       if (typeof out.due !== 'string') out.due = '';
-      if (!Array.isArray(out.checklist)) out.checklist = [];
+      out.checklist = normalizeChecklist(out.checklist, deps);
       if (!Array.isArray(out.labels)) out.labels = [];
       out.labels = out.labels.filter(function (id) { return typeof id === 'string'; });
       if (typeof out.assignee !== 'string') out.assignee = '';
@@ -62,7 +79,11 @@
       if (typeof out.wipLimit !== 'number') out.wipLimit = 0;
       if (typeof out.collapsed !== 'boolean') out.collapsed = false;
       if (!Array.isArray(out.cards)) out.cards = [];
-      out.cards = out.cards.map(function (card) { return normalizeCard(card, deps); }).filter(Boolean);
+      out.cards = out.cards.map(function (card) {
+        var normalized = normalizeCard(card, deps);
+        if (normalized) normalized.columnId = out.id;
+        return normalized;
+      }).filter(Boolean);
       return out;
     }
 
@@ -84,7 +105,7 @@
         description: typeof template.description === 'string' ? template.description : '',
         labels: Array.isArray(template.labels) ? template.labels.filter(function (id) { return typeof id === 'string'; }) : [],
         assignee: typeof template.assignee === 'string' ? template.assignee : '',
-        checklist: Array.isArray(template.checklist) ? template.checklist.slice() : []
+        checklist: normalizeChecklist(template.checklist, deps)
       };
     }
 
@@ -100,18 +121,23 @@
       out.labels = out.labels.map(normalizeLabel).filter(Boolean);
       if (!Array.isArray(out.columns)) out.columns = [];
       out.columns = out.columns.map(function (c) { return normalizeColumn(c, deps); }).filter(Boolean);
-      if (!out.archive || typeof out.archive !== 'object' || !Array.isArray(out.archive.cards)) {
-        out.archive = { cards: [], columns: [] };
-      }
-      if (!Array.isArray(out.archive.columns)) out.archive.columns = [];
-      out.archive.cards = out.archive.cards.map(function (card) { return normalizeCard(card, deps); }).filter(Boolean);
-      out.archive.columns = out.archive.columns.map(function (entry) {
-        var e = cloneShallow(entry);
-        if (typeof e.id !== 'string' || !e.id) e.id = d.uid();
-        if (typeof e.title !== 'string') e.title = '';
-        e.cards = (Array.isArray(e.cards) ? e.cards : []).map(function (card) { return normalizeCard(card, deps); }).filter(Boolean);
-        return e;
-      });
+      var archiveSource = out.archive && typeof out.archive === 'object' ? out.archive : {};
+      var archiveCards = (Array.isArray(archiveSource.cards) ? archiveSource.cards : [])
+        .map(function (card) { return normalizeCard(card, deps); }).filter(Boolean);
+      var archiveColumns = (Array.isArray(archiveSource.columns) ? archiveSource.columns : [])
+        .map(function (entry) {
+          if (!entry || typeof entry !== 'object') return null;
+          var e = cloneShallow(entry);
+          if (typeof e.id !== 'string' || !e.id) e.id = d.uid();
+          if (typeof e.title !== 'string') e.title = '';
+          e.cards = (Array.isArray(e.cards) ? e.cards : []).map(function (card) {
+            var normalized = normalizeCard(card, deps);
+            if (normalized) normalized.columnId = e.id;
+            return normalized;
+          }).filter(Boolean);
+          return e;
+        }).filter(Boolean);
+      out.archive = { cards: archiveCards, columns: archiveColumns };
       return out;
     }
 
@@ -159,7 +185,9 @@
         columns: ((source.archive && Array.isArray(source.archive.columns)) ? source.archive.columns : []).map(function (entry) {
           var entryId = entry && entry.id ? entry.id : d.uid();
           var cards = (entry && Array.isArray(entry.cards) ? entry.cards : []).map(function (card) {
-            return normalizeCard(Model.createCard(entryId, card, deps), deps);
+            var normalized = normalizeCard(Model.createCard(entryId, card, deps), deps);
+            if (normalized) normalized.columnId = entryId;
+            return normalized;
           });
           return Object.assign({}, entry, { id: entryId, cards: cards });
         })

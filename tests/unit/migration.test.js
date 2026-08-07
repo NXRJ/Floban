@@ -15,6 +15,82 @@ function makeDeps() {
   };
 }
 
+function stateWithChecklist() {
+  return {
+    version: 2,
+    theme: 'dark',
+    activeBoardId: 'board-1',
+    boards: [{
+      id: 'board-1',
+      name: 'Board 1',
+      labels: [],
+      templates: [{
+        id: 'tpl-1',
+        title: 'Bug',
+        description: '',
+        labels: [],
+        assignee: '',
+        checklist: [{ id: 'tpl-item-1', text: 'Steps', done: false }]
+      }],
+      columns: [{
+        id: 'col-1',
+        title: 'To Do',
+        isDone: false,
+        wipLimit: 0,
+        collapsed: false,
+        cards: [{
+          id: 'card-1',
+          columnId: 'stale-column',
+          title: 'Task',
+          description: '',
+          labels: [],
+          assignee: '',
+          createdAt: 100,
+          updatedAt: 100,
+          movedAt: 100,
+          due: '',
+          checklist: [{ id: 'item-1', text: 'Sketch', done: false }]
+        }]
+      }],
+      archive: {
+        cards: [{
+          id: 'arch-1',
+          columnId: 'col-1',
+          title: 'Old',
+          createdAt: 200,
+          updatedAt: 200,
+          movedAt: 200,
+          due: '',
+          labels: [],
+          assignee: '',
+          checklist: [{ id: 'a-item', text: 'x', done: true }],
+          archivedAt: 300,
+          fromColumn: 'To Do'
+        }],
+        columns: [{
+          id: 'arch-col-1',
+          title: 'Parked',
+          isDone: false,
+          wipLimit: 0,
+          archivedAt: 400,
+          cards: [{
+            id: 'ac-card-1',
+            columnId: 'stale',
+            title: 'Parked task',
+            createdAt: 500,
+            updatedAt: 500,
+            movedAt: 500,
+            due: '',
+            labels: [],
+            assignee: '',
+            checklist: []
+          }]
+        }]
+      }
+    }]
+  };
+}
+
 test('a valid version-1 state migrates to version 2', () => {
   const result = Migration.migrateV1(v1Fixture, makeDeps());
   assert.equal(result.version, 2);
@@ -325,4 +401,161 @@ test('normalization does not share mutable references with the input', () => {
   assert.notEqual(result.boards[0].columns[0], raw.boards[0].columns[0]);
   assert.notEqual(result.boards[0].columns[0].cards[0], raw.boards[0].columns[0].cards[0]);
   assert.notEqual(result.boards[0].labels, raw.boards[0].labels);
+});
+
+test('normalized output shares no nested references with the input', () => {
+  const raw = stateWithChecklist();
+  const result = Migration.normalizeState(raw, makeDeps());
+  const rBoard = result.boards[0];
+  const rawBoard = raw.boards[0];
+  assert.notEqual(rBoard, rawBoard);
+  assert.notEqual(rBoard.archive, rawBoard.archive);
+  assert.notEqual(rBoard.archive.cards, rawBoard.archive.cards);
+  assert.notEqual(rBoard.archive.columns, rawBoard.archive.columns);
+  assert.notEqual(rBoard.columns[0].cards[0].checklist, rawBoard.columns[0].cards[0].checklist);
+  assert.notEqual(rBoard.columns[0].cards[0].checklist[0], rawBoard.columns[0].cards[0].checklist[0]);
+  assert.notEqual(rBoard.templates[0].checklist, rawBoard.templates[0].checklist);
+  assert.notEqual(rBoard.templates[0].checklist[0], rawBoard.templates[0].checklist[0]);
+  assert.notEqual(rBoard.archive.cards[0].checklist, rawBoard.archive.cards[0].checklist);
+  assert.notEqual(rBoard.archive.cards[0].checklist[0], rawBoard.archive.cards[0].checklist[0]);
+  assert.notEqual(rBoard.archive.columns[0], rawBoard.archive.columns[0]);
+  assert.notEqual(rBoard.archive.columns[0].cards, rawBoard.archive.columns[0].cards);
+  assert.notEqual(rBoard.archive.columns[0].cards[0], rawBoard.archive.columns[0].cards[0]);
+  assert.notEqual(rBoard.archive.columns[0].cards[0].checklist, rawBoard.archive.columns[0].cards[0].checklist);
+});
+
+test('mutating the normalized result leaves the source untouched', () => {
+  const raw = stateWithChecklist();
+  const originalArchiveLength = raw.boards[0].archive.cards.length;
+  const result = Migration.normalizeState(raw, makeDeps());
+  result.boards[0].archive.cards.push({ id: 'new' });
+  result.boards[0].columns[0].cards[0].checklist[0].done = true;
+  result.boards[0].templates[0].checklist[0].text = 'Mutated';
+  result.boards[0].archive.columns[0].cards[0].title = 'Mutated';
+  assert.equal(raw.boards[0].archive.cards.length, originalArchiveLength);
+  assert.equal(raw.boards[0].columns[0].cards[0].checklist[0].done, false);
+  assert.equal(raw.boards[0].templates[0].checklist[0].text, 'Steps');
+  assert.equal(raw.boards[0].archive.columns[0].cards[0].title, 'Parked task');
+});
+
+test('active cards receive their containing column id', () => {
+  const result = Migration.normalizeState(stateWithChecklist(), makeDeps());
+  assert.equal(result.boards[0].columns[0].cards[0].columnId, 'col-1');
+});
+
+test('cards with a stale columnId are repaired during normalization', () => {
+  const raw = stateWithChecklist();
+  assert.equal(raw.boards[0].columns[0].cards[0].columnId, 'stale-column');
+  const result = Migration.normalizeState(raw, makeDeps());
+  assert.equal(result.boards[0].columns[0].cards[0].columnId, 'col-1');
+});
+
+test('cards with no columnId are repaired during normalization', () => {
+  const raw = stateWithChecklist();
+  delete raw.boards[0].columns[0].cards[0].columnId;
+  const result = Migration.normalizeState(raw, makeDeps());
+  assert.equal(result.boards[0].columns[0].cards[0].columnId, 'col-1');
+});
+
+test('cards inside archived columns receive the archived column id', () => {
+  const raw = stateWithChecklist();
+  assert.equal(raw.boards[0].archive.columns[0].cards[0].columnId, 'stale');
+  const result = Migration.normalizeState(raw, makeDeps());
+  assert.equal(result.boards[0].archive.columns[0].cards[0].columnId, 'arch-col-1');
+});
+
+test('archived cards keep their origin column id', () => {
+  const result = Migration.normalizeState(stateWithChecklist(), makeDeps());
+  assert.equal(result.boards[0].archive.cards[0].columnId, 'col-1');
+});
+
+test('checklist items with malformed fields are normalized', () => {
+  const raw = stateWithChecklist();
+  raw.boards[0].columns[0].cards[0].checklist = [
+    { id: 'ok', text: 'Good', done: true },
+    { id: 42, text: 123, done: 'yes' },
+    { text: 'no id' },
+    null,
+    'junk'
+  ];
+  const result = Migration.normalizeState(raw, makeDeps());
+  const checklist = result.boards[0].columns[0].cards[0].checklist;
+  assert.equal(checklist.length, 3);
+  assert.deepEqual(checklist[0], { id: 'ok', text: 'Good', done: true });
+  assert.equal(checklist[1].id, 'generated-1');
+  assert.equal(checklist[1].text, '');
+  assert.equal(checklist[1].done, true);
+  assert.equal(checklist[2].id, 'generated-2');
+  assert.equal(checklist[2].text, 'no id');
+  assert.equal(checklist[2].done, false);
+});
+
+test('checklist items with missing ids receive deterministic generated ids', () => {
+  const raw = stateWithChecklist();
+  raw.boards[0].archive.cards[0].checklist = [{ text: 'Missing id' }];
+  const result = Migration.normalizeState(raw, makeDeps());
+  assert.equal(result.boards[0].archive.cards[0].checklist[0].id, 'generated-1');
+});
+
+test('template checklist items are deep-cloned and normalized', () => {
+  const raw = stateWithChecklist();
+  raw.boards[0].templates[0].checklist = [{ id: 't-1', text: 'A', done: 1 }, { text: 'B' }];
+  const result = Migration.normalizeState(raw, makeDeps());
+  const checklist = result.boards[0].templates[0].checklist;
+  assert.equal(checklist.length, 2);
+  assert.equal(checklist[0].done, true);
+  assert.equal(checklist[1].id, 'generated-1');
+});
+
+test('normalization preserves archived card fields', () => {
+  const result = Migration.normalizeState(stateWithChecklist(), makeDeps());
+  const archived = result.boards[0].archive.cards[0];
+  assert.equal(archived.archivedAt, 300);
+  assert.equal(archived.fromColumn, 'To Do');
+  assert.equal(archived.columnId, 'col-1');
+  assert.equal(archived.createdAt, 200);
+  assert.equal(archived.updatedAt, 200);
+  assert.equal(archived.movedAt, 200);
+});
+
+test('normalization remains idempotent with checklists and ownership repair', () => {
+  const deps = makeDeps();
+  const raw = stateWithChecklist();
+  raw.boards[0].columns[0].cards[0].checklist.push({ text: 'No id' });
+  raw.boards[0].archive.columns[0].cards[0].columnId = 'stale';
+  const once = Migration.normalizeState(raw, deps);
+  const twice = Migration.normalizeState(once, deps);
+  assert.deepEqual(twice, once);
+});
+
+test('adoptBoardShape forces cards inside archived columns to the entry id', () => {
+  const raw = {
+    labels: [],
+    columns: [],
+    archive: {
+      cards: [],
+      columns: [{ id: 'arch-1', title: 'Parked', cards: [{ id: 'c-1', columnId: 'stale', title: 'X' }] }]
+    }
+  };
+  const board = Migration.adoptBoardShape(raw, 'Imported', makeDeps());
+  assert.equal(board.archive.columns[0].cards[0].columnId, 'arch-1');
+});
+
+test('adoptBoardShape deep-clones checklist items', () => {
+  const raw = {
+    labels: [],
+    columns: [{
+      id: 'col-1',
+      title: 'To Do',
+      cards: [{
+        id: 'c-1',
+        title: 'X',
+        checklist: [{ id: 'i-1', text: 'Step', done: false }]
+      }]
+    }]
+  };
+  const board = Migration.adoptBoardShape(raw, 'Imported', makeDeps());
+  const item = board.columns[0].cards[0].checklist[0];
+  assert.deepEqual(item, { id: 'i-1', text: 'Step', done: false });
+  assert.notEqual(item, raw.columns[0].cards[0].checklist[0]);
 });
