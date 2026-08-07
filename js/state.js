@@ -282,6 +282,60 @@
     return true;
   }
 
+  function setFlowState(columnId, cardId, nextState, reason) {
+    return commit(function (current) {
+      var board = activeBoard();
+      var column = findColumn(columnId);
+      var card = column ? column.cards.find(function (c) { return c.id === cardId; }) : null;
+      if (!card) return { changed: false, state: current, value: null, reason: 'card-not-found' };
+      var result = KB.Core.Lifecycle.setFlowState(card, nextState, reason || '', now());
+      if (!result.changed) return { changed: false, state: current, value: null, reason: result.reason };
+      var next = JSON.parse(JSON.stringify(current));
+      var nextBoard = next.boards.find(function (b) { return b.id === board.id; });
+      var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
+      var nextCard = nextColumn.cards.find(function (c) { return c.id === cardId; });
+      var updated = result.card;
+      nextCard.flow = updated.flow;
+      nextCard.updatedAt = updated.updatedAt;
+      return { changed: true, state: next, value: nextCard.flow };
+    });
+  }
+
+  function updateCardWithFlow(columnId, cardId, patch, flowState, flowReason) {
+    return commit(function (current) {
+      var board = activeBoard();
+      var column = findColumn(columnId);
+      var card = column ? column.cards.find(function (c) { return c.id === cardId; }) : null;
+      if (!card) return { changed: false, state: current, value: null, reason: 'card-not-found' };
+      var next = JSON.parse(JSON.stringify(current));
+      var nextBoard = next.boards.find(function (b) { return b.id === board.id; });
+      var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
+      var nextCard = nextColumn.cards.find(function (c) { return c.id === cardId; });
+      var changed = false;
+      var flowResult = null;
+      if (flowState) {
+        var prevState = card.flow && card.flow.state ? card.flow.state : 'normal';
+        var prevReason = card.flow && card.flow.reason ? card.flow.reason : '';
+        if (flowState !== prevState || (flowState !== 'normal' && flowReason !== prevReason)) {
+          flowResult = KB.Core.Lifecycle.setFlowState(card, flowState, flowReason || '', now());
+          if (flowResult.changed) {
+            nextCard.flow = flowResult.card.flow;
+            changed = true;
+          }
+        }
+      }
+      Object.keys(patch || {}).forEach(function (key) {
+        if (nextCard[key] !== patch[key]) {
+          nextCard[key] = patch[key];
+          changed = true;
+        }
+      });
+      if (!changed) return { changed: false, state: current, value: null, reason: 'no-change' };
+      nextCard.updatedAt = now();
+      return { changed: true, state: next, value: nextCard };
+    });
+  }
+
   function moveCard(columnId, cardId, targetColumnId, toIndex) {
     return commit(function (current) {
       return KB.Core.Operations.moveCard(current, {
@@ -477,6 +531,8 @@
     addCard: addCard,
     addCards: addCards,
     updateCard: updateCard,
+    setFlowState: setFlowState,
+    updateCardWithFlow: updateCardWithFlow,
     moveCard: moveCard,
     duplicateCard: duplicateCard,
     archiveCard: archiveCard,

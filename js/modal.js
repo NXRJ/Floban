@@ -174,6 +174,31 @@
     descInput.value = card ? (card.description || '') : '';
     form.appendChild(fieldBlock('Description', descInput));
 
+    var flowState = card && card.flow && card.flow.state ? card.flow.state : 'normal';
+    var flowReason = card && card.flow ? (card.flow.reason || '') : '';
+    var flowInput = h('select', { id: 'cf-flow', 'aria-label': 'Flow state' });
+    [['normal', 'Normal'], ['blocked', 'Blocked'], ['waiting', 'Waiting'], ['paused', 'Paused']].forEach(function (pair) {
+      flowInput.appendChild(new Option(pair[1], pair[0]));
+    });
+    flowInput.value = flowState;
+    form.appendChild(fieldBlock('Flow state', flowInput));
+
+    var flowReasonInput = h('input', {
+      type: 'text',
+      id: 'cf-flow-reason',
+      maxlength: 200,
+      placeholder: 'Why? e.g. Waiting for API credentials',
+      'aria-label': 'Flow state reason'
+    });
+    flowReasonInput.value = flowReason;
+    var flowReasonWrap = fieldBlock('Reason', flowReasonInput);
+    flowReasonWrap.classList.toggle('hidden', flowState === 'normal');
+    form.appendChild(flowReasonWrap);
+
+    flowInput.addEventListener('change', function () {
+      flowReasonWrap.classList.toggle('hidden', flowInput.value === 'normal');
+    });
+
     var checklistState = card && card.checklist ? card.checklist.map(function (item) {
       return { id: item.id, text: item.text, done: Boolean(item.done) };
     }) : [];
@@ -298,7 +323,7 @@
         return;
       }
       if (isEdit) {
-        KB.State.updateCard(columnId, card.id, data);
+        KB.State.updateCardWithFlow(columnId, card.id, data, flowInput.value, flowReasonInput.value.trim());
         KB.UI.toast('Changes saved', 'success');
       } else {
         KB.State.addCard(columnId, data);

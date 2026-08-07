@@ -405,6 +405,34 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('column role editor saves role', roleSaved.role === 'backlog' && roleSaved.isDone === false);
   check('role badge updates', await page.$eval('.column:nth-child(2) .col-role', el => el.textContent.trim()) === 'BACKLOG');
 
+  // ---- Manual flow states ----
+  await cardAction(1, 1, 'edit-card');
+  await sleep(200);
+  await page.select('#cf-flow', 'blocked');
+  await page.$eval('#cf-flow-reason', (el, v) => { el.value = v; }, 'Waiting for API credentials');
+  await clickByText('.modal-actions .btn', 'Save');
+  await sleep(200);
+  check('flow badge shows blocked', await page.$eval('.column:nth-child(1) .card:nth-child(1) .chip.flow', el => el.textContent.includes('BLOCKED')));
+  const flowStateSaved = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const card = b.boards.find(x => x.id === b.activeBoardId).columns[0].cards[0];
+    return { state: card.flow.state, reason: card.flow.reason, since: card.flow.since };
+  });
+  check('flow state persists with reason and timestamp',
+    flowStateSaved.state === 'blocked' && flowStateSaved.reason === 'Waiting for API credentials' && typeof flowStateSaved.since === 'number');
+  await page.select('#flow-filter', 'blocked');
+  await sleep(200);
+  check('flow state filter narrows cards', await page.$$eval('.column:nth-child(1) .card', els => els.length) === 1);
+  await page.select('#flow-filter', '');
+  await sleep(150);
+  await blur();
+  await pressUndo();
+  const flowUndone = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    return b.boards.find(x => x.id === b.activeBoardId).columns[0].cards[0].flow.state;
+  });
+  check('undo restores flow state', flowUndone === 'normal');
+
   // ---- Lifecycle fields follow role-based moves ----
   await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));

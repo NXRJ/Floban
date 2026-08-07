@@ -90,6 +90,7 @@
     KB.el('due-filter').value = '';
     KB.el('priority-filter').value = '';
     KB.el('size-filter').value = '';
+    KB.el('flow-filter').value = '';
     KB.Filters.selected.clear();
     refresh();
   }
@@ -294,6 +295,7 @@
     KB.el('due-filter').addEventListener('change', refresh);
     KB.el('priority-filter').addEventListener('change', refresh);
     KB.el('size-filter').addEventListener('change', refresh);
+    KB.el('flow-filter').addEventListener('change', refresh);
     KB.el('sort-select').addEventListener('change', function () {
       KB.Filters.setSortMode(this.value);
       if (KB.Filters.sortActive()) {

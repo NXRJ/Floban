@@ -80,6 +80,20 @@
     return chip;
   }
 
+  function flowChip(card) {
+    var flow = card.flow;
+    if (!flow || flow.state === 'normal') return null;
+    var days = 0;
+    if (flow.since !== null && typeof flow.since === 'number') {
+      var dur = KB.Core.Lifecycle.currentFlowDuration(card, Date.now());
+      days = Math.floor(dur / 86400000);
+    }
+    var chip = h('span', { class: 'chip chip-static flow flow-' + flow.state });
+    chip.textContent = flow.state.toUpperCase() + (days > 0 ? ' \u00B7 ' + days + 'D' : '');
+    chip.title = flow.reason ? flow.state + ': ' + flow.reason : 'Flow state: ' + flow.state;
+    return chip;
+  }
+
   function agingChip(card, isDone) {
     if (isDone || !card.movedAt) return null;
     var days = KB.Core.Date.ageInDays(card.movedAt, Date.now());
@@ -135,6 +149,8 @@
     if (pr) meta.appendChild(pr);
     var sz = sizeChip(card);
     if (sz) meta.appendChild(sz);
+    var fl = flowChip(card);
+    if (fl) meta.appendChild(fl);
     card.labels.forEach(function (id) {
       var label = KB.State.findLabel(id);
       if (label) meta.appendChild(staticChip(label));
@@ -386,6 +402,14 @@
       size.appendChild(new Option(pair[1], pair[0]));
     });
     size.value = prevSize;
+
+    var flow = KB.el('flow-filter');
+    var prevFlow = flow.value;
+    flow.innerHTML = '';
+    [['', 'Any flow state'], ['blocked', 'Blocked'], ['waiting', 'Waiting'], ['paused', 'Paused']].forEach(function (pair) {
+      flow.appendChild(new Option(pair[1], pair[0]));
+    });
+    flow.value = prevFlow;
 
     var sort = KB.el('sort-select');
     var prevSort = sort.value || KB.Filters.sortModeValue();
