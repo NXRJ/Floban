@@ -314,7 +314,12 @@
     var card = findCardInBoard(board, columnId, cardId);
     if (!card) return false;
     pushHistory();
-    Object.assign(card, patch, { updatedAt: now() });
+    var safePatch = {};
+    Object.keys(patch || {}).forEach(function (key) {
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') return;
+      safePatch[key] = patch[key];
+    });
+    Object.assign(card, safePatch, { updatedAt: now() });
     save();
     return true;
   }
@@ -446,42 +451,52 @@
   }
 
   function moveCardTo(boardId, cardId, targetBoardId, targetColumnId, toIndex, opts) {
-    return commit(function (current) {
-      var board = null;
-      for (var i = 0; i < current.boards.length; i++) {
-        if (current.boards[i].id === boardId) { board = current.boards[i]; break; }
-      }
-      var targetBoard = null;
-      for (var j = 0; j < current.boards.length; j++) {
-        if (current.boards[j].id === targetBoardId) { targetBoard = current.boards[j]; break; }
-      }
-      if (!board || !targetBoard) return { changed: false, state: current, value: null, reason: 'board-not-found' };
-      var source = board.columns.find(function (c) {
-        return c.cards.some(function (card) { return card.id === cardId; });
-      });
-      if (!source) return { changed: false, state: current, value: null, reason: 'card-not-found' };
-      var target = targetBoard.columns.find(function (c) { return c.id === targetColumnId; });
-      if (!target) return { changed: false, state: current, value: null, reason: 'column-not-found' };
-      var next = JSON.parse(JSON.stringify(current));
-      var nextBoard = next.boards.find(function (b) { return b.id === boardId; });
-      var nextTargetBoard = next.boards.find(function (b) { return b.id === targetBoardId; });
-      var nextSource = nextBoard.columns.find(function (c) {
-        return c.cards.some(function (card) { return card.id === cardId; });
-      });
-      var nextTarget = nextTargetBoard.columns.find(function (c) { return c.id === targetColumnId; });
-      var index = nextSource.cards.findIndex(function (c) { return c.id === cardId; });
-      var card = nextSource.cards[index];
-      var result = KB.Core.Pipeline.placeCard(next, card, nextSource, nextTargetBoard, nextTarget, {
-        toIndex: typeof toIndex === 'number' ? toIndex : undefined,
-        labelMapping: opts && opts.labelMapping,
-        confirmed: opts && opts.confirmed,
-        overrideReason: opts && opts.overrideReason
-      }, deps());
-      if (!result.changed) {
-        return { changed: false, state: current, value: null, reason: result.reason, evaluation: result.evaluation };
-      }
-      return { changed: true, state: next, value: result.value };
+    var result = null;
+    commit(function (current) {
+      result = moveCardToCommit(current, boardId, cardId, targetBoardId, targetColumnId, toIndex, opts);
+      return result;
     });
+    if (!result || !result.changed) {
+      return { ok: false, reason: (result && result.reason) || 'move-failed', evaluation: result && result.evaluation };
+    }
+    return { ok: true, value: result.value };
+  }
+
+  function moveCardToCommit(current, boardId, cardId, targetBoardId, targetColumnId, toIndex, opts) {
+    var board = null;
+    for (var i = 0; i < current.boards.length; i++) {
+      if (current.boards[i].id === boardId) { board = current.boards[i]; break; }
+    }
+    var targetBoard = null;
+    for (var j = 0; j < current.boards.length; j++) {
+      if (current.boards[j].id === targetBoardId) { targetBoard = current.boards[j]; break; }
+    }
+    if (!board || !targetBoard) return { changed: false, state: current, value: null, reason: 'board-not-found' };
+    var source = board.columns.find(function (c) {
+      return c.cards.some(function (card) { return card.id === cardId; });
+    });
+    if (!source) return { changed: false, state: current, value: null, reason: 'card-not-found' };
+    var target = targetBoard.columns.find(function (c) { return c.id === targetColumnId; });
+    if (!target) return { changed: false, state: current, value: null, reason: 'column-not-found' };
+    var next = JSON.parse(JSON.stringify(current));
+    var nextBoard = next.boards.find(function (b) { return b.id === boardId; });
+    var nextTargetBoard = next.boards.find(function (b) { return b.id === targetBoardId; });
+    var nextSource = nextBoard.columns.find(function (c) {
+      return c.cards.some(function (card) { return card.id === cardId; });
+    });
+    var nextTarget = nextTargetBoard.columns.find(function (c) { return c.id === targetColumnId; });
+    var index = nextSource.cards.findIndex(function (c) { return c.id === cardId; });
+    var card = nextSource.cards[index];
+    var result = KB.Core.Pipeline.placeCard(next, card, nextSource, nextTargetBoard, nextTarget, {
+      toIndex: typeof toIndex === 'number' ? toIndex : undefined,
+      labelMapping: opts && opts.labelMapping,
+      confirmed: opts && opts.confirmed,
+      overrideReason: opts && opts.overrideReason
+    }, deps());
+    if (!result.changed) {
+      return { changed: false, state: current, value: null, reason: result.reason, evaluation: result.evaluation };
+    }
+    return { changed: true, state: next, value: result.value };
   }
 
   function restoreCardChecked(cardId, opts) {
@@ -607,10 +622,11 @@
   }
 
   function purgeColumn(columnId) {
-    return commit(function (current) {
+    var result = commit(function (current) {
       var board = activeBoard();
       return KB.Core.Relations.purgeArchiveColumn(current, board.id, columnId);
     });
+    return Boolean(result);
   }
 
   function addLabel(name, color, boardId) {
@@ -631,6 +647,32 @@
 
   function labelInUse(labelId) {
     return anyCardUsesLabel(labelId);
+  }
+
+  function mapLabelsAcrossBoards(sourceBoardId, card, targetBoard) {
+    var dropped = [];
+    var kept = [];
+    var targetLabels = targetBoard.labels || [];
+    var byNameColor = {};
+    targetLabels.forEach(function (label) {
+      byNameColor[label.name.toLowerCase() + '|' + label.color.toLowerCase()] = label.id;
+    });
+    var sourceBoard = boardById(sourceBoardId);
+    var sourceLabels = sourceBoard ? sourceBoard.labels : [];
+    var cardLabelIds = card.labels || [];
+    cardLabelIds.forEach(function (id) {
+      var source = sourceLabels.find(function (l) { return l.id === id; });
+      if (!source) return;
+      var match = targetLabels.find(function (l) { return l.id === id; });
+      if (match) {
+        kept.push(match.id);
+        return;
+      }
+      var mapped = byNameColor[source.name.toLowerCase() + '|' + source.color.toLowerCase()];
+      if (mapped) kept.push(mapped);
+      else dropped.push(source.name);
+    });
+    return { kept: kept, dropped: dropped };
   }
 
   function labels() {
@@ -740,13 +782,6 @@
     })();
   }
 
-  function handleCardCompleted(boardId, cardId) {
-    return commit(function (current) {
-      var result = KB.Core.Recurrence.handleRecurringCardCompletion(current, { boardId: boardId, cardId: cardId }, now(), deps());
-      return result;
-    });
-  }
-
   function addRecurrence(definition) {
     return commit(function (current) {
       var next = JSON.parse(JSON.stringify(current));
@@ -797,12 +832,9 @@
   }
 
   function runRecurrenceNow(recurrenceId) {
-    var result = null;
-    commit(function (current) {
-      result = KB.Core.Recurrence.runNow(current, recurrenceId, deps());
-      return result;
-    });
-    return result;
+    return wrapResult(function (current) {
+      return KB.Core.Recurrence.runNow(current, recurrenceId, deps());
+    })();
   }
 
   function skipRecurrenceNext(recurrenceId) {
@@ -861,12 +893,9 @@
   }
 
   function triageInboxItem(id, target, cardPatch, opts) {
-    var result = null;
-    commit(function (current) {
-      result = KB.Core.Inbox.triageInboxItem(current, id, target, cardPatch, deps(), opts);
-      return result;
-    });
-    return result;
+    return wrapResult(function (current) {
+      return KB.Core.Inbox.triageInboxItem(current, id, target, cardPatch, deps(), opts);
+    })();
   }
 
   function convertInboxToRecurrence(inboxId, definition) {
@@ -1052,6 +1081,7 @@
     addLabel: addLabel,
     removeLabel: removeLabel,
     labelInUse: labelInUse,
+    mapLabelsAcrossBoards: mapLabelsAcrossBoards,
     labels: labels,
     assignees: assignees,
     templates: templates,
@@ -1066,7 +1096,6 @@
     removeRelated: removeRelated,
     setActiveBoard: setActiveBoard,
     processRecurrences: processRecurrences,
-    handleCardCompleted: handleCardCompleted,
     addRecurrence: addRecurrence,
     updateRecurrence: updateRecurrence,
     deleteRecurrence: deleteRecurrence,

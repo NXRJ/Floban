@@ -300,3 +300,19 @@ test('inbox operations never mutate the input state', () => {
   Inbox.triageInboxItem(s, 'ghost', { boardId: 'board-1', columnId: 'col-1' }, {}, makeDeps());
   assert.equal(JSON.stringify(s), before);
 });
+
+test('triage asks for confirmation on soft WIP until confirmed', () => {
+  const s = state();
+  s.boards[0].columns[0].wipLimit = 1;
+  s.boards[0].columns[0].policy = { wipMode: 'soft' };
+  s.boards[0].columns[0].cards = [{ id: 'existing', columnId: 'col-1', title: 'Existing' }];
+  const captured = Inbox.captureItem(s, { title: 'Soft triage' }, makeDeps());
+  const first = Inbox.triageInboxItem(captured.state, captured.value.id, { boardId: 'board-1', columnId: 'col-1' }, {}, makeDeps());
+  assert.equal(first.changed, false);
+  assert.equal(first.reason, 'policy');
+  assert.equal(first.evaluation.allowed, true);
+  assert.equal(first.evaluation.requiresConfirmation, true);
+  const confirmed = Inbox.triageInboxItem(captured.state, captured.value.id, { boardId: 'board-1', columnId: 'col-1' }, {}, makeDeps(), { confirmed: true });
+  assert.equal(confirmed.changed, true);
+  assert.equal(confirmed.state.inbox.items.length, 0);
+});

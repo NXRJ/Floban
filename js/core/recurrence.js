@@ -1,8 +1,11 @@
 (function (root, factory) {
+  var modelCore = (typeof module === 'object' && module.exports)
+    ? require('./model.js')
+    : root.KB.Core.Model;
   var pipelineCore = (typeof module === 'object' && module.exports)
     ? require('./pipeline.js')
     : root.KB.Core.Pipeline;
-  var api = factory(pipelineCore);
+  var api = factory(modelCore, pipelineCore);
 
   if (typeof module === 'object' && module.exports) {
     module.exports = api;
@@ -13,7 +16,7 @@
   }
 })(
   typeof globalThis !== 'undefined' ? globalThis : this,
-  function (Pipeline) {
+  function (Model, Pipeline) {
     var MS_PER_DAY = 86400000;
     var CATCH_UP_CAP = 100;
     var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -102,9 +105,7 @@
       var column = board.columns.find(function (c) { return c.id === recurrence.target.columnId; });
       if (!column) return { changed: false, state: state, reason: 'missing-column' };
       var template = recurrence.template || {};
-      var card = {
-        id: d.uid(),
-        columnId: column.id,
+      var card = Model.createCard(column.id, {
         title: template.title || 'Recurring task',
         description: template.description || '',
         labels: (template.labelIds || []).slice(),
@@ -115,16 +116,8 @@
         }),
         priority: template.priority || 'none',
         size: template.size || 'none',
-        createdAt: now,
-        updatedAt: now,
-        movedAt: now,
-        startedAt: null,
-        completedAt: null,
-        flow: { state: 'normal', reason: '', since: null, periods: [] },
-        dependencies: { blockers: [], related: [] },
-        recurrenceId: recurrence.id,
-        transitions: []
-      };
+        recurrenceId: recurrence.id
+      }, deps);
       var placed = Pipeline.placeCard(state, card, null, board, column, {
         recurrenceSideEffect: false
       }, deps);
@@ -132,11 +125,26 @@
         return { changed: false, state: state, reason: placed.reason || 'placement-failed', evaluation: placed.evaluation };
       }
       var created = placed.value;
-      recurrence.activeCardRef = { boardId: recurrence.target.boardId, cardId: created.id };
-      recurrence.lastRunAt = now;
-      recurrence.nextRunAt = recurrence.mode === 'after-completion' ? null : computeNextRun(recurrence, now);
-      recurrence.lastCompletedAt = null;
       recurrence.policyBlocked = false;
+      if (typeof created.completedAt === 'number') {
+        if (recurrence.mode === 'after-completion') {
+          var delay = recurrence.schedule.delayAfterCompletionDays;
+          var delayDays = typeof delay === 'number' && delay > 0 ? delay : 1;
+          recurrence.lastCompletedAt = created.completedAt;
+          recurrence.nextRunAt = startOfDay(created.completedAt) + delayDays * MS_PER_DAY;
+          recurrence.lastRunAt = null;
+        } else {
+          recurrence.activeCardRef = { boardId: recurrence.target.boardId, cardId: created.id };
+          recurrence.lastRunAt = now;
+          recurrence.nextRunAt = computeNextRun(recurrence, now);
+          recurrence.lastCompletedAt = null;
+        }
+      } else {
+        recurrence.activeCardRef = { boardId: recurrence.target.boardId, cardId: created.id };
+        recurrence.lastRunAt = now;
+        recurrence.nextRunAt = recurrence.mode === 'after-completion' ? null : computeNextRun(recurrence, now);
+        recurrence.lastCompletedAt = null;
+      }
       if (typeof recurrence.remainingOccurrences === 'number') {
         recurrence.remainingOccurrences -= 1;
       }

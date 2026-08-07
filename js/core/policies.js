@@ -53,13 +53,15 @@
       return Boolean(reason && String(reason).trim());
     }
 
-    function wipViolation(column) {
+    function wipViolation(column, options) {
       var limit = column && column.wipLimit ? column.wipLimit : 0;
       if (limit <= 0) return null;
       var policy = column && column.policy ? column.policy : {};
       var mode = WIP_MODES.indexOf(policy.wipMode) !== -1 ? policy.wipMode : 'off';
       var count = column.cards ? column.cards.length : 0;
-      if (count < limit) return null;
+      var atLimit = !options || options.atLimit !== false;
+      var breached = atLimit ? count >= limit : count > limit;
+      if (!breached) return null;
       return {
         code: 'wip-limit',
         message: column.title + ' holds ' + count + ' cards against a WIP limit of ' + limit + '.',
@@ -68,17 +70,7 @@
     }
 
     function wipExceeded(column) {
-      var limit = column && column.wipLimit ? column.wipLimit : 0;
-      if (limit <= 0) return null;
-      var policy = column && column.policy ? column.policy : {};
-      var mode = WIP_MODES.indexOf(policy.wipMode) !== -1 ? policy.wipMode : 'off';
-      var count = column.cards ? column.cards.length : 0;
-      if (count <= limit) return null;
-      return {
-        code: 'wip-limit',
-        message: column.title + ' holds ' + count + ' cards against a WIP limit of ' + limit + '.',
-        mode: mode
-      };
+      return wipViolation(column, { atLimit: false });
     }
 
     function evaluateMovePolicy(state, cardRef, targetColumnRef, opts) {

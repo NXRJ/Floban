@@ -255,10 +255,21 @@
         var message = result.blocking
           ? result.violations.length + ' card(s) would violate a column policy.'
           : result.violations.length + ' card(s) would exceed a soft WIP limit.';
-        KB.Modal.moveConfirmModal('Bulk move requires confirmation', { allowed: !result.blocking, violations: [{ code: 'policy', message: message }] }, '', function (reason) {
-          KB.State.bulkMove(refs(), target, { confirmed: true, overrideReason: reason, labelMappings: labelMappings });
+        var targetBoard = KB.State.boardById(target.boardId);
+        var targetColumn = targetBoard && targetBoard.columns.find(function (c) { return c.id === target.columnId; });
+        var needsReason = !!(targetColumn && targetColumn.policy && targetColumn.policy.overrideRequiresReason);
+        KB.Modal.moveConfirmModal('Bulk move requires confirmation', {
+          allowed: !result.blocking,
+          needsReason: result.blocking ? needsReason : false,
+          violations: [{ code: 'policy', message: message }]
+        }, '', function (reason) {
+          var confirmed = KB.State.bulkMove(refs(), target, { confirmed: true, overrideReason: reason, labelMappings: labelMappings });
           KB.Modal.close();
-          finishBulk('Card(s) moved');
+          if (confirmed && confirmed.changed) {
+            finishBulk('Card(s) moved');
+          } else {
+            KB.UI.toast('Move not allowed', 'error');
+          }
         });
         return;
       }
@@ -271,29 +282,7 @@
   }
 
   function mapLabelsAcrossBoards(sourceBoardId, card, targetBoard) {
-    var dropped = [];
-    var kept = [];
-    var targetLabels = targetBoard.labels || [];
-    var byNameColor = {};
-    targetLabels.forEach(function (label) {
-      byNameColor[label.name.toLowerCase() + '|' + label.color.toLowerCase()] = label.id;
-    });
-    var sourceBoard = KB.State.boardById(sourceBoardId);
-    var sourceLabels = sourceBoard ? sourceBoard.labels : [];
-    var cardLabelIds = card.labels || [];
-    cardLabelIds.forEach(function (id) {
-      var source = sourceLabels.find(function (l) { return l.id === id; });
-      if (!source) return;
-      var match = targetLabels.find(function (l) { return l.id === id; });
-      if (match) {
-        kept.push(match.id);
-        return;
-      }
-      var mapped = byNameColor[source.name.toLowerCase() + '|' + source.color.toLowerCase()];
-      if (mapped) kept.push(mapped);
-      else dropped.push(source.name);
-    });
-    return { kept: kept, dropped: dropped };
+    return KB.State.mapLabelsAcrossBoards(sourceBoardId, card, targetBoard);
   }
 
   function finishBulk(message) {

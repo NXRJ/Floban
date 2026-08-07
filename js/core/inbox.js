@@ -1,8 +1,11 @@
 (function (root, factory) {
+  var modelCore = (typeof module === 'object' && module.exports)
+    ? require('./model.js')
+    : root.KB.Core.Model;
   var pipelineCore = (typeof module === 'object' && module.exports)
     ? require('./pipeline.js')
     : root.KB.Core.Pipeline;
-  var api = factory(pipelineCore);
+  var api = factory(modelCore, pipelineCore);
 
   if (typeof module === 'object' && module.exports) {
     module.exports = api;
@@ -13,7 +16,7 @@
   }
 })(
   typeof globalThis !== 'undefined' ? globalThis : this,
-  function (Pipeline) {
+  function (Model, Pipeline) {
     var SAFE_URL_RE = /^https?:\/\//i;
     var DANGEROUS_URL_RE = /^(javascript|data|vbscript|file):/i;
 
@@ -112,7 +115,7 @@
       if (!item) return noop(state, 'item-not-found');
       var changed = false;
       Object.keys(patch || {}).forEach(function (key) {
-        if (key === 'id' || key === 'capturedAt') return;
+        if (key === 'id' || key === 'capturedAt' || key === '__proto__' || key === 'constructor' || key === 'prototype') return;
         if (item[key] !== patch[key]) {
           item[key] = patch[key];
           changed = true;
@@ -146,9 +149,7 @@
       if (!column) return noop(state, 'column-not-found');
       var now = d.now();
       var patch = cardPatch || {};
-      var card = {
-        id: d.uid(),
-        columnId: column.id,
+      var card = Model.createCard(column.id, {
         title: typeof patch.title === 'string' && patch.title.trim() ? patch.title.trim() : item.title,
         description: typeof patch.description === 'string' ? patch.description : item.note,
         labels: Array.isArray(patch.labels) ? patch.labels.slice() : [],
@@ -156,21 +157,13 @@
         due: typeof patch.due === 'string' ? patch.due : '',
         priority: patch.priority || 'none',
         size: patch.size || 'none',
-        checklist: Array.isArray(patch.checklist) ? patch.checklist : [],
-        createdAt: now,
-        updatedAt: now,
-        movedAt: now,
-        startedAt: null,
-        completedAt: null,
-        flow: { state: 'normal', reason: '', since: null, periods: [] },
-        dependencies: { blockers: [], related: [] },
-        recurrenceId: null,
-        transitions: []
-      };
+        checklist: Array.isArray(patch.checklist) ? patch.checklist : []
+      }, deps);
       if (item.url) {
         card.description = (card.description ? card.description + '\n\n' : '') + 'Source: ' + item.url;
       }
       var placed = Pipeline.placeCard(next, card, null, board, column, {
+        rejectOnConfirmation: true,
         confirmed: Boolean(options.confirmed),
         overrideReason: options.overrideReason
       }, deps);

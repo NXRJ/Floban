@@ -288,7 +288,6 @@
     KB.Modal.moveConfirmModal('Move requires confirmation', evaluation, '', function (reason) {
       var moved = KB.State.moveCardChecked(fromColumnId, cardId, toColumnId, toIndex, { confirmed: true, overrideReason: reason });
       afterCardMove(moved);
-      KB.App.refresh();
       if (moved && moved.ok && KB.MoveTo.announce) {
         var target = KB.State.findColumn(toColumnId);
         KB.MoveTo.announce('Moved to ' + (target ? target.title : '') + ', position ' + ((toIndex || 0) + 1) + '.');

@@ -69,9 +69,7 @@
       });
 
       var anyBlocking = violations.some(function (v) { return v.blocking; });
-      var needWarn = violations.length > 0 && !options.confirmed;
-      if (anyBlocking && !options.confirmed) needWarn = true;
-      if (needWarn) {
+      if (violations.length > 0 && !options.confirmed) {
         return {
           changed: false,
           state: state,
@@ -121,7 +119,10 @@
         return { changed: false, state: state, value: null, reason: 'no-cards' };
       }
 
-      if (target.boardId === sourceEntries[0].located.board.id && target.columnId === sourceEntries[0].located.column.id) {
+      var sameTarget = sourceEntries.some(function (entry) {
+        return entry.located.board.id === targetBoard.id && entry.located.column.id === targetColumn.id;
+      });
+      if (sameTarget) {
         var firstIndex = -1;
         sourceEntries.forEach(function (entry) {
           if (entry.located.board.id === targetBoard.id && entry.located.column.id === targetColumn.id) {
@@ -135,6 +136,9 @@
         });
       }
       moved = movedCards.length;
+      if (violations.length > 0) {
+        return { changed: true, state: next, value: movedCards, warnings: violations };
+      }
       return { changed: true, state: next, value: movedCards };
     }
 
@@ -182,7 +186,7 @@
         var located = resolveCard(next, ref);
         if (!located) return;
         Object.keys(patch || {}).forEach(function (key) {
-          if (key === 'id' || key === 'columnId' || key === 'createdAt') return;
+          if (key === 'id' || key === 'columnId' || key === 'createdAt' || key === '__proto__' || key === 'constructor' || key === 'prototype') return;
           if (key === 'labels') {
             located.card.labels = Array.isArray(patch.labels) ? patch.labels.slice() : [];
             changed = true;
