@@ -273,6 +273,7 @@ test('restoreCard returns the card to its original existing column', () => {
   boardOf(state).archive.cards.push(archived);
   const result = Operations.restoreCard(state, { cardId: 'card-arch' }, makeDeps());
   assert.deepEqual(columnOf(result.state, 'column-1').cards.map((c) => c.id), ['card-a', 'card-b', 'card-arch']);
+  assert.equal(columnOf(result.state, 'column-1').cards[2].columnId, 'column-1');
   assert.deepEqual(boardOf(result.state).archive.cards, []);
 });
 
@@ -283,6 +284,7 @@ test('restoreCard falls back to the first column when the origin is gone', () =>
   boardOf(state).archive.cards.push(archived);
   const result = Operations.restoreCard(state, { cardId: 'card-x' }, makeDeps());
   assert.deepEqual(columnOf(result.state, 'column-1').cards.map((c) => c.id), ['card-a', 'card-b', 'card-x']);
+  assert.equal(columnOf(result.state, 'column-1').cards[2].columnId, 'column-1');
 });
 
 test('restoreCard creates a To Do column when no columns exist', () => {
@@ -296,6 +298,23 @@ test('restoreCard creates a To Do column when no columns exist', () => {
   assert.equal(created.length, 1);
   assert.equal(created[0].title, 'To Do');
   assert.deepEqual(created[0].cards.map((c) => c.id), ['card-x']);
+  assert.equal(created[0].cards[0].columnId, created[0].id);
+});
+
+test('restoreCard does not mutate the archived card in the input state', () => {
+  const state = makeState();
+  const archived = makeCard({ id: 'card-arch', columnId: 'column-1' });
+  archived.archivedAt = 500;
+  archived.fromColumn = 'To Do';
+  boardOf(state).archive.cards.push(archived);
+  const before = JSON.stringify(state);
+  Operations.restoreCard(state, { cardId: 'card-arch' }, makeDeps());
+  assert.equal(JSON.stringify(state), before);
+  const sourceCard = state.boards[0].archive.cards[0];
+  assert.equal(sourceCard.archivedAt, 500);
+  assert.equal(sourceCard.fromColumn, 'To Do');
+  assert.equal(sourceCard.columnId, 'column-1');
+  assert.equal(sourceCard.movedAt, 100);
 });
 
 test('restoreCard removes archive-only fields and updates movedAt', () => {
