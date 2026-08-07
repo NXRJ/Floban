@@ -1541,6 +1541,121 @@
     open(form);
   }
 
+  function lensEditor(lens, onSaved) {
+    var form = h('form', { class: 'card-form' });
+    var heading = h('h2');
+    heading.textContent = 'Edit lens';
+    form.appendChild(heading);
+
+    var nameInput = h('input', { type: 'text', maxlength: 60, 'aria-label': 'Lens name' });
+    nameInput.value = lens.name;
+    form.appendChild(fieldBlock('Name', nameInput, true));
+
+    var scopeInput = h('select', { id: 'le-scope', 'aria-label': 'Scope' });
+    [['active-board', 'Active board'], ['all-boards', 'All boards'], ['selected-boards', 'Selected boards']].forEach(function (pair) {
+      scopeInput.appendChild(new Option(pair[1], pair[0]));
+    });
+    scopeInput.value = lens.scope;
+    form.appendChild(fieldBlock('Scope', scopeInput));
+
+    var boardPick = h('div', { class: 'label-picker' });
+    KB.State.boards().forEach(function (board) {
+      var chip = labelToggleChip({ id: board.id, name: board.name, color: '#2a58c4' }, lens.boardIds.indexOf(board.id) !== -1);
+      boardPick.appendChild(chip);
+    });
+    form.appendChild(fieldBlock('Boards (selected scope)', boardPick));
+
+    var searchInput = h('input', { type: 'text', maxlength: 120, 'aria-label': 'Search' });
+    searchInput.value = lens.query.search || '';
+    form.appendChild(fieldBlock('Search', searchInput));
+
+    var dueInput = h('select', { id: 'le-due', 'aria-label': 'Due filter' });
+    [['any', 'Any due date'], ['overdue', 'Overdue'], ['today', 'Due today'], ['week', 'Due this week'], ['none', 'No due date']].forEach(function (pair) {
+      dueInput.appendChild(new Option(pair[1], pair[0]));
+    });
+    dueInput.value = lens.query.due || 'any';
+    form.appendChild(fieldBlock('Due', dueInput));
+
+    var sortInput = h('select', { id: 'le-sort', 'aria-label': 'Sort field' });
+    [['manual', 'Manual'], ['priority', 'Priority'], ['due', 'Due date'], ['created', 'Created'], ['updated', 'Updated'], ['age', 'Age'], ['blocked-duration', 'Blocked duration']].forEach(function (pair) {
+      sortInput.appendChild(new Option(pair[1], pair[0]));
+    });
+    sortInput.value = lens.sort.field;
+    form.appendChild(fieldBlock('Sort by', sortInput));
+
+    var groupInput = h('select', { id: 'le-group', 'aria-label': 'Group by' });
+    [['board', 'Board'], ['column', 'Column'], ['priority', 'Priority'], ['assignee', 'Assignee'], ['none', 'None']].forEach(function (pair) {
+      groupInput.appendChild(new Option(pair[1], pair[0]));
+    });
+    groupInput.value = lens.display.groupBy;
+    form.appendChild(fieldBlock('Group by', groupInput));
+
+    var readyCheck = h('input', { type: 'checkbox', id: 'le-ready', 'aria-label': 'Ready only' });
+    readyCheck.checked = Boolean(lens.query.readyOnly);
+    var readyLabel = h('label', { class: 'field check' });
+    var readyText = h('span');
+    readyText.textContent = 'Only ready-to-pull cards';
+    readyLabel.appendChild(readyCheck);
+    readyLabel.appendChild(readyText);
+    form.appendChild(readyLabel);
+
+    var doneCheck = h('input', { type: 'checkbox', id: 'le-done', 'aria-label': 'Include completed' });
+    doneCheck.checked = lens.query.includeCompleted !== false;
+    var doneLabel = h('label', { class: 'field check' });
+    var doneText = h('span');
+    doneText.textContent = 'Include completed cards';
+    doneLabel.appendChild(doneCheck);
+    doneLabel.appendChild(doneText);
+    form.appendChild(doneLabel);
+
+    var actions = h('div', { class: 'modal-actions' });
+    actions.appendChild(h('span', { class: 'spacer' }));
+    var cancelBtn = h('button', { type: 'button', class: 'btn ghost' });
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', close);
+    actions.appendChild(cancelBtn);
+    var saveBtn = h('button', { type: 'submit', class: 'btn primary' });
+    saveBtn.textContent = 'Save';
+    actions.appendChild(saveBtn);
+    form.appendChild(actions);
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var name = nameInput.value.trim();
+      if (!name) {
+        KB.UI.toast('A name is required', 'error');
+        nameInput.focus();
+        return;
+      }
+      KB.State.updateLens(lens.id, {
+        name: name,
+        scope: scopeInput.value,
+        boardIds: Array.prototype.map.call(boardPick.querySelectorAll('.chip.active'), function (chip) { return chip.dataset.id; }),
+        query: {
+          search: searchInput.value.trim(),
+          labelIds: lens.query.labelIds || [],
+          assignees: lens.query.assignees || [],
+          due: dueInput.value,
+          priorities: lens.query.priorities || [],
+          sizes: lens.query.sizes || [],
+          flowStates: lens.query.flowStates || [],
+          blockedOnly: false,
+          readyOnly: readyCheck.checked,
+          columnRoles: lens.query.columnRoles || [],
+          includeCompleted: doneCheck.checked
+        },
+        sort: { field: sortInput.value, direction: 'desc' },
+        display: { density: lens.display.density, groupBy: groupInput.value }
+      });
+      KB.UI.toast('Lens updated', 'success', 'Undo', KB.UI.undoAction);
+      close();
+      if (onSaved) onSaved();
+      KB.App.refresh();
+    });
+
+    open(form);
+  }
+
   function isOpen() {
     return overlay !== null;
   }
@@ -1560,6 +1675,7 @@
     captureModal: captureModal,
     triageModal: triageModal,
     mergeModal: mergeModal,
+    lensEditor: lensEditor,
     isOpen: isOpen
   };
 })(window.KB = window.KB || {});

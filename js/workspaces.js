@@ -4,6 +4,7 @@
 
   var UI_KEY = 'kanban.ui.v1';
   var workspace = 'board';
+  var activeLensId = 'desk';
 
   function loadPrefs() {
     try {
@@ -13,13 +14,16 @@
         if (parsed && typeof parsed.workspace === 'string' && isValidWorkspace(parsed.workspace)) {
           workspace = parsed.workspace;
         }
+        if (parsed && typeof parsed.lens === 'string') {
+          activeLensId = parsed.lens;
+        }
       }
     } catch (err) {}
   }
 
   function savePrefs() {
     try {
-      localStorage.setItem(UI_KEY, JSON.stringify({ workspace: workspace }));
+      localStorage.setItem(UI_KEY, JSON.stringify({ workspace: workspace, lens: activeLensId }));
     } catch (err) {}
   }
 
@@ -160,20 +164,144 @@
     var el = KB.el('ws-mydesk');
     el.innerHTML = '';
     var now = Date.now();
-    var sections = myDeskCards(now);
 
-    function renderSection(titleText, list) {
-      var cards = list.map(function (entry) {
-        return compactCard(entry.boardId, entry.column, entry.card);
+    var head = h('div', { class: 'ws-head' });
+    var title = h('h2', { class: 'desk-section-title' });
+    title.textContent = 'My Desk';
+    head.appendChild(title);
+
+    var lensBar = h('div', { class: 'lens-bar' });
+    var deskChip = h('button', { type: 'button', class: 'chip' + (activeLensId === 'desk' ? ' active' : ''), 'data-lens': 'desk' });
+    deskChip.textContent = 'Desk';
+    lensBar.appendChild(deskChip);
+    KB.Core.Lenses.builtInLenses().forEach(function (builtin) {
+      var chip = h('button', { type: 'button', class: 'chip' + (activeLensId === builtin.id ? ' active' : ''), 'data-lens': builtin.id });
+      chip.textContent = builtin.name;
+      lensBar.appendChild(chip);
+    });
+    KB.State.lenses().forEach(function (lens) {
+      var chip = h('button', { type: 'button', class: 'chip user-lens' + (activeLensId === lens.id ? ' active' : ''), 'data-lens': lens.id, title: 'Saved lens' });
+      chip.textContent = lens.name;
+      lensBar.appendChild(chip);
+    });
+    head.appendChild(lensBar);
+    var saveBtn = h('button', { type: 'button', class: 'btn ghost sm', 'data-action': 'lens-save' });
+    saveBtn.textContent = 'Save current view…';
+    head.appendChild(h('span', { class: 'spacer' }));
+    head.appendChild(saveBtn);
+    el.appendChild(head);
+
+    lensBar.addEventListener('click', function (e) {
+      var chip = e.target.closest('[data-lens]');
+      if (!chip) return;
+      activeLensId = chip.dataset.lens;
+      savePrefs();
+      renderMyDesk();
+    });
+
+    saveBtn.addEventListener('click', function () {
+      KB.Modal.promptModal('Save lens', 'Lens name', 'My lens', function (name) {
+        var lens = KB.State.addLens(currentBoardLensDefinition(name));
+        activeLensId = lens.id;
+        savePrefs();
+        KB.UI.toast('Lens saved', 'success', 'Undo', KB.UI.undoAction);
+        renderMyDesk();
       });
-      return section(titleText, cards.length > 0 ? cards : [emptyNote('Nothing here.')]);
+    });
+
+    if (activeLensId === 'desk') {
+      var sections = myDeskCards(now);
+
+      function renderSection(titleText, list) {
+        var cards = list.map(function (entry) {
+          return compactCard(entry.boardId, entry.column, entry.card);
+        });
+        return section(titleText, cards.length > 0 ? cards : [emptyNote('Nothing here.')]);
+      }
+
+      el.appendChild(renderSection('Blocked', sections.blocked));
+      el.appendChild(renderSection('Due this week', sections.dueWeek));
+      el.appendChild(renderSection('Active work', sections.active));
+      el.appendChild(renderSection('Ready to pull', sections.ready));
+      el.appendChild(renderSection('Recently completed', sections.recentlyCompleted));
+      return;
     }
 
-    el.appendChild(renderSection('Blocked', sections.blocked));
-    el.appendChild(renderSection('Due this week', sections.dueWeek));
-    el.appendChild(renderSection('Active work', sections.active));
-    el.appendChild(renderSection('Ready to pull', sections.ready));
-    el.appendChild(renderSection('Recently completed', sections.recentlyCompleted));
+    var lens = null;
+    var builtin = KB.Core.Lenses.builtInLenses().find(function (b) { return b.id === activeLensId; });
+    var user = KB.State.lenses().find(function (l) { return l.id === activeLensId; });
+    if (user) lens = user;
+    else if (builtin) lens = builtin;
+
+    if (!lens) {
+      el.appendChild(emptyNote('Choose a lens above.'));
+      return;
+    }
+
+    if (user) {
+      var editRow = h('div', { class: 'lens-edit-row' });
+      var editBtn = h('button', { type: 'button', class: 'btn ghost sm', 'data-action': 'lens-edit' });
+      editBtn.textContent = 'Edit lens';
+      var deleteBtn = h('button', { type: 'button', class: 'btn danger-ghost sm', 'data-action': 'lens-delete' });
+      deleteBtn.textContent = 'Delete lens';
+      editRow.appendChild(editBtn);
+      editRow.appendChild(deleteBtn);
+      el.appendChild(editRow);
+      editBtn.addEventListener('click', function () {
+        KB.Modal.lensEditor(user, function () { renderMyDesk(); });
+      });
+      deleteBtn.addEventListener('click', function () {
+        KB.State.deleteLens(user.id);
+        activeLensId = 'desk';
+        savePrefs();
+        KB.UI.toast('Lens deleted', 'info', 'Undo', KB.UI.undoAction);
+        renderMyDesk();
+      });
+    }
+
+    var groups = KB.Core.Lenses.applyLensGrouped(KB.State.data(), lens, now);
+    if (groups.length === 0) {
+      el.appendChild(emptyNote('No cards match this lens.'));
+      return;
+    }
+    groups.forEach(function (group) {
+      var label = group.key;
+      if (lens.display.groupBy === 'board') label = boardName(group.key) || group.key;
+      if (lens.display.groupBy === 'priority') label = String(group.key).toUpperCase();
+      var items = group.items.map(function (result) {
+        var column = null;
+        var board = KB.State.boardById(result.boardId);
+        if (board) column = board.columns.find(function (c) { return c.id === result.columnId; }) || null;
+        if (!column) return null;
+        return compactCard(result.boardId, column, result.card);
+      }).filter(Boolean);
+      el.appendChild(section(label, items.length > 0 ? items : [emptyNote('Nothing here.')]));
+    });
+  }
+
+  function currentBoardLensDefinition(name) {
+    var filters = KB.Filters.read();
+    var board = KB.State.activeBoard();
+    return {
+      name: name,
+      scope: 'active-board',
+      boardIds: [],
+      query: {
+        search: filters.search || '',
+        labelIds: filters.labels ? Array.from(filters.labels) : [],
+        assignees: filters.assignee ? [filters.assignee] : [],
+        due: filters.due ? filters.due : 'any',
+        priorities: filters.priority ? [filters.priority] : [],
+        sizes: filters.size ? [filters.size] : [],
+        flowStates: filters.flowStates || [],
+        blockedOnly: false,
+        readyOnly: filters.readyOnly,
+        columnRoles: [],
+        includeCompleted: true
+      },
+      sort: { field: KB.Filters.sortModeValue(), direction: 'desc' },
+      display: { density: 'comfortable', groupBy: 'board' }
+    };
   }
 
   // ---------------- Review ----------------
