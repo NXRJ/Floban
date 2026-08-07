@@ -822,6 +822,17 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await waitFor(() => !!document.querySelector('#cf-title'), 3000, 'editor reopens after escape');
   const escapeKept = await page.evaluate(() => document.querySelector('#cf-title').value);
   check('escape on create confirm keeps the typed title', escapeKept === 'Editor cancel probe editor 2');
+
+  await clickByText('.modal-actions .btn', 'Save');
+  await waitFor(() => [...document.querySelectorAll('.modal-actions .btn')].some(b => b.textContent.trim() === 'Confirm move'), 3000, 'create confirm dialog 3');
+  await page.evaluate(() => {
+    const backdrop = document.querySelector('.modal-backdrop');
+    if (backdrop) backdrop.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  });
+  await waitFor(() => !!document.querySelector('#cf-title'), 3000, 'editor reopens after backdrop click');
+  const backdropKept = await page.evaluate(() => document.querySelector('#cf-title').value);
+  check('backdrop click on create confirm keeps the typed title', backdropKept === 'Editor cancel probe editor 2');
+
   await clickByText('.modal-actions .btn', 'Cancel');
   await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'editor closes');
   const editorCancelled = await page.evaluate(() => {

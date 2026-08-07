@@ -4,6 +4,10 @@
 
   var overlay = null;
   var trigger = null;
+  // Fired once by close() after teardown so a modal can react to being
+  // dismissed through ANY path (Cancel button, Escape, backdrop click).
+  // moveConfirmModal uses it to run onCancel while suppressing it on
+  // confirm. Cleared before firing so close() never re-fires a hook.
   var closeHook = null;
 
   function onKey(e) {
