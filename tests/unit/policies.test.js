@@ -195,3 +195,30 @@ test('WIP counts are not exceeded when under the limit', () => {
   assert.ok(!result.violations.some(v => v.code === 'wip-limit'));
 });
 
+
+test('pendingCount models cards beyond the first: exact-fill batches pass', () => {
+  const s = state();
+  const col = s.boards[0].columns[1];
+  col.wipLimit = 5;
+  col.policy.wipMode = 'hard';
+  col.cards = [{ id: 'x1' }, { id: 'x2' }, { id: 'x3' }];
+  const exact = Policies.evaluateMovePolicy(s, cardRef, { boardId: 'board-1', columnId: 'col-b' }, { sourceColumn: null, pendingCount: 1 });
+  assert.equal(exact.allowed, true);
+  assert.equal(exact.requiresConfirmation, false);
+  assert.deepEqual(exact.violations, []);
+  const over = Policies.evaluateMovePolicy(s, cardRef, { boardId: 'board-1', columnId: 'col-b' }, { sourceColumn: null, pendingCount: 2 });
+  assert.equal(over.allowed, false);
+  assert.equal(over.requiresConfirmation, true);
+  assert.equal(over.blocking, true);
+});
+
+test('a single card that exactly fills an empty limit column passes', () => {
+  const s = state();
+  const col = s.boards[0].columns[1];
+  col.wipLimit = 1;
+  col.policy.wipMode = 'hard';
+  col.cards = [];
+  const result = Policies.evaluateMovePolicy(s, cardRef, { boardId: 'board-1', columnId: 'col-b' }, { sourceColumn: null, pendingCount: 0 });
+  assert.equal(result.allowed, true);
+  assert.equal(result.requiresConfirmation, false);
+});

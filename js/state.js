@@ -494,18 +494,23 @@
     return { changed: true, state: next, value: result.value };
   }
 
-  function evaluateCreate(columnId, pendingCount) {
+  function evaluateCreate(columnId, incomingCount) {
     var board = activeBoard();
     var column = findColumn(columnId);
     if (!board || !column) return null;
+    // The evaluator counts the incoming card implicitly (breach when
+    // count >= limit), so pass only the cards BEYOND the first one:
+    // a batch of N cards over a column with c cards breaches exactly
+    // when c + N > limit.
+    var extraCards = Math.max(0, (incomingCount || 0) - 1);
     return KB.Core.Policies.evaluateMovePolicy(data(), { boardId: board.id, cardId: '' }, { boardId: board.id, columnId: columnId }, {
       sourceColumn: null,
-      pendingCount: Math.max(0, pendingCount || 0)
+      pendingCount: extraCards
     });
   }
 
-  function createNeedsConfirmation(columnId, pendingCount) {
-    var evaluation = evaluateCreate(columnId, pendingCount);
+  function createNeedsConfirmation(columnId, incomingCount) {
+    var evaluation = evaluateCreate(columnId, incomingCount);
     if (!evaluation) return null;
     if (!evaluation.allowed || evaluation.requiresConfirmation) return evaluation;
     return null;

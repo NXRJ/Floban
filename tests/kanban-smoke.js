@@ -719,18 +719,39 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await page.evaluate(() => KB.App.refresh());
 
   // ---- Multi-line quick-add pre-flights the whole batch ----
-  const atomicSetup = await page.evaluate(() => {
+  const batchSetup = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col1 = board.columns[0];
+    const count = col1.cards.length;
+    KB.State.updateColumn(col1.id, { wipLimit: count + 2, policy: { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' } });
+    KB.App.refresh();
+    return { count: count };
+  });
+
+  // A batch that exactly fills the WIP limit creates without confirmation
+  await page.$eval('.column:nth-child(1) .qa-input', (el) => { el.value = 'Exact A\nExact B'; el.focus(); });
+  await page.keyboard.press('Enter');
+  const exactLanded = await waitFor(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    const col = board.columns[0];
+    return col.cards.some(c => c.title === 'Exact A') && col.cards.some(c => c.title === 'Exact B');
+  }, 3000, 'exact fill lands');
+  check('exact-fill batch creates without confirmation', exactLanded === true);
+  check('exact-fill batch shows no dialog', (await page.$('.modal-panel')) === null);
+
+  // A batch that exceeds the limit by one requires confirmation
+  await page.evaluate(() => {
     const board = KB.State.activeBoard();
     const col1 = board.columns[0];
     const count = col1.cards.length;
     KB.State.updateColumn(col1.id, { wipLimit: count + 1, policy: { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' } });
     KB.App.refresh();
-    return { count: count };
   });
   await page.$eval('.column:nth-child(1) .qa-input', (el) => { el.value = 'Atomic A\nAtomic B'; el.focus(); });
   await page.keyboard.press('Enter');
   await waitFor(() => [...document.querySelectorAll('.modal-actions .btn')].some(b => b.textContent.trim() === 'Confirm move'), 3000, 'batch override dialog');
-  check('multi-line quick-add pre-flights the whole batch', (await page.$$eval('.modal-actions .btn', els => els.map(e => e.textContent.trim()))).includes('Confirm move') === true);
+  check('over-by-one batch requires confirmation', (await page.$$eval('.modal-actions .btn', els => els.map(e => e.textContent.trim()))).includes('Confirm move') === true);
   await page.evaluate(() => {
     const btn = [...document.querySelectorAll('.modal-actions .btn')].find(b => b.textContent.trim() === 'Confirm move');
     if (btn) btn.click();
