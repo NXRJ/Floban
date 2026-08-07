@@ -49,12 +49,23 @@
       due: KB.el('due-filter').value,
       priority: KB.el('priority-filter').value,
       size: KB.el('size-filter').value,
-      flowStates: KB.el('flow-filter').value ? [KB.el('flow-filter').value] : []
+      flowStates: KB.el('flow-filter').value ? [KB.el('flow-filter').value] : [],
+      readyOnly: KB.el('ready-filter') ? KB.el('ready-filter').checked : false,
+      blockedOnly: KB.el('depblocked-filter') ? KB.el('depblocked-filter').checked : false
     };
   }
 
   function matches(card, filters) {
-    return Core.matchesCard(card, filters, { today: todayISO(), weekEnd: weekISO() });
+    if (!Core.matchesCard(card, filters, { today: todayISO(), weekEnd: weekISO() })) return false;
+    if (filters.readyOnly || filters.blockedOnly) {
+      var board = KB.State.activeBoard();
+      if (!board) return false;
+      var ref = { boardId: board.id, cardId: card.id };
+      var unresolved = KB.Core.Relations.getUnresolvedBlockers(KB.State.data(), ref);
+      if (filters.blockedOnly && unresolved.length === 0) return false;
+      if (filters.readyOnly && unresolved.length > 0) return false;
+    }
+    return true;
   }
 
   function active(filters) {

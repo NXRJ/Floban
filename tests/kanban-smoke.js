@@ -433,6 +433,71 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   check('undo restores flow state', flowUndone === 'normal');
 
+  // ---- Dependencies and ready-to-pull ----
+  const depResult = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    const a = KB.State.addCard(col.id, { title: 'Dep target' });
+    const b = KB.State.addCard(col.id, { title: 'Dep blocker' });
+    const linked = KB.State.addBlocker(board.id, a.id, board.id, b.id);
+    const cycle = KB.State.addBlocker(board.id, b.id, board.id, a.id);
+    const dup = KB.State.addBlocker(board.id, a.id, board.id, b.id);
+    KB.App.refresh();
+    return {
+      targetId: a.id,
+      blockerId: b.id,
+      linked: Boolean(linked),
+      cycleReason: cycle.reason,
+      dupReason: dup.reason,
+      blockedCount: KB.Core.Relations.getUnresolvedBlockers(KB.State.data(), { boardId: board.id, cardId: a.id }).length
+    };
+  });
+  await sleep(200);
+  check('addBlocker links dependencies', depResult.linked && depResult.blockedCount === 1);
+  check('dependency cycle is rejected', depResult.cycleReason === 'dependency-cycle');
+  check('duplicate dependency is rejected', depResult.dupReason === 'duplicate');
+  check('dependency blocked badge renders', await page.$eval('.column .card .chip.dep.dep-blocked', el => el.textContent.includes('BLOCKER')));
+
+  await page.evaluate((ids) => {
+    const board = KB.State.activeBoard();
+    const doneCol = board.columns.find(c => c.role === 'done');
+    KB.State.moveCard(board.columns[0].id, ids.blockerId, doneCol.id, 0);
+    KB.App.refresh();
+  }, depResult);
+  await sleep(150);
+  const ready = await page.evaluate((ids) => {
+    const board = KB.State.activeBoard();
+    return KB.Core.Relations.isReadyToPull(KB.State.data(), { boardId: board.id, cardId: ids.targetId });
+  }, depResult);
+  check('completing a blocker makes the target ready', ready === true);
+  check('ready badge renders', await page.$eval('.column .card .chip.dep.dep-ready', el => el.textContent.trim() === 'READY'));
+
+  await page.evaluate(() => KB.State.undo());
+  const depReopened = await page.evaluate((ids) => {
+    const board = KB.State.activeBoard();
+    return KB.Core.Relations.isReadyToPull(KB.State.data(), { boardId: board.id, cardId: ids.targetId });
+  }, depResult);
+  check('undoing completion blocks again', depReopened === false);
+
+  await page.evaluate((ids) => {
+    const board = KB.State.activeBoard();
+    KB.State.removeBlocker(board.id, ids.targetId, board.id, ids.blockerId);
+  });
+  const unlinked = await page.evaluate((ids) => {
+    const board = KB.State.activeBoard();
+    return KB.Core.Relations.getUnresolvedBlockers(KB.State.data(), { boardId: board.id, cardId: ids.targetId }).length;
+  }, depResult);
+  check('removeBlocker unlinks', unlinked === 0);
+
+  await page.select('#ready-filter', '');
+  await page.$eval('#ready-filter', (el) => { el.checked = true; });
+  await page.evaluate(() => KB.App.refresh());
+  await sleep(150);
+  check('ready-only filter hides blocked cards', await page.$$eval('.column .card', els => els.every(el => !el.querySelector('.chip.dep.dep-blocked'))));
+  await page.$eval('#ready-filter', (el) => { el.checked = false; });
+  await page.evaluate(() => KB.App.refresh());
+  await sleep(150);
+
   // ---- Lifecycle fields follow role-based moves ----
   await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));

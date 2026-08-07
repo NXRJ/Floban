@@ -481,27 +481,39 @@
   }
 
   function addBlocker(targetBoardId, targetCardId, blockerBoardId, blockerCardId) {
-    return commit(function (current) {
-      return KB.Core.Relations.addBlocker(current, { boardId: targetBoardId, cardId: targetCardId }, { boardId: blockerBoardId, cardId: blockerCardId });
+    var result = null;
+    commit(function (current) {
+      result = KB.Core.Relations.addBlocker(current, { boardId: targetBoardId, cardId: targetCardId }, { boardId: blockerBoardId, cardId: blockerCardId });
+      return result;
     });
+    return { changed: result.changed, value: result.value, reason: result.reason };
   }
 
   function removeBlocker(targetBoardId, targetCardId, blockerBoardId, blockerCardId) {
-    return commit(function (current) {
-      return KB.Core.Relations.removeBlocker(current, { boardId: targetBoardId, cardId: targetCardId }, { boardId: blockerBoardId, cardId: blockerCardId });
+    var result = null;
+    commit(function (current) {
+      result = KB.Core.Relations.removeBlocker(current, { boardId: targetBoardId, cardId: targetCardId }, { boardId: blockerBoardId, cardId: blockerCardId });
+      return result;
     });
+    return { changed: result.changed, value: result.value, reason: result.reason };
   }
 
   function addRelated(leftBoardId, leftCardId, rightBoardId, rightCardId) {
-    return commit(function (current) {
-      return KB.Core.Relations.addRelated(current, { boardId: leftBoardId, cardId: leftCardId }, { boardId: rightBoardId, cardId: rightCardId });
+    var result = null;
+    commit(function (current) {
+      result = KB.Core.Relations.addRelated(current, { boardId: leftBoardId, cardId: leftCardId }, { boardId: rightBoardId, cardId: rightCardId });
+      return result;
     });
+    return { changed: result.changed, value: result.value, reason: result.reason };
   }
 
   function removeRelated(leftBoardId, leftCardId, rightBoardId, rightCardId) {
-    return commit(function (current) {
-      return KB.Core.Relations.removeRelated(current, { boardId: leftBoardId, cardId: leftCardId }, { boardId: rightBoardId, cardId: rightCardId });
+    var result = null;
+    commit(function (current) {
+      result = KB.Core.Relations.removeRelated(current, { boardId: leftBoardId, cardId: leftCardId }, { boardId: rightBoardId, cardId: rightCardId });
+      return result;
     });
+    return { changed: result.changed, value: result.value, reason: result.reason };
   }
 
   function setActiveBoard(id) {

@@ -80,6 +80,27 @@
     return chip;
   }
 
+  function dependencyChip(card, column) {
+    var blockers = card.dependencies && card.dependencies.blockers ? card.dependencies.blockers : [];
+    if (blockers.length === 0) return null;
+    var board = KB.State.activeBoard();
+    if (!board) return null;
+    var ref = { boardId: board.id, cardId: card.id };
+    var unresolved = KB.Core.Relations.getUnresolvedBlockers(KB.State.data(), ref);
+    var chip = h('span', {
+      class: 'chip chip-static dep' + (unresolved.length > 0 ? ' dep-blocked' : ' dep-ready'),
+      title: unresolved.length > 0
+        ? unresolved.length + ' unresolved blocker' + (unresolved.length === 1 ? '' : 's')
+        : 'All blockers complete'
+    });
+    if (unresolved.length > 0) {
+      chip.textContent = unresolved.length + ' BLOCKER' + (unresolved.length === 1 ? '' : 'S');
+    } else {
+      chip.textContent = 'READY';
+    }
+    return chip;
+  }
+
   function flowChip(card) {
     var flow = card.flow;
     if (!flow || flow.state === 'normal') return null;
@@ -151,6 +172,8 @@
     if (sz) meta.appendChild(sz);
     var fl = flowChip(card);
     if (fl) meta.appendChild(fl);
+    var dep = dependencyChip(card, column);
+    if (dep) meta.appendChild(dep);
     card.labels.forEach(function (id) {
       var label = KB.State.findLabel(id);
       if (label) meta.appendChild(staticChip(label));
