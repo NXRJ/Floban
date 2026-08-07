@@ -390,6 +390,53 @@
 
     refreshRelations();
 
+    if (isEdit) {
+      var activityBox = h('div', { class: 'activity-box' });
+      activityBox.appendChild(h('span', { class: 'check-editor-title', textContent: 'Activity' }));
+      var list = h('div', { class: 'activity-list' });
+      activityBox.appendChild(list);
+
+      function fmtDateTime(ts) {
+        return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      }
+
+      function row(text, at) {
+        var item = h('div', { class: 'activity-row' });
+        var label = h('span', { class: 'activity-label' });
+        label.textContent = text;
+        var time = h('span', { class: 'activity-time' });
+        time.textContent = at !== null && at !== undefined ? fmtDateTime(at) : '';
+        item.appendChild(label);
+        item.appendChild(h('span', { class: 'spacer' }));
+        item.appendChild(time);
+        return item;
+      }
+
+      var events = [];
+      events.push({ text: 'Created', at: card.createdAt });
+      (card.flow && card.flow.periods || []).forEach(function (period) {
+        var label = String(period.state).charAt(0).toUpperCase() + String(period.state).slice(1);
+        events.push({ text: label, at: period.startedAt });
+        events.push({ text: label + ' ended', at: period.endedAt });
+      });
+      (card.transitions || []).forEach(function (transition) {
+        events.push({ text: 'Moved to ' + transition.toRole, at: transition.at });
+      });
+      if (card.startedAt) events.push({ text: 'Started', at: card.startedAt });
+      if (card.completedAt) events.push({ text: 'Completed', at: card.completedAt });
+      if (card.recurrenceId) events.push({ text: 'Recurrence-created', at: card.createdAt });
+      events.sort(function (a, b) { return (a.at || 0) - (b.at || 0); });
+      events.slice(-30).forEach(function (event) {
+        list.appendChild(row(event.text, event.at));
+      });
+      if (events.length === 0) {
+        var none = h('p', { class: 'form-hint' });
+        none.textContent = 'No activity recorded yet.';
+        list.appendChild(none);
+      }
+      form.appendChild(fieldBlock('', activityBox));
+    }
+
     var recSection = h('div', { class: 'rel-section' });
     recSection.appendChild(h('span', { class: 'check-editor-title', textContent: 'Recurrence' }));
     if (isEdit && card.recurrenceId) {

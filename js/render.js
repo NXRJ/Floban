@@ -127,10 +127,27 @@
     var days = KB.Core.Date.ageInDays(card.movedAt, Date.now());
     if (days < 1) return null;
     var chip = h('span', { class: 'chip chip-static aging' });
+    var risk = sleRisk(card, days);
+    if (risk) chip.classList.add(risk);
     chip.innerHTML = icon('clock');
     chip.appendChild(document.createTextNode(days + 'D'));
-    chip.title = 'In this column for ' + days + (days === 1 ? ' day' : ' days');
+    var title = 'In this column for ' + days + (days === 1 ? ' day' : ' days');
+    if (risk === 'aging-risk') title += ' — beyond SLE';
+    else if (risk === 'aging-warning') title += ' — approaching SLE';
+    chip.title = title;
     return chip;
+  }
+
+  function sleRisk(card, ageDays) {
+    var board = KB.State.activeBoard();
+    if (!board) return '';
+    var sle = KB.Core.Metrics.calculateSle(board);
+    if (sle.sleDays === null || sle.sleDays <= 0) return '';
+    var ratio = ageDays / sle.sleDays;
+    if (ratio >= 1) return 'aging-risk';
+    if (ratio >= 0.8) return 'aging-warning';
+    if (ratio >= 0.5) return 'aging-visible';
+    return '';
   }
 
   function checklistProgress(card) {
