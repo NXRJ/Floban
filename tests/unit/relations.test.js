@@ -277,3 +277,55 @@ test('addRelated with a missing card on either side returns card-not-found', () 
   assert.equal(result.changed, false);
   assert.equal(result.reason, 'card-not-found');
 });
+
+test('an archived completed blocker counts as resolved', () => {
+  const s = state();
+  const moved = s.boards[0].columns[0].cards[1];
+  s.boards[0].columns[0].cards.splice(1, 1);
+  moved.archivedAt = 100;
+  moved.completedAt = 200;
+  s.boards[0].archive.cards.push(moved);
+  const a = Relations.addBlocker(s, ref('board-1', 'c1'), ref('board-1', 'c2'));
+  assert.equal(Relations.getUnresolvedBlockers(a.state, ref('board-1', 'c1')).length, 0);
+  assert.equal(Relations.isReadyToPull(a.state, ref('board-1', 'c1')), true);
+});
+
+test('an archived blocker without completion still blocks dependents', () => {
+  const s = state();
+  s.boards[0].archive.cards = [Object.assign({}, s.boards[0].columns[0].cards[1], { archivedAt: 100, completedAt: null })];
+  const a = Relations.addBlocker(s, ref('board-1', 'c1'), ref('board-1', 'c2'));
+  assert.equal(Relations.getUnresolvedBlockers(a.state, ref('board-1', 'c1')).length, 1);
+  assert.equal(Relations.isReadyToPull(a.state, ref('board-1', 'c1')), false);
+});
+
+test('resolvedIndex marks archived completed blockers', () => {
+  const s = state();
+  s.boards[0].archive.cards = [{ id: 'arch-done', completedAt: 100 }];
+  s.boards[0].archive.columns = [{ id: 'arch-col', cards: [{ id: 'arch-col-done', completedAt: 300 }, { id: 'arch-col-open', completedAt: null }] }];
+  const index = Relations.resolvedIndex(s);
+  assert.equal(index['board-1:arch-done'], true);
+  assert.equal(index['board-1:arch-col-done'], true);
+  assert.equal(index['board-1:arch-col-open'], undefined);
+});
+
+test('purgeArchiveColumn strips every nested card reference in one transaction', () => {
+  const s = state();
+  s.boards[0].archive.columns = [{ id: 'ghost-col', title: 'Ghost', cards: [
+    { id: 'gc1', completedAt: 100 },
+    { id: 'gc2', completedAt: null }
+  ] }];
+  s.recurrences = [{ id: 'rec-1', enabled: true, activeCardRef: ref('board-1', 'gc2'), target: { boardId: 'board-1', columnId: 'col-a' } }];
+  const a = Relations.addBlocker(s, ref('board-1', 'c1'), ref('board-1', 'gc1'));
+  const result = Relations.purgeArchiveColumn(a.state, 'board-1', 'ghost-col');
+  assert.equal(result.changed, true);
+  assert.equal(result.state.boards[0].archive.columns.length, 0);
+  assert.deepEqual(result.state.boards[0].columns[0].cards[0].dependencies.blockers, []);
+  assert.equal(result.state.recurrences[0].activeCardRef, null);
+});
+
+test('purgeArchiveColumn on a missing column is a clean no-op', () => {
+  const s = state();
+  const result = Relations.purgeArchiveColumn(s, 'board-1', 'ghost-col');
+  assert.equal(result.changed, false);
+  assert.equal(result.reason, 'column-not-found');
+});

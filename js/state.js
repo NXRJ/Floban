@@ -386,13 +386,15 @@
     });
   }
 
-  function moveCard(columnId, cardId, targetColumnId, toIndex) {
+  function moveCard(columnId, cardId, targetColumnId, toIndex, opts) {
     return commit(function (current) {
       return KB.Core.Operations.moveCard(current, {
         columnId: columnId,
         cardId: cardId,
         targetColumnId: targetColumnId,
-        toIndex: toIndex
+        toIndex: toIndex,
+        confirmed: opts && opts.confirmed,
+        overrideReason: opts && opts.overrideReason
       }, deps());
     });
   }
@@ -414,7 +416,7 @@
     var evaluation = evaluateMove(columnId, cardId, targetColumnId, opts);
     if (!evaluation) return { ok: false, reason: 'move-unavailable' };
     if (!evaluation.allowed) return { ok: false, reason: 'policy', evaluation: evaluation };
-    var value = moveCard(columnId, cardId, targetColumnId, toIndex);
+    var value = moveCard(columnId, cardId, targetColumnId, toIndex, opts);
     if (value === null) return { ok: false, reason: 'move-failed' };
     return { ok: true, value: value };
   }
@@ -460,12 +462,6 @@
       if (!source) return { changed: false, state: current, value: null, reason: 'card-not-found' };
       var target = targetBoard.columns.find(function (c) { return c.id === targetColumnId; });
       if (!target) return { changed: false, state: current, value: null, reason: 'column-not-found' };
-      var evaluation = KB.Core.Policies.evaluateMovePolicy(current, { boardId: boardId, cardId: cardId }, { boardId: targetBoardId, columnId: targetColumnId }, {
-        sourceColumn: source,
-        confirmed: opts && opts.confirmed,
-        overrideReason: opts && opts.overrideReason
-      });
-      if (!evaluation.allowed) return { changed: false, state: current, value: null, reason: 'policy', evaluation: evaluation };
       var next = JSON.parse(JSON.stringify(current));
       var nextBoard = next.boards.find(function (b) { return b.id === boardId; });
       var nextTargetBoard = next.boards.find(function (b) { return b.id === targetBoardId; });
@@ -474,17 +470,17 @@
       });
       var nextTarget = nextTargetBoard.columns.find(function (c) { return c.id === targetColumnId; });
       var index = nextSource.cards.findIndex(function (c) { return c.id === cardId; });
-      var card = nextSource.cards.splice(index, 1)[0];
-      var lifecycle = KB.Core.Lifecycle.transitionCard(card, source, target, now());
-      card = lifecycle.card;
-      card.columnId = targetColumnId;
-      if (opts && Array.isArray(opts.labelMapping)) {
-        card.labels = opts.labelMapping.slice();
+      var card = nextSource.cards[index];
+      var result = KB.Core.Pipeline.placeCard(next, card, nextSource, nextTargetBoard, nextTarget, {
+        toIndex: typeof toIndex === 'number' ? toIndex : undefined,
+        labelMapping: opts && opts.labelMapping,
+        confirmed: opts && opts.confirmed,
+        overrideReason: opts && opts.overrideReason
+      }, deps());
+      if (!result.changed) {
+        return { changed: false, state: current, value: null, reason: result.reason, evaluation: result.evaluation };
       }
-      card = KB.Core.Policies.applyEntryDefaults(card, target);
-      var toIndex2 = Math.max(0, Math.min(typeof toIndex === 'number' ? toIndex : nextTarget.cards.length, nextTarget.cards.length));
-      nextTarget.cards.splice(toIndex2, 0, card);
-      return { changed: true, state: next, value: card };
+      return { changed: true, state: next, value: result.value };
     });
   }
 
@@ -501,7 +497,7 @@
       });
       if (!evaluation.allowed) return { ok: false, reason: 'policy', evaluation: evaluation };
     }
-    return { ok: true, value: restoreCard(cardId) };
+    return { ok: true, value: restoreCard(cardId, opts) };
   }
 
   function archiveCard(columnId, cardId, boardId) {
@@ -581,9 +577,13 @@
     });
   }
 
-  function restoreCard(cardId) {
+  function restoreCard(cardId, opts) {
     return commit(function (current) {
-      return KB.Core.Operations.restoreCard(current, { cardId: cardId }, deps());
+      return KB.Core.Operations.restoreCard(current, {
+        cardId: cardId,
+        confirmed: opts && opts.confirmed,
+        overrideReason: opts && opts.overrideReason
+      }, deps());
     });
   }
 
@@ -607,13 +607,10 @@
   }
 
   function purgeColumn(columnId) {
-    var board = activeBoard();
-    var index = board.archive.columns.findIndex(function (c) { return c.id === columnId; });
-    if (index === -1) return false;
-    pushHistory();
-    board.archive.columns.splice(index, 1);
-    save();
-    return true;
+    return commit(function (current) {
+      var board = activeBoard();
+      return KB.Core.Relations.purgeArchiveColumn(current, board.id, columnId);
+    });
   }
 
   function addLabel(name, color, boardId) {
@@ -800,9 +797,12 @@
   }
 
   function runRecurrenceNow(recurrenceId) {
-    return commit(function (current) {
-      return KB.Core.Recurrence.runNow(current, recurrenceId, deps());
+    var result = null;
+    commit(function (current) {
+      result = KB.Core.Recurrence.runNow(current, recurrenceId, deps());
+      return result;
     });
+    return result;
   }
 
   function skipRecurrenceNext(recurrenceId) {
@@ -860,10 +860,13 @@
     });
   }
 
-  function triageInboxItem(id, target, cardPatch) {
-    return commit(function (current) {
-      return KB.Core.Inbox.triageInboxItem(current, id, target, cardPatch, deps());
+  function triageInboxItem(id, target, cardPatch, opts) {
+    var result = null;
+    commit(function (current) {
+      result = KB.Core.Inbox.triageInboxItem(current, id, target, cardPatch, deps(), opts);
+      return result;
     });
+    return result;
   }
 
   function convertInboxToRecurrence(inboxId, definition) {
@@ -942,6 +945,18 @@
   function bulkUpdate(cardRefs, patch) {
     return wrapResult(function (current) {
       return KB.Core.Bulk.bulkUpdate(current, cardRefs, patch, deps());
+    })();
+  }
+
+  function bulkSetLabels(entries) {
+    return wrapResult(function (current) {
+      return KB.Core.Bulk.bulkSetLabels(current, entries, deps());
+    })();
+  }
+
+  function bulkSetFlow(entries) {
+    return wrapResult(function (current) {
+      return KB.Core.Bulk.bulkSetFlow(current, entries, deps());
     })();
   }
 
@@ -1075,6 +1090,8 @@
     lenses: lenses,
     bulkMove: bulkMove,
     bulkUpdate: bulkUpdate,
+    bulkSetLabels: bulkSetLabels,
+    bulkSetFlow: bulkSetFlow,
     bulkArchive: bulkArchive,
     setTheme: setTheme,
     exportAll: exportAll,

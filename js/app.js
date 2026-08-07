@@ -275,7 +275,7 @@
       if (onDone) onDone();
       return;
     }
-    if (evaluation.allowed) {
+    if (evaluation.allowed && !evaluation.requiresConfirmation) {
       var moved = KB.State.moveCardChecked(fromColumnId, cardId, toColumnId, toIndex);
       afterCardMove(moved);
       if (moved && moved.ok && KB.MoveTo.announce) {
@@ -298,12 +298,8 @@
   }
 
   function afterCardMove(moved) {
-    if (moved && moved.ok && moved.value && moved.value.recurrenceId && moved.value.completedAt !== null) {
-      var board = KB.State.activeBoard();
-      if (board) {
-        KB.State.handleCardCompleted(board.id, moved.value.id);
-        KB.App.refresh();
-      }
+    if (moved && moved.ok) {
+      KB.App.refresh();
     }
   }
 

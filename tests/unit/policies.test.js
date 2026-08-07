@@ -61,6 +61,8 @@ test('soft WIP warns but does not block', () => {
   const result = Policies.evaluateMovePolicy(s, cardRef, { boardId: 'board-1', columnId: 'col-b' });
   assert.equal(result.allowed, true);
   assert.equal(result.requiresOverride, false);
+  assert.equal(result.requiresConfirmation, true);
+  assert.equal(result.blocking, false);
   assert.ok(result.violations.some(v => v.code === 'wip-limit'));
 });
 
@@ -71,6 +73,8 @@ test('hard WIP requires an override', () => {
   const result = Policies.evaluateMovePolicy(s, cardRef, { boardId: 'board-1', columnId: 'col-b' });
   assert.equal(result.allowed, false);
   assert.equal(result.requiresOverride, true);
+  assert.equal(result.requiresConfirmation, true);
+  assert.equal(result.blocking, true);
 });
 
 test('hard WIP allows an override with a valid reason', () => {

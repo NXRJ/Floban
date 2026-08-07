@@ -90,6 +90,8 @@
         return {
           allowed: false,
           requiresOverride: false,
+          requiresConfirmation: false,
+          blocking: false,
           needsReason: false,
           violations: [{ code: 'column-not-found', message: 'Target column not found.' }]
         };
@@ -97,11 +99,14 @@
 
       var violations = [];
       var requiresOverride = false;
+      var requiresConfirmation = false;
 
       if (sourceColumn && target && sourceColumn.id === target.id) {
         return {
           allowed: true,
           requiresOverride: false,
+          requiresConfirmation: false,
+          blocking: false,
           needsReason: false,
           violations: []
         };
@@ -109,8 +114,13 @@
 
       var wip = wipViolation(target);
       if (wip) {
-        violations.push({ code: 'wip-limit', message: wip.message });
-        if (wip.mode === 'hard') requiresOverride = true;
+        violations.push({ code: 'wip-limit', message: wip.message, mode: wip.mode });
+        if (wip.mode === 'hard') {
+          requiresOverride = true;
+          requiresConfirmation = true;
+        } else if (wip.mode === 'soft') {
+          requiresConfirmation = true;
+        }
       }
 
       var targetPolicy = target.policy || {};
@@ -121,6 +131,7 @@
           criteria: targetPolicy.entryCriteria.slice()
         });
         requiresOverride = true;
+        requiresConfirmation = true;
       }
 
       if (sourceColumn) {
@@ -132,6 +143,7 @@
             criteria: sourcePolicy.exitCriteria.slice()
           });
           requiresOverride = true;
+          requiresConfirmation = true;
         }
       }
 
@@ -144,6 +156,8 @@
       return {
         allowed: allowed,
         requiresOverride: requiresOverride,
+        requiresConfirmation: requiresConfirmation,
+        blocking: requiresOverride,
         needsReason: needsReason,
         violations: violations
       };
@@ -161,15 +175,17 @@
         if (found) source = found.column;
       }
       if (!source) {
-        return { allowed: true, requiresOverride: false, needsReason: false, violations: [] };
+        return { allowed: true, requiresOverride: false, requiresConfirmation: false, blocking: false, needsReason: false, violations: [] };
       }
       var policy = source.policy || {};
       if (!Array.isArray(policy.exitCriteria) || policy.exitCriteria.length === 0) {
-        return { allowed: true, requiresOverride: false, needsReason: false, violations: [] };
+        return { allowed: true, requiresOverride: false, requiresConfirmation: false, blocking: false, needsReason: false, violations: [] };
       }
       return {
         allowed: false,
         requiresOverride: true,
+        requiresConfirmation: true,
+        blocking: true,
         needsReason: false,
         violations: [{ code: 'exit-criteria', message: 'Exit criteria for "' + source.title + '" need confirming.' }]
       };

@@ -140,7 +140,7 @@
         cardEl.focus();
       }
     };
-    if (evaluation.allowed) {
+    if (evaluation.allowed && !evaluation.requiresConfirmation) {
       var moved = KB.State.moveCardChecked(fromColumnId, cardId, toColumnId, toIndex);
       KB.App.afterCardMove(moved);
       finish(moved);
@@ -400,7 +400,7 @@
           : KB.State.moveCardTo(boardId, cardId, targetBoardId, targetColumnId, toIndex, opts);
         finish(moved);
       };
-      if (evaluation.allowed) {
+      if (evaluation.allowed && !evaluation.requiresConfirmation) {
         doMove();
       } else {
         KB.Modal.moveConfirmModal('Move requires confirmation', evaluation, '', function (reason) {

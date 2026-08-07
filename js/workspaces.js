@@ -149,7 +149,7 @@
           if (card.due && card.due >= todayISO && card.due <= weekEndISO) {
             sections.dueWeek.push({ boardId: board.id, column: column, card: card });
           }
-          if (unresolved.length === 0 && card.flow && card.flow.state !== 'blocked' && card.flow.state !== 'paused' && column.role !== 'backlog') {
+          if (column.role === 'queue' && unresolved.length === 0 && card.flow && card.flow.state === 'normal') {
             sections.ready.push({ boardId: board.id, column: column, card: card });
           }
         });
@@ -470,9 +470,10 @@
   function inboxBadge() {
     var badge = KB.el('inbox-badge');
     var items = KB.State.data().inbox ? KB.State.data().inbox.items : [];
-    if (items.length > 0) {
+    var open = items.filter(function (it) { return !it.archived; });
+    if (open.length > 0) {
       badge.hidden = false;
-      badge.textContent = items.length;
+      badge.textContent = open.length;
     } else {
       badge.hidden = true;
     }

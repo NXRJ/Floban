@@ -60,12 +60,22 @@ Your current workspace is remembered across reloads.
 - Every column has a **workflow role**: `backlog`, `queue`, `active` or `done`.
   Role is what drives lifecycle timestamps (see "Flow lifecycle" below).
 - **Column policies** (column `⋯` menu): WIP mode (off / soft warn / hard
-  override), WIP limit, entry and exit criteria, default labels and default
-  assignee on entry, and whether the column counts toward cycle time.
-- **WIP enforcement**: soft mode warns but never blocks; hard mode requires an
-  explicit confirmation (and optionally a reason) before a card can move in.
-  Every movement path — drag, move-to menu, keyboard move, bulk move, restore,
-  recurrence creation and inbox triage — runs the same policy evaluator.
+  override), WIP limit, entry and exit criteria, and default labels and default
+  assignee on entry.
+- **WIP enforcement**: soft mode warns before a move happens but never blocks —
+  the confirmation dialog offers "Move anyway". Hard mode requires an explicit
+  confirmation (and optionally a reason) before a card can move in. Every
+  movement and creation path — drag, move-to menu, keyboard move, bulk move,
+  restore, recurrence creation and inbox triage — runs the same policy
+  evaluator through one shared placement pipeline, so entry criteria, entry
+  defaults, lifecycle timestamps and after-completion scheduling behave
+  identically everywhere.
+- A **single placement pipeline** (`js/core/pipeline.js`) applies policy
+  checks, lifecycle transitions, entry defaults and the recurrence
+  after-completion side effect on every path that inserts a card into a column.
+  A recurrence created into a hard-WIP column is paused-but-retrying (surfaced
+  in the recurrence manager) rather than silently creating cards past the
+  limit.
 - **Collapse/expand** a column to a title bar with the chevron on the header.
 - Reorder columns by dragging a column header (drag from the title/grip area,
   not from the buttons).
@@ -131,8 +141,13 @@ Your current workspace is remembered across reloads.
 - Deleting a column archives the column together with its cards.
 - In the archive you can **Restore** items or **Delete forever** (both
   undoable via toast or Ctrl+Z). Deleting forever cleans up dependency
-  references to that card across all boards.
-- Archiving preserves relationships; restoring preserves them too.
+  references to that card across all boards; deleting an archived column
+  forever cleans up every reference to the cards nested inside it in the same
+  transaction.
+- Archiving preserves relationships; restoring preserves them too. A blocker
+  that was completed and then archived still counts as resolved — dependency
+  resolution uses the card's preserved `completedAt` — so dependents are not
+  blocked again by archived completed work.
 
 ### Search & filters
 - The search bar matches card **title and description** (case-insensitive).
@@ -151,6 +166,8 @@ Your current workspace is remembered across reloads.
   clears. A toolbar appears with: **Move…** (with policy confirmation),
   labels, assignee, due date, priority, size, flow state and **Archive**.
 - Bulk operations are atomic — one undo entry restores the whole selection.
+  Label and flow-state bulk changes are single transactions too (per-card
+  results are computed before one commit).
 
 ### Review workspace
 - A **flow summary** (WIP, completed 7/30d, median and 85th-percentile cycle
@@ -175,21 +192,39 @@ Your current workspace is remembered across reloads.
   the window regains focus, and on a 60-second timer while open. Processing is
   idempotent. The UI states clearly: *Scheduled work is created when this local
   app is open or next opened.*
+- Completing a recurring card schedules the next after-completion occurrence
+  inside the same transaction as the move — drag, move-to menu, cross-board
+  moves, bulk moves and restore all trigger it. If a column policy blocks an
+  occurrence (hard WIP, entry criteria), creation pauses without erroring and
+  the manager shows "waiting: a column policy blocks new cards" until the
+  policy no longer blocks.
 
 ### Inbox
 - Capture from the **Inbox** workspace or with the `I` shortcut: a title, a
   note, a URL, or several pasted lines. Safe `http(s)` URLs are detected;
   `javascript:`/`data:` URLs are never stored as links.
 - **Triage** turns an item into a card (board, column, due date, labels,
-  assignee, priority, size) in one atomic, undoable step. Items can also be
+  assignee, priority, size) in one atomic, undoable step, through the same
+  placement pipeline as moves — lifecycle timestamps, entry defaults and
+  column policies apply, and a policy-blocked triage asks for confirmation
+  before the item leaves the inbox. Items can also be
   **converted to a recurring definition**, **merged** into an existing card or
   archived as references.
 - The header badge and the workspace show triage pressure ("3 unprocessed ·
-  oldest: 2d").
+  oldest: 2d") — archived reference items are excluded from both the badge and
+  the pressure line.
 
 ### My Desk & lenses
 - Built-in lenses: Ready to Pull, Blocked, Waiting on Others, Aging, Due Soon,
   Overdue, No Due Date, Recently Completed, Needs Triage.
+- My Desk's default sections: **Blocked**, **Due this week**, **Active work**,
+  **Ready to pull** (queue-role columns, normal flow state, no unresolved
+  blockers), **Recently completed** (completed within 7 days).
+- Built-in lens semantics: **Aging** matches open work older than 7 days;
+  **Needs Triage** matches open cards that carry none of priority, size,
+  assignee or labels — i.e. cards that have never been through triage. The
+  **Blocked** lens includes both dependency-blocked and manually blocked
+  cards; **Ready to Pull** excludes both.
 - Save the current board view as a **lens** (search, labels, assignees, due,
   priority, size, flow state, ready-only, sort, grouping, density, scope).
 - Lens results are references to the original cards — editing a card from a
@@ -242,6 +277,7 @@ that use them.
 | Core | `js/core/lifecycle.js` | Card transitions: role-based `startedAt`/`completedAt`, capped transition log, flow-state periods, durations, cycle time and age. |
 | Core | `js/core/relations.js` | Cross-board blockers and related cards: cycle detection, derived readiness, reverse lookups, permanent-delete cleanup, indexed resolution for large boards. |
 | Core | `js/core/policies.js` | Column policy evaluation: WIP modes, entry/exit criteria, override reasons, entry defaults. |
+| Core | `js/core/pipeline.js` | The single card placement pipeline: policy check, lifecycle transition, entry defaults and the recurrence after-completion side effect run in one pass on every insertion path. |
 | Core | `js/core/metrics.js` | Throughput, cycle times, percentiles, SLE, WIP, review queue with ranked reasons, flow summaries, bottleneck explanations. |
 | Core | `js/core/recurrence.js` | Schedule computation, overlap and missed-run policies, occurrence creation, idempotent processing, pause/resume/end. |
 | Core | `js/core/inbox.js` | Capture (single/multi-line, safe URLs), update/delete, atomic triage, merge, pressure summary. |
@@ -284,7 +320,7 @@ State **version 3** (still stored under the key `kanban.board.v1`):
   recurrences: [ { id, enabled, mode, schedule, target, template, dueOffsetDays,
                    overlapPolicy, missedPolicy, activeCardRef, nextRunAt,
                    lastRunAt, lastCompletedAt, endAt, remainingOccurrences,
-                   pausedReason, createdAt, updatedAt } ],
+                   needsAttention, policyBlocked, pausedReason, createdAt, updatedAt } ],
   boards: [
     {
       id, name,
@@ -295,7 +331,8 @@ State **version 3** (still stored under the key `kanban.board.v1`):
         { id, title, role: 'backlog'|'queue'|'active'|'done', isDone, wipLimit,
           collapsed, policy: { wipMode, overrideRequiresReason, entryCriteria,
                                 exitCriteria, defaultLabelIds, defaultAssignee,
-                                countsTowardCycleTime }, cards: [ … ] }
+                                countsTowardCycleTime (reserved, unused) },
+          cards: [ … ] }
       ],
       archive: { cards: [ … ], columns: [ … ] }
     }
@@ -332,14 +369,20 @@ npm test           # unit tests first, then the end-to-end suite
   migration/normalization (v1/v2/v3, malformed payloads, reference
   independence), undo/redo, lifecycle, relations and cycle detection, policies,
   metrics and SLE, recurrence scheduling and idempotency, inbox triage
-  atomicity, lens evaluation, bulk operations, and performance budgets on
-  large deterministic fixtures (20 boards, 5,000 cards).
+  atomicity, lens evaluation, the placement pipeline (policy + defaults +
+  lifecycle + recurrence side effect), bulk operations, and performance
+  budgets on large deterministic fixtures (20 boards, 5,000 cards).
 - **End-to-end tests** (`tests/kanban-smoke.js`) validate the integrated
   application in Chromium: boot, rendering, keyboard and button wiring, modal
   workflows, drag/drop, localStorage persistence, theme, undo/redo, migration,
   corrupt-data resilience, import/export, markdown/XSS safety, priority/size,
   column roles, flow states, dependencies and ready-to-pull, policy
-  enforcement, review, recurrence, inbox, lenses, My Desk, move-to menu,
-  keyboard movement with live-region text, and multi-select bulk actions.
+  enforcement (including soft-WIP "Move anyway" and per-criterion
+  confirmation), recurrence, inbox triage through policies, archived
+  dependencies, lens semantics, My Desk, move-to menu, keyboard movement with
+  live-region text, multi-select bulk actions, and cross-feature composition
+  scenarios (recurring card → bulk move into a hard-WIP column → confirm →
+  completion recorded → next occurrence scheduled → one undo restores
+  everything).
 - The app itself still has no runtime dependencies and no build step.
   Puppeteer remains a development-only dependency.

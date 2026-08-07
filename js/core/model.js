@@ -162,6 +162,8 @@
         lastCompletedAt: null,
         endAt: null,
         remainingOccurrences: null,
+        needsAttention: false,
+        policyBlocked: false,
         pausedReason: '',
         createdAt: d.now(),
         updatedAt: d.now()

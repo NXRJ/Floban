@@ -711,15 +711,6 @@
     defaultAssigneeInput.value = isEdit && column.policy ? (column.policy.defaultAssignee || '') : '';
     form.appendChild(fieldBlock('Default assignee on entry', defaultAssigneeInput));
 
-    var cycleCheck = h('input', { type: 'checkbox', id: 'ce-cycle', 'aria-label': 'Counts toward cycle time' });
-    cycleCheck.checked = isEdit ? (column.policy && column.policy.countsTowardCycleTime === false ? false : true) : true;
-    var cycleLabel = h('label', { class: 'field check' });
-    var cycleText = h('span');
-    cycleText.textContent = 'Counts toward cycle time';
-    cycleLabel.appendChild(cycleCheck);
-    cycleLabel.appendChild(cycleText);
-    form.appendChild(cycleLabel);
-
     var actions = h('div', { class: 'modal-actions' });
     if (isEdit) {
       var deleteBtn = h('button', { type: 'button', class: 'btn danger' });
@@ -765,8 +756,7 @@
         defaultLabelIds: Array.prototype.map.call(defaultsBox.querySelectorAll('.chip.active'), function (chip) {
           return chip.dataset.id;
         }),
-        defaultAssignee: defaultAssigneeInput.value.trim(),
-        countsTowardCycleTime: cycleCheck.checked
+        defaultAssignee: defaultAssigneeInput.value.trim()
       };
       if (isEdit) {
         KB.State.updateColumn(columnId, { title: title, isDone: doneCheck.checked, role: roleInput.value, wipLimit: wipLimit, policy: policy });
@@ -984,13 +974,14 @@
     heading.textContent = title || 'Move requires confirmation';
     panel.appendChild(heading);
 
+    var soft = evaluation && evaluation.allowed === true;
     var violations = evaluation.violations || [];
     var criterionChecks = [];
     violations.forEach(function (violation) {
       var p = h('p', { class: 'policy-violation' });
       p.textContent = '\u25A2 ' + violation.message;
       panel.appendChild(p);
-      if (Array.isArray(violation.criteria) && violation.criteria.length > 0) {
+      if (!soft && Array.isArray(violation.criteria) && violation.criteria.length > 0) {
         violation.criteria.forEach(function (criterion) {
           var wrap = h('label', { class: 'field check' });
           var box = h('input', { type: 'checkbox', class: 'mv-criterion', 'aria-label': 'Confirm criterion' });
@@ -1006,7 +997,7 @@
 
     var reasonInput = null;
     var reasonWrap = null;
-    if (evaluation.needsReason) {
+    if (!soft && evaluation.needsReason) {
       reasonInput = h('input', { type: 'text', id: 'mv-reason', maxlength: 200, placeholder: 'Why is this override justified?', 'aria-label': 'Override reason' });
       reasonWrap = fieldBlock('Override reason', reasonInput);
       panel.appendChild(reasonWrap);
@@ -1019,20 +1010,22 @@
     cancelBtn.addEventListener('click', close);
     actions.appendChild(cancelBtn);
     var confirmBtn = h('button', { type: 'button', class: 'btn primary' });
-    confirmBtn.textContent = 'Confirm move';
+    confirmBtn.textContent = soft ? 'Move anyway' : 'Confirm move';
     confirmBtn.addEventListener('click', function () {
-      if (criterionChecks.length > 0 && !criterionChecks.every(function (box) { return box.checked; })) {
-        KB.UI.toast('Confirm every criterion to continue', 'error');
-        return;
-      }
-      var reason = reasonInput ? reasonInput.value.trim() : '';
-      if (evaluation.needsReason && !reason) {
-        KB.UI.toast('An override reason is required', 'error');
-        reasonInput.focus();
-        return;
+      if (!soft) {
+        if (criterionChecks.length > 0 && !criterionChecks.every(function (box) { return box.checked; })) {
+          KB.UI.toast('Confirm every criterion to continue', 'error');
+          return;
+        }
+        var reason = reasonInput ? reasonInput.value.trim() : '';
+        if (evaluation.needsReason && !reason) {
+          KB.UI.toast('An override reason is required', 'error');
+          reasonInput.focus();
+          return;
+        }
       }
       close();
-      onConfirm(reason);
+      onConfirm(soft ? '' : (reasonInput ? reasonInput.value.trim() : ''));
     });
     actions.appendChild(confirmBtn);
     panel.appendChild(actions);
@@ -1280,6 +1273,7 @@
         if (rec.endAt) bits.push('ends: ' + KB.Dom.fmtDate(rec.endAt));
         if (typeof rec.remainingOccurrences === 'number') bits.push(rec.remainingOccurrences + ' left');
         if (rec.needsAttention) bits.push('needs attention: target column missing');
+        if (rec.policyBlocked) bits.push('waiting: a column policy blocks new cards');
         meta.textContent = bits.join(' \u00B7 ');
         main.appendChild(meta);
         if (rec.pausedReason) {
@@ -1335,8 +1329,10 @@
           break;
         case 'run': {
           var result = KB.State.runRecurrenceNow(id);
-          if (result) {
+          if (result && result.changed) {
             KB.UI.toast('Occurrence created', 'success', 'Undo', KB.UI.undoAction);
+          } else if (result && result.reason === 'policy') {
+            KB.UI.toast('A column policy blocks creation right now', 'error');
           } else {
             KB.UI.toast('Cannot create right now', 'error');
           }
@@ -1543,10 +1539,11 @@
 
     form.addEventListener('submit', function (e) {
       e.preventDefault();
-      var result = KB.State.triageInboxItem(item.id, {
+      var target = {
         boardId: boardSelect.value,
         columnId: columnSelect.value
-      }, {
+      };
+      var patch = {
         due: dueInput.value || '',
         priority: priorityInput.value,
         size: sizeInput.value,
@@ -1554,7 +1551,21 @@
         labels: Array.prototype.map.call(labelsBox.querySelectorAll('.chip.active'), function (chip) {
           return chip.dataset.id;
         })
-      });
+      };
+      var result = KB.State.triageInboxItem(item.id, target, patch);
+      if (result && result.reason === 'policy') {
+        KB.Modal.moveConfirmModal('Triage requires confirmation', result.evaluation, '', function (reason) {
+          var confirmed = KB.State.triageInboxItem(item.id, target, patch, { confirmed: true, overrideReason: reason });
+          close();
+          if (confirmed) {
+            KB.UI.toast('Card created', 'success', 'Undo', KB.UI.undoAction);
+          } else {
+            KB.UI.toast('Could not triage that item', 'error');
+          }
+          KB.App.refresh();
+        });
+        return;
+      }
       close();
       if (result) {
         KB.UI.toast('Card created', 'success', 'Undo', KB.UI.undoAction);

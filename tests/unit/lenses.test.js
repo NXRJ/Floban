@@ -183,11 +183,18 @@ test('built-in lenses are code-defined and complete', () => {
   assert.equal(Lenses.isBuiltIn({ id: 'user-lens' }), false);
 });
 
-test('needs-triage built-in matches all open work', () => {
+test('needs-triage built-in matches only cards without any triage inputs', () => {
   const builtins = Lenses.builtInLenses();
   const triage = builtins.find(b => b.name === 'Needs Triage');
+  assert.equal(triage.query.needsTriageOnly, true);
   const result = Lenses.applyLens(state(), triage, NOW);
-  assert.equal(result.length, 4);
+  const ids = result.map(r => r.cardId).sort();
+  assert.deepEqual(ids, ['b', 'c']);
+  const s = state();
+  s.boards[0].columns[0].cards.push(card('partial', 'c1', { priority: 'high' }));
+  s.boards[0].columns[0].cards.push(card('fully-triaged', 'c1', { labels: ['l-1'], assignee: 'Sam' }));
+  const withPartials = Lenses.applyLens(s, triage, NOW);
+  assert.ok(withPartials.every(r => r.cardId !== 'partial' && r.cardId !== 'fully-triaged'));
 });
 
 test('broken board references are ignored', () => {
@@ -233,4 +240,18 @@ test('ready-only excludes manually blocked cards', () => {
   const s = state();
   const result = Lenses.applyLens(s, lens({ query: { readyOnly: true } }), 1000);
   assert.ok(result.every(r => r.card.id !== 'b'));
+});
+
+test('aging built-in only matches cards beyond the aging window', () => {
+  const s = state();
+  const now = 1000;
+  const builtin = Lenses.builtInLenses().find(b => b.id === 'builtin-aging');
+  assert.equal(builtin.query.agingOnly, true);
+  const young = card('young', 'c1', { startedAt: now - 2 * 86400000 });
+  const old = card('old', 'c1', { startedAt: now - 30 * 86400000 });
+  s.boards[0].columns[0].cards.push(young, old);
+  const result = Lenses.applyLens(s, builtin, now);
+  const ids = result.map(r => r.card.id);
+  assert.ok(ids.includes('old'));
+  assert.ok(!ids.includes('young'));
 });

@@ -398,3 +398,64 @@ test('an occurrence created from an after-completion run does not schedule forwa
 
 
 
+
+test('occurrence creation initializes lifecycle in the target column', () => {
+  const rec = recurrence({ nextRunAt: localDate(2026, 8, 7, 0) });
+  const boards = [board()];
+  boards[0].columns[0].role = 'active';
+  const result = Recurrence.processDueRecurrences(state([rec], boards), localDate(2026, 8, 7, 12), makeDeps());
+  const created = result.state.boards[0].columns[0].cards[0];
+  assert.equal(created.startedAt, 1000000);
+  assert.equal(created.completedAt, null);
+  assert.equal(created.transitions.length, 1);
+});
+
+test('occurrence creation applies entry defaults from the target column', () => {
+  const rec = recurrence({ nextRunAt: localDate(2026, 8, 7, 0) });
+  const boards = [board()];
+  boards[0].labels = [{ id: 'l-1', name: 'Bug', color: '#c81e14' }];
+  boards[0].columns[0].policy = { defaultLabelIds: ['l-1'], defaultAssignee: 'Sam' };
+  const result = Recurrence.processDueRecurrences(state([rec], boards), localDate(2026, 8, 7, 12), makeDeps());
+  const created = result.state.boards[0].columns[0].cards[0];
+  assert.deepEqual(created.labels, ['l-1']);
+  assert.equal(created.assignee, 'Sam');
+});
+
+test('a hard WIP limit blocks occurrence creation and flags the recurrence', () => {
+  const rec = recurrence({ nextRunAt: 1 });
+  const boards = [board()];
+  boards[0].columns[0].wipLimit = 1;
+  boards[0].columns[0].policy = { wipMode: 'hard' };
+  boards[0].columns[0].cards = [{ id: 'filler', columnId: 'col-1', title: 'Filler', flow: { state: 'normal', reason: '', since: null, periods: [] } }];
+  const result = Recurrence.processDueRecurrences(state([rec], boards), 1000000, makeDeps());
+  assert.equal(result.created, 0);
+  assert.equal(result.state.boards[0].columns[0].cards.length, 1);
+  assert.equal(result.state.recurrences[0].policyBlocked, true);
+});
+
+test('an occurrence is created once the policy stops blocking', () => {
+  const rec = recurrence({ nextRunAt: 1 });
+  const boards = [board()];
+  boards[0].columns[0].wipLimit = 1;
+  boards[0].columns[0].policy = { wipMode: 'hard' };
+  boards[0].columns[0].cards = [{ id: 'filler', columnId: 'col-1', title: 'Filler', flow: { state: 'normal', reason: '', since: null, periods: [] } }];
+  let result = Recurrence.processDueRecurrences(state([rec], boards), 1000000, makeDeps());
+  assert.equal(result.state.recurrences[0].policyBlocked, true);
+  const unblockedState = JSON.parse(JSON.stringify(result.state));
+  unblockedState.boards[0].columns[0].cards = [];
+  const unblocked = Recurrence.processDueRecurrences(unblockedState, 1000002, makeDeps());
+  assert.equal(unblocked.created, 1);
+  assert.equal(unblocked.state.recurrences[0].policyBlocked, false);
+  assert.equal(unblocked.state.boards[0].columns[0].cards.length, 1);
+});
+
+test('runNow surfaces a policy block', () => {
+  const rec = recurrence({ nextRunAt: null });
+  const boards = [board()];
+  boards[0].columns[0].wipLimit = 1;
+  boards[0].columns[0].policy = { wipMode: 'hard' };
+  boards[0].columns[0].cards = [{ id: 'filler', columnId: 'col-1', title: 'Filler', flow: { state: 'normal', reason: '', since: null, periods: [] } }];
+  const result = Recurrence.runNow(state([rec], boards), 'rec-1', makeDeps());
+  assert.equal(result.changed, false);
+  assert.equal(result.reason, 'policy');
+});
