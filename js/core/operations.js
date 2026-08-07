@@ -2,7 +2,10 @@
   var modelCore = (typeof module === 'object' && module.exports)
     ? require('./model.js')
     : root.KB.Core.Model;
-  var api = factory(modelCore);
+  var lifecycleCore = (typeof module === 'object' && module.exports)
+    ? require('./lifecycle.js')
+    : root.KB.Core.Lifecycle;
+  var api = factory(modelCore, lifecycleCore);
 
   if (typeof module === 'object' && module.exports) {
     module.exports = api;
@@ -13,7 +16,7 @@
   }
 })(
   typeof globalThis !== 'undefined' ? globalThis : this,
-  function (Model) {
+  function (Model, Lifecycle) {
     function resolveDeps(deps) {
       if (!deps || typeof deps.uid !== 'function' || typeof deps.now !== 'function') {
         throw new Error('core operations require { uid, now } dependencies');
@@ -70,8 +73,11 @@
         return noop(state, 'no-position-change');
       }
       var card = source.cards.splice(fromIndex, 1)[0];
+      var prevMovedAt = card.movedAt;
+      var lifecycle = Lifecycle.transitionCard(card, source, target, d.now());
+      card = lifecycle.card;
       card.columnId = command.targetColumnId;
-      if (command.targetColumnId !== command.columnId) card.movedAt = d.now();
+      if (command.columnId === command.targetColumnId) card.movedAt = prevMovedAt;
       target.cards.splice(index, 0, card);
       return { changed: true, state: next, value: card };
     }
@@ -94,7 +100,15 @@
         labels: (card.labels || []).slice(),
         checklist: Model.cloneChecklist(card.checklist, deps),
         archivedAt: null,
-        fromColumn: ''
+        fromColumn: '',
+        priority: card.priority || 'none',
+        size: card.size || 'none',
+        startedAt: null,
+        completedAt: null,
+        flow: { state: 'normal', reason: '', since: null, periods: [] },
+        dependencies: { blockers: [], related: [] },
+        recurrenceId: null,
+        transitions: []
       }), deps);
       column.cards.splice(index + 1, 0, copy);
       return { changed: true, state: next, value: copy };
@@ -131,7 +145,8 @@
       delete card.archivedAt;
       delete card.fromColumn;
       card.columnId = column.id;
-      card.movedAt = d.now();
+      var lifecycle = Lifecycle.transitionCard(card, null, column, d.now());
+      card = lifecycle.card;
       column.cards.push(card);
       return { changed: true, state: next, value: card };
     }
