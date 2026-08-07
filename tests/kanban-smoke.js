@@ -571,6 +571,16 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   check('policy settings persist', wipModeSaved === 'hard');
 
+  // ---- Review workspace ----
+  await page.evaluate(() => KB.Workspaces.set('review'));
+  await sleep(300);
+  check('review workspace renders summary', await page.$$eval('.metric-card', els => els.length) >= 4);
+  check('review workspace renders attention queue', await page.$$eval('.review-row', els => els.length) >= 1);
+  const reviewFirst = await page.$eval('.review-row .review-title', el => el.textContent);
+  check('review row explains why', (await page.$$eval('.review-row .review-reason', els => els.map(e => e.textContent))).length >= 1);
+  await page.evaluate(() => KB.Workspaces.set('board'));
+  await sleep(200);
+
   // ---- Lifecycle fields follow role-based moves ----
   await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
