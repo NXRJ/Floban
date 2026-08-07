@@ -736,6 +736,59 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   check('completing a recurring card schedules the next run', afterCompletion.scheduled === true && afterCompletion.activeCleared === true);
 
+  // ---- Inbox capture and triage ----
+  const inboxResult = await page.evaluate(() => {
+    const captured = KB.State.captureInbox({ title: 'Order new laptop', note: 'Ask finance' });
+    const urlItem = KB.State.captureInboxLines('https://example.com/specs\nSecond idea');
+    const beforeTriage = KB.State.inboxItems().length;
+    const triaged = KB.State.triageInboxItem(captured.id, {
+      boardId: KB.State.activeBoard().id,
+      columnId: KB.State.activeBoard().columns[0].id
+    }, { priority: 'medium', assignee: 'Sam' });
+    const afterTriage = KB.State.inboxItems().length;
+    const board = KB.State.activeBoard();
+    const created = board.columns[0].cards.find(c => c.title === 'Order new laptop');
+    KB.App.refresh();
+    return {
+      captured: captured && captured.title === 'Order new laptop',
+      multi: urlItem && urlItem.length === 2 && urlItem[0].url === 'https://example.com/specs',
+      triaged: Boolean(triaged),
+      beforeTriage,
+      afterTriage,
+      cardPriority: created && created.priority,
+      cardAssignee: created && created.assignee
+    };
+  });
+  await sleep(200);
+  check('inbox capture stores items', inboxResult.captured && inboxResult.multi === true);
+  check('inbox triage is atomic', inboxResult.triaged && inboxResult.beforeTriage === 3 && inboxResult.afterTriage === 2);
+  check('triage card keeps the patch', inboxResult.cardPriority === 'medium' && inboxResult.cardAssignee === 'Sam');
+
+  await blur();
+  await pressUndo();
+  const inboxUndo = await page.evaluate(() => {
+    const items = KB.State.inboxItems();
+    const card = KB.State.activeBoard().columns[0].cards.find(c => c.title === 'Order new laptop');
+    return { items: items.length, cardExists: Boolean(card) };
+  });
+  check('undo restores both sides of triage', inboxUndo.items === 3 && !inboxUndo.cardExists);
+
+  const mergeResult = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const card = board.columns[0].cards[0];
+    const merged = KB.State.mergeInboxItem(KB.State.inboxItems()[2].id, { boardId: board.id, cardId: card.id });
+    const fresh = KB.State.activeBoard().columns[0].cards[0];
+    return { merged: Boolean(merged), descHasNote: fresh.description.includes('Second idea') };
+  });
+  check('merge appends into the target card', mergeResult.merged && mergeResult.descHasNote === true);
+
+  await page.evaluate(() => KB.Workspaces.set('inbox'));
+  await sleep(250);
+  check('inbox workspace shows items', await page.$$eval('.inbox-item', els => els.length) >= 1);
+  check('inbox pressure summary renders', await page.$eval('.inbox-pressure', el => el.textContent.includes('unprocessed')));
+  await page.evaluate(() => KB.Workspaces.set('board'));
+  await sleep(150);
+
   check('no unexpected page errors', errors.filter(e => !e.includes('ERR_CONNECTION_REFUSED')).length === 0);
 
   console.log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECKS FAILED');

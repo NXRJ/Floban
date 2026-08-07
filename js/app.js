@@ -400,8 +400,40 @@
           KB.App.moveToMenu(boardId, columnId, cardId);
           break;
         case 'review-archive':
-          KB.State.archiveCard(columnId, cardId);
+          KB.State.archiveCard(columnId, cardId, boardId);
           KB.UI.toast('Card archived', 'info', 'Undo', KB.UI.undoAction);
+          KB.App.refresh();
+          break;
+      }
+    });
+
+    KB.el('ws-inbox').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      var itemEl = e.target.closest('.inbox-item');
+      var id = itemEl ? itemEl.dataset.id : null;
+      switch (btn.dataset.action) {
+        case 'inbox-capture':
+          KB.Modal.captureModal();
+          break;
+        case 'inbox-triage': {
+          var item = KB.State.inboxItems().find(function (it) { return it.id === id; });
+          if (item) KB.Modal.triageModal(item);
+          break;
+        }
+        case 'inbox-merge': {
+          var item = KB.State.inboxItems().find(function (it) { return it.id === id; });
+          if (item) KB.Modal.mergeModal(item);
+          break;
+        }
+        case 'inbox-restore':
+          KB.State.updateInboxItem(id, { archived: false });
+          KB.UI.toast('Item restored', 'success', 'Undo', KB.UI.undoAction);
+          KB.App.refresh();
+          break;
+        case 'inbox-delete':
+          KB.State.deleteInboxItem(id);
+          KB.UI.toast('Item deleted', 'info', 'Undo', KB.UI.undoAction);
           KB.App.refresh();
           break;
       }
@@ -545,6 +577,9 @@
       } else if (e.key === 'c' || e.key === 'C') {
         e.preventDefault();
         KB.Modal.columnEditor(null);
+      } else if (e.key === 'i' || e.key === 'I') {
+        e.preventDefault();
+        KB.Modal.captureModal();
       }
     });
   }

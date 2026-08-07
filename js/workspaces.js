@@ -268,26 +268,39 @@
     el.innerHTML = '';
     var state = KB.State.data();
     var items = state.inbox && state.inbox.items ? state.inbox.items : [];
+    var open = items.filter(function (it) { return !it.archived; });
+    var archived = items.filter(function (it) { return it.archived; });
     var head = h('div', { class: 'ws-head' });
     var title = h('h2', { class: 'desk-section-title' });
     title.textContent = 'Inbox';
     head.appendChild(title);
+    var summary = KB.Core.Inbox.inboxSummary(state, Date.now());
+    if (open.length > 0) {
+      var pressure = h('span', { class: 'inbox-pressure' });
+      pressure.textContent = open.length + ' unprocessed' + (summary.oldestDays !== null ? ' \u00B7 oldest: ' + summary.oldestDays + 'd' : '');
+      head.appendChild(pressure);
+    }
     var captureBtn = h('button', { type: 'button', class: 'btn primary sm', 'data-action': 'inbox-capture' });
     captureBtn.textContent = 'Capture…';
     head.appendChild(h('span', { class: 'spacer' }));
     head.appendChild(captureBtn);
     el.appendChild(head);
-    if (items.length === 0) {
+    if (open.length === 0 && archived.length === 0) {
       el.appendChild(emptyNote('Nothing captured yet. Press I to capture something quickly.'));
       return;
     }
-    items.slice().sort(function (a, b) { return a.capturedAt - b.capturedAt; }).forEach(function (item) {
-      el.appendChild(inboxItemEl(item));
+    open.slice().sort(function (a, b) { return a.capturedAt - b.capturedAt; }).forEach(function (item) {
+      el.appendChild(inboxItemEl(item, false));
     });
+    if (archived.length > 0) {
+      el.appendChild(section('Archived references', archived.slice().sort(function (a, b) { return a.capturedAt - b.capturedAt; }).map(function (item) {
+        return inboxItemEl(item, true);
+      })));
+    }
   }
 
-  function inboxItemEl(item) {
-    var wrap = h('div', { class: 'inbox-item', 'data-id': item.id });
+  function inboxItemEl(item, isArchived) {
+    var wrap = h('div', { class: 'inbox-item' + (isArchived ? ' archived' : ''), 'data-id': item.id });
     var main = h('div', { class: 'inbox-main' });
     var title = h('p', { class: 'inbox-title' });
     title.textContent = item.title;
@@ -304,15 +317,24 @@
     }
     wrap.appendChild(main);
     var actions = h('div', { class: 'inbox-actions' });
-    var triageBtn = h('button', { type: 'button', class: 'btn ghost sm', 'data-action': 'inbox-triage' });
-    triageBtn.textContent = 'Triage';
-    var mergeBtn = h('button', { type: 'button', class: 'btn ghost sm', 'data-action': 'inbox-merge' });
-    mergeBtn.textContent = 'Merge…';
-    var deleteBtn = h('button', { type: 'button', class: 'btn danger-ghost sm', 'data-action': 'inbox-delete' });
-    deleteBtn.textContent = 'Delete';
-    actions.appendChild(triageBtn);
-    actions.appendChild(mergeBtn);
-    actions.appendChild(deleteBtn);
+    if (!isArchived) {
+      var triageBtn = h('button', { type: 'button', class: 'btn ghost sm', 'data-action': 'inbox-triage' });
+      triageBtn.textContent = 'Triage';
+      var mergeBtn = h('button', { type: 'button', class: 'btn ghost sm', 'data-action': 'inbox-merge' });
+      mergeBtn.textContent = 'Merge…';
+      var deleteBtn = h('button', { type: 'button', class: 'btn danger-ghost sm', 'data-action': 'inbox-delete' });
+      deleteBtn.textContent = 'Delete';
+      actions.appendChild(triageBtn);
+      actions.appendChild(mergeBtn);
+      actions.appendChild(deleteBtn);
+    } else {
+      var restoreBtn = h('button', { type: 'button', class: 'btn ghost sm', 'data-action': 'inbox-restore' });
+      restoreBtn.textContent = 'Restore';
+      var purgeBtn = h('button', { type: 'button', class: 'btn danger-ghost sm', 'data-action': 'inbox-delete' });
+      purgeBtn.textContent = 'Delete forever';
+      actions.appendChild(restoreBtn);
+      actions.appendChild(purgeBtn);
+    }
     wrap.appendChild(actions);
     return wrap;
   }
