@@ -135,7 +135,7 @@
       return boards;
     }
 
-    function cardMatchesQuery(state, board, column, card, lens, now) {
+    function cardMatchesQuery(state, board, column, card, lens, now, resolved, cards) {
       var query = lens.query || {};
       var ref = { boardId: board.id, cardId: card.id };
       var inDone = column.role === 'done';
@@ -169,7 +169,7 @@
       var dateContext = { today: isoToday(now), weekEnd: isoDaysFrom(now, 6) };
       if (!Filtering.matchesCard(card, filters, dateContext)) return false;
 
-      var unresolved = Relations.getUnresolvedBlockers(state, ref);
+      var unresolved = Relations.getUnresolvedBlockers(state, ref, resolved, cards);
       if (query.blockedOnly && unresolved.length === 0) return false;
       if (query.readyOnly && unresolved.length > 0) return false;
 
@@ -232,11 +232,13 @@
 
     function applyLens(state, lens, now) {
       var ts = typeof now === 'number' ? now : 0;
+      var resolved = Relations.resolvedIndex(state);
+      var cards = Relations.cardIndex(state);
       var results = [];
       lensBoards(state, lens).forEach(function (board) {
         board.columns.forEach(function (column) {
           column.cards.forEach(function (card) {
-            if (cardMatchesQuery(state, board, column, card, lens, ts)) {
+            if (cardMatchesQuery(state, board, column, card, lens, ts, resolved, cards)) {
               results.push({ boardId: board.id, columnId: column.id, cardId: card.id, card: card, columnRole: column.role });
             }
           });

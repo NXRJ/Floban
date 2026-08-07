@@ -66,8 +66,37 @@
       return findCardInBoard(board, cardId);
     }
 
-    function isCardResolved(state, ref) {
+    function cardIndex(state) {
+      var index = {};
+      state.boards.forEach(function (board) {
+        board.columns.forEach(function (column) {
+          column.cards.forEach(function (card) {
+            index[board.id + ':' + card.id] = card;
+          });
+        });
+      });
+      return index;
+    }
+
+    function resolvedIndex(state) {
+      var index = {};
+      state.boards.forEach(function (board) {
+        board.columns.forEach(function (column) {
+          var role = column.role;
+          if (COLUMN_ROLES.indexOf(role) === -1) role = column.isDone ? 'done' : 'queue';
+          if (role === 'done') {
+            column.cards.forEach(function (card) {
+              index[board.id + ':' + card.id] = true;
+            });
+          }
+        });
+      });
+      return index;
+    }
+
+    function isCardResolved(state, ref, resolved) {
       if (!validRef(ref)) return false;
+      if (resolved) return resolved[ref.boardId + ':' + ref.cardId] === true;
       var board = null;
       for (var i = 0; i < state.boards.length; i++) {
         if (state.boards[i].id === ref.boardId) {
@@ -87,13 +116,13 @@
       return false;
     }
 
-    function getUnresolvedBlockers(state, cardRef) {
+    function getUnresolvedBlockers(state, cardRef, resolved, cards) {
       if (!validRef(cardRef)) return [];
-      var card = findCard(state, cardRef.boardId, cardRef.cardId);
+      var card = cards ? cards[cardRef.boardId + ':' + cardRef.cardId] : findCard(state, cardRef.boardId, cardRef.cardId);
       if (!card) return [];
       var blockers = (card.dependencies && card.dependencies.blockers) || [];
       return blockers.filter(function (blocker) {
-        return blocker && !isCardResolved(state, blocker);
+        return blocker && !isCardResolved(state, blocker, resolved);
       });
     }
 
@@ -295,6 +324,8 @@
 
     return {
       findCard: findCard,
+      cardIndex: cardIndex,
+      resolvedIndex: resolvedIndex,
       isCardResolved: isCardResolved,
       addBlocker: addBlocker,
       removeBlocker: removeBlocker,
