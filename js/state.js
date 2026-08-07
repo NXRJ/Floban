@@ -202,11 +202,13 @@
   }
 
   function updateColumn(id, patch) {
-    pushHistory();
     var column = findColumn(id);
-    if (!column) return;
+    if (!column) return false;
+
+    pushHistory();
     Object.assign(column, patch);
     save();
+    return true;
   }
 
   function deleteColumn(id) {
@@ -216,22 +218,24 @@
   }
 
   function moveColumn(id, toIndex) {
-    pushHistory();
     var board = activeBoard();
     var fromIndex = board.columns.findIndex(function (c) { return c.id === id; });
-    if (fromIndex === -1) return;
-    var column = board.columns.splice(fromIndex, 1)[0];
+    if (fromIndex === -1) return false;
     var index = toIndex;
     if (fromIndex < index) index -= 1;
     index = Math.max(0, Math.min(index, board.columns.length));
+    if (index === fromIndex) return false;
+    pushHistory();
+    var column = board.columns.splice(fromIndex, 1)[0];
     board.columns.splice(index, 0, column);
     save();
+    return true;
   }
 
   function addCard(columnId, data) {
-    pushHistory();
     var column = findColumn(columnId);
     if (!column) return null;
+    pushHistory();
     var card = freshCard(columnId, data);
     card.movedAt = card.createdAt;
     column.cards.push(card);
@@ -240,13 +244,17 @@
   }
 
   function addCards(columnId, titles) {
-    pushHistory();
     var column = findColumn(columnId);
-    if (!column) return 0;
+    var cleanTitles = (titles || []).filter(function (title) {
+      return typeof title === 'string' && title.trim();
+    }).map(function (title) {
+      return title.trim();
+    });
+    if (!column || cleanTitles.length === 0) return 0;
+    pushHistory();
     var added = 0;
-    titles.forEach(function (title) {
-      if (!title || !title.trim()) return;
-      var card = freshCard(columnId, { title: title.trim() });
+    cleanTitles.forEach(function (title) {
+      var card = freshCard(columnId, { title: title });
       card.movedAt = card.createdAt;
       column.cards.push(card);
       added += 1;
@@ -256,11 +264,12 @@
   }
 
   function updateCard(columnId, cardId, patch) {
-    pushHistory();
     var card = findCard(columnId, cardId);
-    if (!card) return;
-    Object.assign(card, patch, { updatedAt: Date.now() });
+    if (!card) return false;
+    pushHistory();
+    Object.assign(card, patch, { updatedAt: now() });
     save();
+    return true;
   }
 
   function moveCard(columnId, cardId, targetColumnId, toIndex) {
@@ -299,15 +308,23 @@
   }
 
   function purgeCard(cardId) {
+    var board = activeBoard();
+    var index = board.archive.cards.findIndex(function (c) { return c.id === cardId; });
+    if (index === -1) return false;
     pushHistory();
-    activeBoard().archive.cards = activeBoard().archive.cards.filter(function (c) { return c.id !== cardId; });
+    board.archive.cards.splice(index, 1);
     save();
+    return true;
   }
 
   function purgeColumn(columnId) {
+    var board = activeBoard();
+    var index = board.archive.columns.findIndex(function (c) { return c.id === columnId; });
+    if (index === -1) return false;
     pushHistory();
-    activeBoard().archive.columns = activeBoard().archive.columns.filter(function (c) { return c.id !== columnId; });
+    board.archive.columns.splice(index, 1);
     save();
+    return true;
   }
 
   function addLabel(name, color) {
@@ -369,11 +386,13 @@
   }
 
   function renameBoard(id, name) {
-    pushHistory();
     var board = state.boards.find(function (b) { return b.id === id; });
-    if (!board) return;
+    if (!board) return false;
+    if (board.name === name) return false;
+    pushHistory();
     board.name = name;
     save();
+    return true;
   }
 
   function duplicateBoard(id) {
