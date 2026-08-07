@@ -801,12 +801,14 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       name: 'E2E lens',
       scope: 'active-board',
       boardIds: [],
-      query: { search: '', labelIds: [], assignees: [], due: 'any', priorities: [], sizes: [], flowStates: ['blocked'], blockedOnly: false, readyOnly: false, columnRoles: [], includeCompleted: false },
+      query: { search: '', labelIds: [], assignees: [], due: 'any', priorities: [], sizes: [], flowStates: [], blockedOnly: false, readyOnly: false, columnRoles: [], includeCompleted: false },
       sort: { field: 'priority', direction: 'desc' },
       display: { density: 'compact', groupBy: 'board' }
     });
+    KB.Workspaces.set('mydesk');
     return lens && lens.id;
   });
+  await sleep(200);
   check('user lens created', typeof lensSave === 'string');
   await page.evaluate((id) => { document.querySelector('.lens-bar [data-lens="' + id + '"]').click(); }, lensSave);
   await sleep(200);
