@@ -12,7 +12,10 @@ function check(name, cond) {
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 (async () => {
-  const browser = await puppeteer.launch({ headless: 'new' });
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    args: process.env.CI ? ['--no-sandbox'] : [],
+  });
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
