@@ -943,6 +943,7 @@
     data: data,
     activeBoard: activeBoard,
     boardById: boardById,
+    findCardInBoard: findCardInBoard,
     boards: boards,
     findColumn: findColumn,
     findCard: findCard,

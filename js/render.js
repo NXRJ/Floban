@@ -150,7 +150,7 @@
   }
 
   function cardEl(card, column) {
-    var el = h('article', { class: 'card' + (column.isDone ? ' done' : ''), draggable: 'true', 'data-id': card.id });
+    var el = h('article', { class: 'card' + (column.isDone ? ' done' : ''), draggable: 'true', 'data-id': card.id, tabindex: '0' });
 
     var top = h('div', { class: 'card-top' });
     var title = h('p', { class: 'card-title' });

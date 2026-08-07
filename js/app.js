@@ -277,12 +277,20 @@
     if (evaluation.allowed) {
       var moved = KB.State.moveCardChecked(fromColumnId, cardId, toColumnId, toIndex);
       afterCardMove(moved);
+      if (moved && moved.ok && KB.MoveTo.announce) {
+        var target = KB.State.findColumn(toColumnId);
+        KB.MoveTo.announce('Moved to ' + (target ? target.title : '') + ', position ' + ((toIndex || 0) + 1) + '.');
+      }
       if (onDone) onDone(moved);
       return;
     }
     KB.Modal.moveConfirmModal('Move requires confirmation', evaluation, '', function (reason) {
       var moved = KB.State.moveCardChecked(fromColumnId, cardId, toColumnId, toIndex, { confirmed: true, overrideReason: reason });
       afterCardMove(moved);
+      if (moved && moved.ok && KB.MoveTo.announce) {
+        var target = KB.State.findColumn(toColumnId);
+        KB.MoveTo.announce('Moved to ' + (target ? target.title : '') + ', position ' + ((toIndex || 0) + 1) + '.');
+      }
       if (onDone) onDone(moved);
     });
   }
@@ -397,7 +405,7 @@
           break;
         }
         case 'review-move':
-          KB.App.moveToMenu(boardId, columnId, cardId);
+          KB.MoveTo.moveToMenu(boardId, columnId, cardId);
           break;
         case 'review-archive':
           KB.State.archiveCard(columnId, cardId, boardId);
@@ -472,7 +480,7 @@
           KB.Modal.cardEditor(columnId, KB.State.findCard(columnId, cardId));
           break;
         case 'move-card':
-          KB.App.moveToMenu(KB.State.activeBoard().id, columnId, cardId);
+          KB.MoveTo.moveToMenu(KB.State.activeBoard().id, columnId, cardId);
           break;
         case 'duplicate-card':
           KB.State.duplicateCard(columnId, cardId);
@@ -698,6 +706,7 @@
     bootScreen();
     mountIcons();
     KB.DnD.init(KB.el('board'));
+    KB.MoveTo.wireKeyboardMove();
     wireHeader();
     wireFilters();
     wireBoard();
@@ -716,8 +725,9 @@
     refresh();
   }
 
-  KB.App = { init: init, refresh: refresh, requestMove: requestMove, requestRestore: requestRestore };
+  KB.App = { init: init, refresh: refresh, requestMove: requestMove, requestRestore: requestRestore, afterCardMove: afterCardMove };
   KB.UI = { toast: toast, clearToasts: clearToasts, download: download, undoAction: undoAction };
 
   init();
 })(window.KB = window.KB || {});
+
