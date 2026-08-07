@@ -1168,6 +1168,157 @@
     open(form);
   }
 
+  function recurrenceManager() {
+    var panel = h('div', { class: 'card-form' });
+    var heading = h('h2');
+    heading.textContent = 'Recurring work';
+    panel.appendChild(heading);
+    var hint = h('p', { class: 'form-hint' });
+    hint.textContent = 'Scheduled work is created when this local app is open or next opened.';
+    panel.appendChild(hint);
+
+    var list = h('div', { class: 'rec-manager-list' });
+    panel.appendChild(list);
+
+    function renderList() {
+      list.innerHTML = '';
+      var recs = KB.State.recurrences();
+      if (recs.length === 0) {
+        var none = h('p', { class: 'desk-empty' });
+        none.textContent = 'No recurring work yet — open a card and pick "Create recurring work from this card…".';
+        list.appendChild(none);
+        return;
+      }
+      recs.forEach(function (rec) {
+        var row = h('div', { class: 'rec-row' });
+        var main = h('div', { class: 'rec-main' });
+        var title = h('p', { class: 'rec-title' });
+        title.textContent = rec.template.title;
+        main.appendChild(title);
+        var meta = h('div', { class: 'rec-meta' });
+        var bits = [];
+        bits.push(rec.mode === 'scheduled' ? 'Scheduled' : 'After completion');
+        bits.push(rec.enabled ? 'active' : 'paused');
+        var target = KB.State.boardById(rec.target.boardId);
+        bits.push(target ? target.name : 'missing board');
+        if (rec.nextRunAt) bits.push('next: ' + KB.Dom.fmtDate(rec.nextRunAt));
+        if (rec.endAt) bits.push('ends: ' + KB.Dom.fmtDate(rec.endAt));
+        if (typeof rec.remainingOccurrences === 'number') bits.push(rec.remainingOccurrences + ' left');
+        meta.textContent = bits.join(' \u00B7 ');
+        main.appendChild(meta);
+        if (rec.pausedReason) {
+          var reason = h('p', { class: 'rec-reason' });
+          reason.textContent = rec.pausedReason;
+          main.appendChild(reason);
+        }
+        row.appendChild(main);
+
+        var actions = h('div', { class: 'rec-actions' });
+        var editBtn = h('button', { type: 'button', class: 'btn ghost sm', 'data-rec-action': 'edit' });
+        editBtn.textContent = 'Edit';
+        var toggleBtn = h('button', { type: 'button', class: 'btn ghost sm', 'data-rec-action': rec.enabled ? 'pause' : 'resume' });
+        toggleBtn.textContent = rec.enabled ? 'Pause' : 'Resume';
+        var runBtn = h('button', { type: 'button', class: 'btn ghost sm', 'data-rec-action': 'run' });
+        runBtn.textContent = 'Run now';
+        var skipBtn = h('button', { type: 'button', class: 'btn ghost sm', 'data-rec-action': 'skip' });
+        skipBtn.textContent = 'Skip next';
+        var openBtn = h('button', { type: 'button', class: 'btn ghost sm', 'data-rec-action': 'open' });
+        openBtn.textContent = 'Open card';
+        var endBtn = h('button', { type: 'button', class: 'btn danger-ghost sm', 'data-rec-action': 'end' });
+        endBtn.textContent = 'End';
+        if (rec.endAt) endBtn.disabled = true;
+        if (!rec.activeCardRef) openBtn.disabled = true;
+        [editBtn, toggleBtn, runBtn, skipBtn, openBtn, endBtn].forEach(function (b) { actions.appendChild(b); });
+        row.appendChild(actions);
+        row.dataset.recId = rec.id;
+        list.appendChild(row);
+      });
+    }
+
+    list.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-rec-action]');
+      if (!btn) return;
+      var row = e.target.closest('.rec-row');
+      if (!row) return;
+      var id = row.dataset.recId;
+      var rec = KB.State.recurrences().find(function (r) { return r.id === id; });
+      if (!rec) return;
+      switch (btn.dataset.recAction) {
+        case 'edit':
+          recurrenceEditor(rec);
+          break;
+        case 'pause':
+          KB.State.pauseRecurrence(id, 'Paused by user');
+          KB.UI.toast('Recurrence paused', 'success', 'Undo', KB.UI.undoAction);
+          renderList();
+          break;
+        case 'resume':
+          KB.State.resumeRecurrence(id);
+          KB.UI.toast('Recurrence resumed', 'success', 'Undo', KB.UI.undoAction);
+          renderList();
+          break;
+        case 'run': {
+          var result = KB.State.runRecurrenceNow(id);
+          if (result) {
+            KB.UI.toast('Occurrence created', 'success', 'Undo', KB.UI.undoAction);
+          } else {
+            KB.UI.toast('Cannot create right now', 'error');
+          }
+          renderList();
+          break;
+        }
+        case 'skip':
+          KB.State.skipRecurrenceNext(id);
+          KB.UI.toast('Next occurrence skipped', 'success', 'Undo', KB.UI.undoAction);
+          renderList();
+          break;
+        case 'open': {
+          var ref = rec.activeCardRef;
+          if (!ref) break;
+          var board = KB.State.boardById(ref.boardId);
+          if (!board) break;
+          var column = null;
+          for (var i = 0; i < board.columns.length; i++) {
+            if (board.columns[i].cards.some(function (c) { return c.id === ref.cardId; })) {
+              column = board.columns[i];
+              break;
+            }
+          }
+          if (column) {
+            var card = column.cards.find(function (c) { return c.id === ref.cardId; });
+            if (card) {
+              close();
+              cardEditor(column.id, card, null, board.id);
+            }
+          }
+          break;
+        }
+        case 'end':
+          KB.State.endRecurrence(id);
+          KB.UI.toast('Recurrence ended', 'info', 'Undo', KB.UI.undoAction);
+          renderList();
+          break;
+      }
+    });
+
+    var actions = h('div', { class: 'modal-actions' });
+    var newBtn = h('button', { type: 'button', class: 'btn primary' });
+    newBtn.textContent = 'New recurrence';
+    newBtn.addEventListener('click', function () {
+      recurrenceEditor(null, null);
+    });
+    actions.appendChild(newBtn);
+    actions.appendChild(h('span', { class: 'spacer' }));
+    var doneBtn = h('button', { type: 'button', class: 'btn ghost' });
+    doneBtn.textContent = 'Done';
+    doneBtn.addEventListener('click', close);
+    actions.appendChild(doneBtn);
+    panel.appendChild(actions);
+
+    renderList();
+    open(panel);
+  }
+
   function isOpen() {
     return overlay !== null;
   }
@@ -1183,6 +1334,7 @@
     backupModal: backupModal,
     moveConfirmModal: moveConfirmModal,
     recurrenceEditor: recurrenceEditor,
+    recurrenceManager: recurrenceManager,
     isOpen: isOpen
   };
 })(window.KB = window.KB || {});

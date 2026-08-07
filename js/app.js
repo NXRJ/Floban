@@ -275,14 +275,31 @@
       return;
     }
     if (evaluation.allowed) {
-      KB.State.moveCardChecked(fromColumnId, cardId, toColumnId, toIndex);
-      if (onDone) onDone();
+      var moved = KB.State.moveCardChecked(fromColumnId, cardId, toColumnId, toIndex);
+      afterCardMove(moved);
+      if (onDone) onDone(moved);
       return;
     }
     KB.Modal.moveConfirmModal('Move requires confirmation', evaluation, '', function (reason) {
-      KB.State.moveCardChecked(fromColumnId, cardId, toColumnId, toIndex, { confirmed: true, overrideReason: reason });
-      if (onDone) onDone();
+      var moved = KB.State.moveCardChecked(fromColumnId, cardId, toColumnId, toIndex, { confirmed: true, overrideReason: reason });
+      afterCardMove(moved);
+      if (onDone) onDone(moved);
     });
+  }
+
+  function afterCardMove(moved) {
+    if (moved && moved.ok && moved.value && moved.value.recurrenceId && moved.value.completedAt !== null) {
+      var board = KB.State.activeBoard();
+      if (board) {
+        KB.State.handleCardCompleted(board.id, moved.value.id);
+        KB.App.refresh();
+      }
+    }
+  }
+
+  function processRecurrences() {
+    KB.State.processRecurrences();
+    KB.App.refresh();
   }
 
   function requestRestore(cardId, onDone) {
@@ -326,6 +343,9 @@
     });
     KB.el('archive-backdrop').addEventListener('click', function () {
       toggleArchive(false);
+    });
+    KB.el('open-recurrences').addEventListener('click', function () {
+      KB.Modal.recurrenceManager();
     });
   }
 
@@ -652,6 +672,12 @@
     toggleArchive(false);
     tickClock();
     setInterval(tickClock, 10000);
+    processRecurrences();
+    setInterval(processRecurrences, 60000);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') processRecurrences();
+    });
+    window.addEventListener('focus', processRecurrences);
     refresh();
   }
 

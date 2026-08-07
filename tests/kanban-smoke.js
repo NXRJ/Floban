@@ -663,6 +663,79 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   }, lifeCols);
   check('no-op move creates no transition', noopTransitions.before === noopTransitions.after);
 
+  // ---- Recurrence processing ----
+  const recResult = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    const rec = KB.State.addRecurrence({
+      mode: 'scheduled',
+      schedule: { frequency: 'daily', interval: 1 },
+      target: { boardId: board.id, columnId: col.id },
+      template: { title: 'Daily standup', description: '', labelIds: [], assignee: '', priority: 'none', size: 'none', checklist: [] },
+      dueOffsetDays: 0,
+      overlapPolicy: 'single-active',
+      missedPolicy: 'create-one'
+    });
+    const before = KB.State.recurrences().find(r => r.id === rec.id);
+    before.nextRunAt = 1;
+    KB.State.updateRecurrence(rec.id, { nextRunAt: 1 });
+    const processed = KB.State.processRecurrences();
+    KB.App.refresh();
+    const cards = KB.State.activeBoard().columns[0].cards.filter(c => c.title === 'Daily standup');
+    const recAfter = KB.State.recurrences().find(r => r.id === rec.id);
+    return {
+      created: processed ? processed.created : 0,
+      count: cards.length,
+      activeCard: recAfter.activeCardRef ? recAfter.activeCardRef.cardId === cards[0].id : false,
+      nextRunInFuture: recAfter.nextRunAt > Date.now()
+    };
+  });
+  await sleep(150);
+  check('recurrence processing creates one occurrence', recResult.created === 1 && recResult.count === 1);
+  check('single-active tracks the active instance', recResult.activeCard === true);
+  check('recurrence advances its next run', recResult.nextRunInFuture === true);
+  check('recurrence chip renders', await page.$$eval('.chip.rec', els => els.length) >= 1);
+
+  const recSecond = await page.evaluate(() => {
+    const processed = KB.State.processRecurrences();
+    const cards = KB.State.activeBoard().columns[0].cards.filter(c => c.title === 'Daily standup');
+    return { processed: processed ? processed.created : 0, count: cards.length };
+  });
+  check('repeated processing creates no duplicates', recSecond.processed === 0 && recSecond.count === 1);
+
+  const recUndo = await page.evaluate(() => KB.State.undo());
+  const recUndone = await page.evaluate(() => {
+    const cards = KB.State.activeBoard().columns[0].cards.filter(c => c.title === 'Daily standup');
+    return cards.length;
+  });
+  check('undo restores the recurrence occurrence', recUndone === 0);
+
+  // ---- After-completion recurrence ----
+  const afterCompletion = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    const rec = KB.State.addRecurrence({
+      mode: 'after-completion',
+      schedule: { frequency: 'custom', interval: 1, delayAfterCompletionDays: 7 },
+      target: { boardId: board.id, columnId: col.id },
+      template: { title: 'Quarterly review', description: '', labelIds: [], assignee: '', priority: 'none', size: 'none', checklist: [] },
+      dueOffsetDays: null,
+      overlapPolicy: 'single-active',
+      missedPolicy: 'create-one'
+    });
+    const card = KB.State.addCard(col.id, { title: 'Quarterly review', recurrenceId: rec.id });
+    const doneCol = board.columns.find(c => c.role === 'done');
+    KB.State.moveCard(col.id, card.id, doneCol.id, 0);
+    KB.State.handleCardCompleted(board.id, card.id);
+    const recAfter = KB.State.recurrences().find(r => r.id === rec.id);
+    return {
+      scheduled: recAfter.nextRunAt !== null,
+      activeCleared: recAfter.activeCardRef === null,
+      delayDays: recAfter.nextRunAt - Math.floor(recAfter.nextRunAt / 86400000) * 86400000 >= 0 ? Math.round((recAfter.nextRunAt - (recAfter.lastCompletedAt ? recAfter.lastCompletedAt : 0)) / 86400000) : null
+    };
+  });
+  check('completing a recurring card schedules the next run', afterCompletion.scheduled === true && afterCompletion.activeCleared === true);
+
   check('no unexpected page errors', errors.filter(e => !e.includes('ERR_CONNECTION_REFUSED')).length === 0);
 
   console.log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECKS FAILED');
@@ -670,4 +743,5 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await browser.close();
   process.exit(failures === 0 ? 0 : 1);
 })().catch((e) => { console.error('TEST CRASH:', e); process.exit(2); });
+
 

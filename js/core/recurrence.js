@@ -81,6 +81,9 @@
 
     function createOccurrence(state, recurrence, deps) {
       var d = resolveDeps(deps);
+      if (typeof recurrence.remainingOccurrences === 'number' && recurrence.remainingOccurrences <= 0) {
+        return { changed: false, state: state, reason: 'occurrence-limit' };
+      }
       var now = d.now();
       var board = state.boards.find(function (b) { return b.id === recurrence.target.boardId; });
       if (!board) return { changed: false, state: state, reason: 'missing-board' };
@@ -176,6 +179,19 @@
       (next.recurrences || []).forEach(function (recurrence) {
         if (!recurrence.enabled) return;
         if (recurrence.mode !== 'scheduled') return;
+
+        if (recurrence.endAt !== null && now >= recurrence.endAt) {
+          recurrence.enabled = false;
+          recurrence.pausedReason = 'End condition reached';
+          disabled += 1;
+          return;
+        }
+        if (typeof recurrence.remainingOccurrences === 'number' && recurrence.remainingOccurrences <= 0) {
+          recurrence.enabled = false;
+          recurrence.pausedReason = 'Occurrence limit reached';
+          disabled += 1;
+          return;
+        }
 
         var board = next.boards.find(function (b) { return b.id === recurrence.target.boardId; });
         if (!board) {
