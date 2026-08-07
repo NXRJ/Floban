@@ -127,6 +127,7 @@
       }
       delete card.archivedAt;
       delete card.fromColumn;
+      card.columnId = column.id;
       card.movedAt = d.now();
       column.cards.push(card);
       return { changed: true, state: next, value: card };
