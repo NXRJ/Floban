@@ -58,6 +58,9 @@
 
   function refresh() {
     applyTheme();
+    KB.Workspaces.render();
+    KB.Workspaces.inboxBadge();
+    if (KB.Workspaces.current() !== 'board') return;
     KB.Render.board();
     KB.Render.filterBar();
     KB.Render.archivePanel();
@@ -299,6 +302,11 @@
   }
 
   function wireHeader() {
+    document.querySelectorAll('.ws-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        KB.Workspaces.set(btn.dataset.workspace);
+      });
+    });
     KB.el('toggle-theme').addEventListener('click', function () {
       var next = KB.State.data().theme === 'dark' ? 'light' : 'dark';
       KB.State.setTheme(next);
@@ -353,6 +361,33 @@
     KB.el('clear-filters').addEventListener('click', clearFilters);
   }
 
+  function wireWorkspaces() {
+    KB.el('ws-review').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      var row = e.target.closest('.review-row');
+      if (!row) return;
+      var boardId = row.dataset.boardId;
+      var columnId = row.dataset.columnId;
+      var cardId = row.dataset.cardId;
+      switch (btn.dataset.action) {
+        case 'review-open': {
+          var card = KB.State.findCardInBoard(KB.State.boardById(boardId), columnId, cardId);
+          if (card) KB.Modal.cardEditor(columnId, card, null, boardId);
+          break;
+        }
+        case 'review-move':
+          KB.App.moveToMenu(boardId, columnId, cardId);
+          break;
+        case 'review-archive':
+          KB.State.archiveCard(columnId, cardId);
+          KB.UI.toast('Card archived', 'info', 'Undo', KB.UI.undoAction);
+          KB.App.refresh();
+          break;
+      }
+    });
+  }
+
   function wireBoard() {
     KB.el('board-area').addEventListener('click', function (e) {
       var actionEl = e.target.closest('[data-action]');
@@ -383,6 +418,9 @@
           break;
         case 'edit-card':
           KB.Modal.cardEditor(columnId, KB.State.findCard(columnId, cardId));
+          break;
+        case 'move-card':
+          KB.App.moveToMenu(KB.State.activeBoard().id, columnId, cardId);
           break;
         case 'duplicate-card':
           KB.State.duplicateCard(columnId, cardId);
@@ -497,6 +535,7 @@
     KB.el('add-column').querySelector('.btn-icon').innerHTML = icon('plus');
     KB.el('manage-labels').querySelector('.btn-icon').innerHTML = icon('palette');
     KB.el('toggle-archive').querySelector('.btn-icon').innerHTML = icon('archive');
+    KB.el('open-recurrences').querySelector('.btn-icon').innerHTML = icon('clock');
     KB.el('toggle-theme').querySelector('.icon-sun').innerHTML = icon('sun');
     KB.el('toggle-theme').querySelector('.icon-moon').innerHTML = icon('moon');
     KB.el('search-input').previousElementSibling.innerHTML = icon('search');
@@ -599,6 +638,7 @@
 
   function init() {
     KB.State.load();
+    KB.Workspaces.loadPrefs();
     applyTheme();
     bootScreen();
     mountIcons();
@@ -607,6 +647,7 @@
     wireFilters();
     wireBoard();
     wireArchive();
+    wireWorkspaces();
     wireKeys();
     toggleArchive(false);
     tickClock();

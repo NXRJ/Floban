@@ -188,11 +188,14 @@
     var actions = h('div', { class: 'card-actions' });
     var editBtn = h('button', { type: 'button', class: 'btn icon sm', 'data-action': 'edit-card', title: 'Edit card' });
     editBtn.innerHTML = icon('edit');
+    var moveBtn = h('button', { type: 'button', class: 'btn icon sm', 'data-action': 'move-card', title: 'Move to…' });
+    moveBtn.innerHTML = icon('board');
     var copyBtn = h('button', { type: 'button', class: 'btn icon sm', 'data-action': 'duplicate-card', title: 'Duplicate card' });
     copyBtn.innerHTML = icon('copy');
     var archiveBtn = h('button', { type: 'button', class: 'btn icon sm', 'data-action': 'archive-card', title: 'Archive card' });
     archiveBtn.innerHTML = icon('archive');
     actions.appendChild(editBtn);
+    actions.appendChild(moveBtn);
     actions.appendChild(copyBtn);
     actions.appendChild(archiveBtn);
     el.appendChild(actions);

@@ -68,6 +68,12 @@
   </div>
   <header class="app-header">
     <div class="logo"><span class="logo-dot" aria-hidden="true"></span><span class="logo-name">KANBAN</span></div>
+    <nav class="workspace-nav" aria-label="Workspaces">
+      <button type="button" class="ws-btn" data-workspace="board">Board</button>
+      <button type="button" class="ws-btn" data-workspace="mydesk">My Desk</button>
+      <button type="button" class="ws-btn" data-workspace="inbox">Inbox <span id="inbox-badge" class="ws-badge" hidden></span></button>
+      <button type="button" class="ws-btn" data-workspace="review">Review</button>
+    </nav>
     <button id="board-switch" class="btn" type="button" title="Switch board">
       <span class="btn-icon"></span><span id="board-name" class="board-name"></span><span class="btn-caret"></span>
     </button>
@@ -80,6 +86,9 @@
     </button>
     <button id="toggle-archive" class="btn" type="button">
       <span class="btn-icon"></span><span class="btn-label">Archive</span><span id="archive-badge" class="archive-badge"></span>
+    </button>
+    <button id="open-recurrences" class="btn" type="button" title="Recurring work">
+      <span class="btn-icon"></span><span class="btn-label">Recurring</span>
     </button>
     <span id="clock" class="clock" aria-hidden="true"></span>
     <button id="toggle-theme" class="btn icon" type="button" title="Toggle dark / light theme" aria-label="Toggle dark / light theme">
@@ -117,11 +126,16 @@
     <div id="board" class="board" aria-label="Board"></div>
   </main>
 
+  <section id="ws-mydesk" class="workspace" aria-label="My Desk" hidden></section>
+  <section id="ws-inbox" class="workspace" aria-label="Inbox" hidden></section>
+  <section id="ws-review" class="workspace" aria-label="Review" hidden></section>
+
   <div id="archive-backdrop" class="archive-backdrop"></div>
   <aside id="archive-panel" class="archive-panel" aria-label="Archive"></aside>
 
   <div id="modal-root"></div>
   <div id="toast-root"></div>
+  <div id="live-region" class="live-region" role="status" aria-live="polite"></div>
 
   <script src="js/core/date.js"></script>
   <script src="js/core/model.js"></script>
@@ -129,6 +143,7 @@
   <script src="js/core/lifecycle.js"></script>
   <script src="js/core/relations.js"></script>
   <script src="js/core/policies.js"></script>
+  <script src="js/core/metrics.js"></script>
   <script src="js/core/filtering.js"></script>
   <script src="js/core/history.js"></script>
   <script src="js/core/operations.js"></script>
@@ -139,7 +154,9 @@
   <script src="js/filters.js"></script>
   <script src="js/dragdrop.js"></script>
   <script src="js/modal.js"></script>
+  <script src="js/workspaces.js"></script>
   <script src="js/render.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/moveto.js"></script>
 </body>
 </html>

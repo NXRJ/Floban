@@ -136,8 +136,9 @@
     }).filter(function (item) { return item.text; });
   }
 
-  function cardEditor(columnId, card, opener) {
+  function cardEditor(columnId, card, opener, boardId) {
     var isEdit = Boolean(card);
+    var editorBoardId = typeof boardId === 'string' ? boardId : (KB.State.activeBoard() ? KB.State.activeBoard().id : '');
     var form = h('form', { class: 'card-form' });
 
     var heading = h('h2');
@@ -200,7 +201,7 @@
     });
 
     var relOps = [];
-    var selfRef = isEdit && card ? { boardId: KB.State.activeBoard().id, cardId: card.id } : null;
+    var selfRef = isEdit && card ? { boardId: editorBoardId, cardId: card.id } : null;
 
     function allCardsForSearch() {
       var list = [];
@@ -409,7 +410,7 @@
       var archiveBtn = h('button', { type: 'button', class: 'btn danger-ghost' });
       archiveBtn.textContent = 'Archive';
       archiveBtn.addEventListener('click', function () {
-        KB.State.archiveCard(columnId, card.id);
+        KB.State.archiveCard(columnId, card.id, editorBoardId);
         KB.UI.toast('Card archived', 'info', 'Undo', KB.UI.undoAction);
         close();
         KB.App.refresh();
@@ -420,7 +421,7 @@
       duplicateBtn.textContent = 'Duplicate';
       duplicateBtn.title = 'Create a copy of this card';
       duplicateBtn.addEventListener('click', function () {
-        var copy = KB.State.duplicateCard(columnId, card.id);
+        var copy = KB.State.duplicateCard(columnId, card.id, editorBoardId);
         if (copy) {
           KB.UI.toast('Card duplicated', 'success', 'Undo', KB.UI.undoAction);
           close();
@@ -473,14 +474,14 @@
       if (isEdit) {
         relOps.forEach(function (op) {
           if (op.kind === 'blocker') {
-            if (op.remove) KB.State.removeBlocker(columnId, card.id, op.ref.boardId, op.ref.cardId);
-            else KB.State.addBlocker(columnId, card.id, op.ref.boardId, op.ref.cardId);
+            if (op.remove) KB.State.removeBlocker(editorBoardId, card.id, op.ref.boardId, op.ref.cardId);
+            else KB.State.addBlocker(editorBoardId, card.id, op.ref.boardId, op.ref.cardId);
           } else if (op.kind === 'related') {
-            if (op.remove) KB.State.removeRelated(columnId, card.id, op.ref.boardId, op.ref.cardId);
-            else KB.State.addRelated(columnId, card.id, op.ref.boardId, op.ref.cardId);
+            if (op.remove) KB.State.removeRelated(editorBoardId, card.id, op.ref.boardId, op.ref.cardId);
+            else KB.State.addRelated(editorBoardId, card.id, op.ref.boardId, op.ref.cardId);
           }
         });
-        KB.State.updateCardWithFlow(columnId, card.id, data, flowInput.value, flowReasonInput.value.trim());
+        KB.State.updateCardWithFlow(columnId, card.id, data, flowInput.value, flowReasonInput.value.trim(), editorBoardId);
         KB.UI.toast('Changes saved', 'success');
       } else {
         KB.State.addCard(columnId, data);
@@ -935,6 +936,9 @@
   }
 
   KB.Modal = {
+    open: open,
+    close: close,
+    fieldBlock: fieldBlock,
     cardEditor: cardEditor,
     columnEditor: columnEditor,
     labelManager: labelManager,
