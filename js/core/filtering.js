@@ -15,7 +15,9 @@
   typeof globalThis !== 'undefined' ? globalThis : this,
   function (DateCore) {
     var UNASSIGNED = '__unassigned__';
-    var SORT_MODES = ['manual', 'due', 'created', 'updated'];
+    var SORT_MODES = ['manual', 'due', 'created', 'updated', 'priority', 'size'];
+    var PRIORITY_WEIGHT = { none: 0, low: 1, medium: 2, high: 3, urgent: 4 };
+    var SIZE_WEIGHT = { none: 0, xs: 1, s: 2, m: 3, l: 4, xl: 5 };
 
     function labelsList(filters) {
       var labels = filters && filters.labels;
@@ -50,12 +52,18 @@
         if (String(card.assignee || '').trim() !== filter.assignee) return false;
       }
       if (filter.due && !dueMatches(card, filter.due, today, weekEnd)) return false;
+      if (filter.priority) {
+        if (String(card.priority || 'none') !== filter.priority) return false;
+      }
+      if (filter.size) {
+        if (String(card.size || 'none') !== filter.size) return false;
+      }
       return true;
     }
 
     function hasActiveFilters(filters) {
       var filter = filters || {};
-      return Boolean(filter.search || labelsList(filter).length > 0 || filter.assignee || filter.due);
+      return Boolean(filter.search || labelsList(filter).length > 0 || filter.assignee || filter.due || filter.priority || filter.size);
     }
 
     function compareCards(cardA, cardB, sortMode) {
@@ -67,6 +75,16 @@
           if (!a) return 1;
           if (!b) return -1;
           return a < b ? -1 : 1;
+        }
+        case 'priority': {
+          var pa = PRIORITY_WEIGHT[cardA.priority] || 0;
+          var pb = PRIORITY_WEIGHT[cardB.priority] || 0;
+          return pb - pa;
+        }
+        case 'size': {
+          var sa = SIZE_WEIGHT[cardA.size] || 0;
+          var sb = SIZE_WEIGHT[cardB.size] || 0;
+          return sb - sa;
         }
         case 'created':
           return (cardA.createdAt || 0) - (cardB.createdAt || 0);

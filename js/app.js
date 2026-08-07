@@ -88,6 +88,8 @@
     KB.el('search-input').value = '';
     KB.el('assignee-filter').value = '';
     KB.el('due-filter').value = '';
+    KB.el('priority-filter').value = '';
+    KB.el('size-filter').value = '';
     KB.Filters.selected.clear();
     refresh();
   }
@@ -232,6 +234,8 @@
             description: template.description,
             labels: (template.labels || []).slice(),
             assignee: template.assignee,
+            priority: template.priority || 'none',
+            size: template.size || 'none',
             checklist: (template.checklist || []).map(function (item) {
               return { id: KB.Dom.uid('ck'), text: item.text, done: false };
             })
@@ -288,6 +292,8 @@
     });
     KB.el('assignee-filter').addEventListener('change', refresh);
     KB.el('due-filter').addEventListener('change', refresh);
+    KB.el('priority-filter').addEventListener('change', refresh);
+    KB.el('size-filter').addEventListener('change', refresh);
     KB.el('sort-select').addEventListener('change', function () {
       KB.Filters.setSortMode(this.value);
       if (KB.Filters.sortActive()) {

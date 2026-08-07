@@ -176,6 +176,8 @@
         description: '',
         labels: [],
         assignee: '',
+        priority: 'none',
+        size: 'none',
         checklist: []
       }, overrides || {});
     }

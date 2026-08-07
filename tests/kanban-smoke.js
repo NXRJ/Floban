@@ -353,6 +353,42 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const afterUndo = await page.$$eval('.column .card-title', els => els.map(e => e.textContent));
   check('single undo removes only the probe card', !afterUndo.some(t => t === 'History probe'));
 
+  // ---- Priority and size editing + badges + filters ----
+  await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    const card = board.columns[0].cards[0];
+    card.priority = 'urgent';
+    card.size = 'xl';
+    localStorage.setItem('kanban.board.v1', JSON.stringify(b));
+  });
+  await page.goto(URL, { waitUntil: 'load' });
+  await sleep(400);
+  check('priority chip renders', await page.$eval('.column:nth-child(1) .card:nth-child(1) .chip.priority', el => el.textContent.trim()) === 'URGENT');
+  check('size badge renders', await page.$eval('.column:nth-child(1) .card:nth-child(1) .chip.size', el => el.textContent.trim()) === 'XL');
+  await page.select('#priority-filter', 'urgent');
+  await sleep(200);
+  check('priority filter narrows cards', await page.$$eval('.column:nth-child(1) .card', els => els.length) === 1);
+  await page.select('#priority-filter', '');
+  await page.select('#size-filter', 'xl');
+  await sleep(200);
+  check('size filter narrows cards', await page.$$eval('.column:nth-child(1) .card', els => els.length) === 1);
+  await page.select('#size-filter', '');
+  await sleep(150);
+
+  await cardAction(1, 1, 'edit-card');
+  await sleep(200);
+  await page.select('#cf-priority', 'high');
+  await page.select('#cf-size', 'm');
+  await clickByText('.modal-actions .btn', 'Save');
+  await sleep(200);
+  const editedMeta = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const card = b.boards.find(x => x.id === b.activeBoardId).columns[0].cards[0];
+    return { priority: card.priority, size: card.size };
+  });
+  check('editor saves priority and size', editedMeta.priority === 'high' && editedMeta.size === 'm');
+
   // ---- Lifecycle fields follow role-based moves ----
   await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));

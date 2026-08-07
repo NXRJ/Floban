@@ -156,6 +156,20 @@
     dueInput.value = card ? (card.due || '') : '';
     form.appendChild(fieldBlock('Due date', dueInput));
 
+    var priorityInput = h('select', { id: 'cf-priority', 'aria-label': 'Priority' });
+    KB.Filters.PRIORITY_OPTIONS.forEach(function (pair) {
+      priorityInput.appendChild(new Option(pair[1], pair[0]));
+    });
+    priorityInput.value = card ? (card.priority || 'none') : 'none';
+    form.appendChild(fieldBlock('Priority', priorityInput));
+
+    var sizeInput = h('select', { id: 'cf-size', 'aria-label': 'Size' });
+    KB.Filters.SIZE_OPTIONS.forEach(function (pair) {
+      sizeInput.appendChild(new Option(pair[1], pair[0]));
+    });
+    sizeInput.value = card ? (card.size || 'none') : 'none';
+    form.appendChild(fieldBlock('Size', sizeInput));
+
     var descInput = h('textarea', { id: 'cf-desc', rows: 5, placeholder: 'Details, context, notes…  **bold**  *italic*  `code`  [link](url)', 'aria-label': 'Description' });
     descInput.value = card ? (card.description || '') : '';
     form.appendChild(fieldBlock('Description', descInput));
@@ -207,6 +221,8 @@
         title: titleInput.value.trim(),
         assignee: assigneeInput.value.trim(),
         due: dueInput.value || '',
+        priority: priorityInput.value,
+        size: sizeInput.value,
         description: descInput.value.trim(),
         checklist: readChecklist(checkBox),
         labels: Array.prototype.map.call(labelsBox.querySelectorAll('.chip.active'), function (chip) {
@@ -254,6 +270,8 @@
           description: data.description,
           labels: data.labels,
           assignee: data.assignee,
+          priority: data.priority,
+          size: data.size,
           checklist: data.checklist
         });
         KB.UI.toast('Template saved', 'success');

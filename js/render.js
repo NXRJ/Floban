@@ -5,6 +5,27 @@
 
   var COLUMN_ACCENTS = ['#c81e14', '#a34800', '#ffd60a', '#a9e020', '#13643c', '#3fd7e0', '#2a58c4', '#6d30d6', '#b11f75'];
 
+  var PRIORITY_ORDER = ['none', 'low', 'medium', 'high', 'urgent'];
+  var PRIORITY_CLASS = { low: 'p-low', medium: 'p-medium', high: 'p-high', urgent: 'p-urgent' };
+  var PRIORITY_LABEL = { low: 'LOW', medium: 'MED', high: 'HIGH', urgent: 'URGENT' };
+  var SIZE_LABEL = { xs: 'XS', s: 'S', m: 'M', l: 'L', xl: 'XL' };
+
+  function priorityChip(card) {
+    if (!card.priority || card.priority === 'none') return null;
+    var chip = h('span', { class: 'chip chip-static priority ' + (PRIORITY_CLASS[card.priority] || '') });
+    chip.textContent = PRIORITY_LABEL[card.priority] || String(card.priority).toUpperCase();
+    chip.title = 'Priority: ' + card.priority;
+    return chip;
+  }
+
+  function sizeChip(card) {
+    if (!card.size || card.size === 'none') return null;
+    var chip = h('span', { class: 'chip chip-static size' });
+    chip.textContent = SIZE_LABEL[card.size] || card.size.toUpperCase();
+    chip.title = 'Size: ' + card.size;
+    return chip;
+  }
+
   function columnAccent(id) {
     var sum = 0;
     for (var i = 0; i < id.length; i++) sum = (sum * 31 + id.charCodeAt(i)) >>> 0;
@@ -110,6 +131,10 @@
     if (progress) el.appendChild(progress);
 
     var meta = h('div', { class: 'card-meta' });
+    var pr = priorityChip(card);
+    if (pr) meta.appendChild(pr);
+    var sz = sizeChip(card);
+    if (sz) meta.appendChild(sz);
     card.labels.forEach(function (id) {
       var label = KB.State.findLabel(id);
       if (label) meta.appendChild(staticChip(label));
@@ -338,6 +363,22 @@
       due.appendChild(new Option(pair[1], pair[0]));
     });
     due.value = prevDue;
+
+    var priority = KB.el('priority-filter');
+    var prevPriority = priority.value;
+    priority.innerHTML = '';
+    KB.Filters.PRIORITY_OPTIONS.forEach(function (pair) {
+      priority.appendChild(new Option(pair[1], pair[0]));
+    });
+    priority.value = prevPriority;
+
+    var size = KB.el('size-filter');
+    var prevSize = size.value;
+    size.innerHTML = '';
+    KB.Filters.SIZE_OPTIONS.forEach(function (pair) {
+      size.appendChild(new Option(pair[1], pair[0]));
+    });
+    size.value = prevSize;
 
     var sort = KB.el('sort-select');
     var prevSort = sort.value || KB.Filters.sortModeValue();

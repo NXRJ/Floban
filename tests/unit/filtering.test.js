@@ -284,3 +284,54 @@ test('filters with labels as an array behave like a Set', () => {
   assert.equal(Filtering.matchesCard(makeCard({ labels: ['label-2'] }), filters, ctx()), true);
   assert.equal(Filtering.matchesCard(makeCard({ labels: ['label-9'] }), filters, ctx()), false);
 });
+
+test('priority filter matches the exact priority', () => {
+  const card = makeCard({ priority: 'high' });
+  assert.equal(Filtering.matchesCard(card, makeFilters({ priority: 'high' }), ctx()), true);
+  assert.equal(Filtering.matchesCard(card, makeFilters({ priority: 'low' }), ctx()), false);
+});
+
+test('missing priority counts as none for filtering', () => {
+  const card = makeCard();
+  assert.equal(Filtering.matchesCard(card, makeFilters({ priority: 'none' }), ctx()), true);
+  assert.equal(Filtering.matchesCard(card, makeFilters({ priority: 'urgent' }), ctx()), false);
+});
+
+test('size filter matches the exact size', () => {
+  const card = makeCard({ size: 'xl' });
+  assert.equal(Filtering.matchesCard(card, makeFilters({ size: 'xl' }), ctx()), true);
+  assert.equal(Filtering.matchesCard(card, makeFilters({ size: 'xs' }), ctx()), false);
+});
+
+test('priority and size filters combine with other categories', () => {
+  const card = makeCard({ priority: 'urgent', size: 'm', due: '2026-08-01' });
+  assert.equal(Filtering.matchesCard(card, makeFilters({ priority: 'urgent', size: 'm', due: 'overdue' }), ctx()), true);
+  assert.equal(Filtering.matchesCard(card, makeFilters({ priority: 'urgent', size: 'l', due: 'overdue' }), ctx()), false);
+});
+
+test('hasActiveFilters detects priority and size filters', () => {
+  assert.equal(Filtering.hasActiveFilters(makeFilters({ priority: 'high' })), true);
+  assert.equal(Filtering.hasActiveFilters(makeFilters({ size: 'm' })), true);
+});
+
+test('sort by priority places urgent first', () => {
+  const low = makeCard({ priority: 'low' });
+  const urgent = makeCard({ priority: 'urgent' });
+  const none = makeCard({ priority: 'none' });
+  const sorted = [none, low, urgent].sort((a, b) => Filtering.compareCards(a, b, 'priority'));
+  assert.deepEqual(sorted.map(c => c.priority), ['urgent', 'low', 'none']);
+});
+
+test('sort by size places xl first', () => {
+  const s = makeCard({ size: 's' });
+  const xl = makeCard({ size: 'xl' });
+  const none = makeCard({ size: 'none' });
+  const sorted = [none, s, xl].sort((a, b) => Filtering.compareCards(a, b, 'size'));
+  assert.deepEqual(sorted.map(c => c.size), ['xl', 's', 'none']);
+});
+
+test('priority and size are valid sort modes', () => {
+  assert.equal(Filtering.isValidSortMode('priority'), true);
+  assert.equal(Filtering.isValidSortMode('size'), true);
+});
+
