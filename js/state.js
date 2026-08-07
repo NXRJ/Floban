@@ -942,6 +942,7 @@
     load: load,
     data: data,
     activeBoard: activeBoard,
+    boardById: boardById,
     boards: boards,
     findColumn: findColumn,
     findCard: findCard,
