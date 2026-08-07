@@ -78,10 +78,6 @@ function columnOf(state, id) {
   return boardOf(state).columns.find((c) => c.id === id);
 }
 
-function clone(input) {
-  return JSON.parse(JSON.stringify(input));
-}
-
 test('moveCard moves a card between columns', () => {
   const result = Operations.moveCard(makeState(), { columnId: 'column-1', cardId: 'card-a', targetColumnId: 'column-2', toIndex: 1 }, makeDeps());
   assert.equal(result.changed, true);

@@ -5,7 +5,6 @@
 
   var COLUMN_ACCENTS = ['#c81e14', '#a34800', '#ffd60a', '#a9e020', '#13643c', '#3fd7e0', '#2a58c4', '#6d30d6', '#b11f75'];
 
-  var PRIORITY_ORDER = ['none', 'low', 'medium', 'high', 'urgent'];
   var PRIORITY_CLASS = { low: 'p-low', medium: 'p-medium', high: 'p-high', urgent: 'p-urgent' };
   var PRIORITY_LABEL = { low: 'LOW', medium: 'MED', high: 'HIGH', urgent: 'URGENT' };
   var SIZE_LABEL = { xs: 'XS', s: 'S', m: 'M', l: 'L', xl: 'XL' };
@@ -49,10 +48,6 @@
     return chip;
   }
 
-  function escapeHtml(text) {
-    return KB.Core.Markdown.escapeHtml(text);
-  }
-
   function mdLite(text) {
     return KB.Core.Markdown.renderMarkdownLite(text);
   }
@@ -80,7 +75,7 @@
     return chip;
   }
 
-  function dependencyChip(card, column) {
+  function dependencyChip(card) {
     var blockers = card.dependencies && card.dependencies.blockers ? card.dependencies.blockers : [];
     if (blockers.length === 0) return null;
     var board = KB.State.activeBoard();

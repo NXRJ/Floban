@@ -19,7 +19,6 @@
   function (Model, Pipeline) {
     var MS_PER_DAY = 86400000;
     var CATCH_UP_CAP = 100;
-    var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
     function resolveDeps(deps) {
       if (!deps || typeof deps.uid !== 'function' || typeof deps.now !== 'function') {
@@ -204,7 +203,6 @@
     }
 
     function processDueRecurrences(state, now, deps) {
-      var d = resolveDeps(deps);
       var next = JSON.parse(JSON.stringify(state));
       var created = 0;
       var skippedWaiting = 0;
@@ -307,8 +305,7 @@
       return { changed: true, state: next, created: created, skippedWaiting: skippedWaiting, disabled: disabled, advanced: advanced };
     }
 
-    function handleRecurringCardCompletion(state, cardRef, now, deps) {
-      var d = resolveDeps(deps);
+    function handleRecurringCardCompletion(state, cardRef) {
       var next = JSON.parse(JSON.stringify(state));
       var board = next.boards.find(function (b) { return b.id === cardRef.boardId; });
       if (!board) return { changed: false, state: state };

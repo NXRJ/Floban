@@ -129,7 +129,7 @@
       });
     }
 
-    function oldestActiveCards(board, now) {
+    function oldestActiveCards(board) {
       var list = [];
       (board.columns || []).forEach(function (column) {
         if (column.role === 'done') return;

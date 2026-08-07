@@ -1,9 +1,7 @@
 (function (KB) {
   var h = KB.Dom.h;
-  var icon = KB.Dom.icon;
 
   var moveMode = null;
-  var moveTimer = null;
 
   function announce(text) {
     var region = KB.el('live-region');

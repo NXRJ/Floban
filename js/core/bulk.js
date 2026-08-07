@@ -47,7 +47,6 @@
       if (!targetColumn) return { changed: false, state: state, value: null, reason: 'column-not-found' };
 
       var violations = [];
-      var moved = 0;
       cardRefs.forEach(function (ref) {
         var located = resolveCard(next, ref);
         if (!located) {
@@ -96,7 +95,6 @@
         var located = resolveCard(next, entry.ref);
         if (!located) return;
         var card = located.column.cards[located.index];
-        var sameColumn = located.column.id === targetColumn.id;
         var mappings = options.labelMappings || {};
         var mapped = mappings[entry.ref.boardId + ':' + entry.ref.cardId];
         var placed = Pipeline.placeCard(next, card, located.column, targetBoard, targetColumn, {
@@ -135,7 +133,6 @@
           firstIndex += 1;
         });
       }
-      moved = movedCards.length;
       if (violations.length > 0) {
         return { changed: true, state: next, value: movedCards, warnings: violations };
       }

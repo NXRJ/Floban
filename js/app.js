@@ -653,7 +653,6 @@
     var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     function bootLines() {
-      var state = KB.State.data();
       var board = KB.State.activeBoard();
       var cols = board.columns.length;
       var cards = board.columns.reduce(function (n, c) { return n + c.cards.length; }, 0);

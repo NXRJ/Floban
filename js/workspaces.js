@@ -1,6 +1,5 @@
 (function (KB) {
   var h = KB.Dom.h;
-  var icon = KB.Dom.icon;
 
   var UI_KEY = 'kanban.ui.v1';
   var workspace = 'board';
@@ -279,7 +278,6 @@
 
   function currentBoardLensDefinition(name) {
     var filters = KB.Filters.read();
-    var board = KB.State.activeBoard();
     return {
       name: name,
       scope: 'active-board',
