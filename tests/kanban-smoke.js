@@ -945,6 +945,25 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await sleep(100);
   check('escape clears the selection', await page.$$eval('.card.selected', els => els.length) === 0);
 
+  // ---- Activity view ----
+  await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const card = board.columns.find(c => c.cards.length > 0).cards[0];
+    card.flow.periods.push({ state: 'blocked', reason: 'x', startedAt: Date.now() - 86400000, endedAt: Date.now() - 43200000 });
+    KB.App.refresh();
+  });
+  await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns.find(c => c.cards.length > 0);
+    KB.Modal.cardEditor(col.id, col.cards[0], null, board.id);
+  });
+  await sleep(200);
+  check('activity section renders events', await page.$$eval('.activity-row', els => els.length) >= 2);
+  check('activity shows created and move events',
+    (await page.$$eval('.activity-label', els => els.map(e => e.textContent))).some(t => t === 'Created'));
+  await clickByText('.modal-actions .btn', 'Cancel');
+  await sleep(150);
+
   check('no unexpected page errors', errors.filter(e => !e.includes('ERR_CONNECTION_REFUSED')).length === 0);
 
   console.log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECKS FAILED');
