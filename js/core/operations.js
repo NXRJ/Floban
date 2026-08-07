@@ -195,7 +195,7 @@
       if (next.activeBoardId === command.boardId) {
         next.activeBoardId = next.boards[Math.min(index, next.boards.length - 1)].id;
       }
-      return { changed: true, state: next, value: null };
+      return { changed: true, state: next, value: true };
     }
 
     function removeLabel(state, command) {

@@ -437,6 +437,7 @@ test('deleting the final remaining board is prohibited', () => {
   const result = Operations.deleteBoard(state, { boardId: 'board-1' });
   assert.equal(result.changed, false);
   assert.equal(result.reason, 'last-board');
+  assert.equal(result.value, null);
   assert.equal(result.state, state);
 });
 
@@ -461,6 +462,7 @@ test('deleting the active board selects a deterministic replacement', () => {
   state.activeBoardId = 'board-2';
   const result = Operations.deleteBoard(state, { boardId: 'board-2' });
   assert.equal(result.changed, true);
+  assert.equal(result.value, true);
   assert.deepEqual(result.state.boards.map((b) => b.id), ['board-1', 'board-3']);
   assert.equal(result.state.activeBoardId, 'board-3');
 });
@@ -492,6 +494,7 @@ test('deleting a non-active board preserves the active selection', () => {
   });
   const result = Operations.deleteBoard(state, { boardId: 'board-2' });
   assert.equal(result.changed, true);
+  assert.equal(result.value, true);
   assert.equal(result.state.activeBoardId, 'board-1');
   assert.deepEqual(result.state.boards.map((b) => b.id), ['board-1']);
 });

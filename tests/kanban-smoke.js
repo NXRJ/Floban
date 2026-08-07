@@ -305,6 +305,21 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await sleep(400);
   const md2 = await page.$eval('.card-desc', el => el.innerHTML);
   check('markdown is XSS safe', md2.indexOf('<img') === -1 && md2.indexOf('&lt;img') !== -1);
+
+  // ---- Delete board: must toast and refresh the UI ----
+  await page.evaluate(() => { window.confirm = () => true; KB.State.addBoard('Delete Me'); KB.App.refresh(); });
+  await sleep(200);
+  check('delete-board setup board active', (await page.$eval('#board-name', el => el.textContent)) === 'Delete Me');
+  await page.click('#board-switch');
+  await sleep(150);
+  await page.evaluate(() => { [...document.querySelectorAll('.pop .pop-item')].find(b => b.textContent.includes('Delete board')).click(); });
+  await sleep(250);
+  check('delete board switches board and toasts',
+    (await page.$eval('#board-name', el => el.textContent)) === 'My Board' &&
+    (await page.$$eval('.toast', els => els.some(e => e.textContent.includes('Board deleted')))));
+  const boardsAfterDelete = await page.evaluate(() => KB.State.boards().length);
+  check('delete board removes it from state', boardsAfterDelete === 2);
+
   check('no unexpected page errors', errors.filter(e => !e.includes('ERR_CONNECTION_REFUSED')).length === 0);
 
   console.log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECKS FAILED');
