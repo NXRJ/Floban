@@ -145,6 +145,30 @@ test('moveCard with a missing target column is a safe no-op', () => {
   assert.equal(result.reason, 'column-not-found');
 });
 
+test('moveCard treats a same-column same-position drop as a no-op', () => {
+  const state = makeState();
+  const result = Operations.moveCard(state, { columnId: 'column-1', cardId: 'card-a', targetColumnId: 'column-1', toIndex: 0 }, makeDeps());
+  assert.equal(result.changed, false);
+  assert.equal(result.reason, 'no-position-change');
+  assert.equal(result.state, state);
+  assert.deepEqual(columnOf(state, 'column-1').cards.map((c) => c.id), ['card-a', 'card-b']);
+});
+
+test('moveCard treats a middle same-position drop as a no-op', () => {
+  const state = makeState();
+  const result = Operations.moveCard(state, { columnId: 'column-1', cardId: 'card-b', targetColumnId: 'column-1', toIndex: 1 }, makeDeps());
+  assert.equal(result.changed, false);
+  assert.equal(result.reason, 'no-position-change');
+});
+
+test('moveCard still records a cross-column move whose index equals the source index', () => {
+  const state = makeState();
+  const result = Operations.moveCard(state, { columnId: 'column-1', cardId: 'card-a', targetColumnId: 'column-2', toIndex: 0 }, makeDeps());
+  assert.equal(result.changed, true);
+  assert.equal(result.state.boards[0].columns[1].cards[0].id, 'card-a');
+  assert.equal(result.state.boards[0].columns[1].cards[0].movedAt, 9000);
+});
+
 test('moveCard does not mutate the input state', () => {
   const state = makeState();
   const before = JSON.stringify(state);

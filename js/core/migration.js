@@ -51,6 +51,14 @@
       }).filter(Boolean);
     }
 
+    function normalizeOwnedCards(cards, ownerId, deps) {
+      return (Array.isArray(cards) ? cards : []).map(function (card) {
+        var normalized = normalizeCard(card, deps);
+        if (normalized) normalized.columnId = ownerId;
+        return normalized;
+      }).filter(Boolean);
+    }
+
     function normalizeCard(card, deps) {
       var d = resolveDeps(deps);
       if (!card || typeof card !== 'object') return null;
@@ -78,12 +86,7 @@
       if (typeof out.isDone !== 'boolean') out.isDone = false;
       if (typeof out.wipLimit !== 'number') out.wipLimit = 0;
       if (typeof out.collapsed !== 'boolean') out.collapsed = false;
-      if (!Array.isArray(out.cards)) out.cards = [];
-      out.cards = out.cards.map(function (card) {
-        var normalized = normalizeCard(card, deps);
-        if (normalized) normalized.columnId = out.id;
-        return normalized;
-      }).filter(Boolean);
+      out.cards = normalizeOwnedCards(out.cards, out.id, deps);
       return out;
     }
 
@@ -130,11 +133,7 @@
           var e = cloneShallow(entry);
           if (typeof e.id !== 'string' || !e.id) e.id = d.uid();
           if (typeof e.title !== 'string') e.title = '';
-          e.cards = (Array.isArray(e.cards) ? e.cards : []).map(function (card) {
-            var normalized = normalizeCard(card, deps);
-            if (normalized) normalized.columnId = e.id;
-            return normalized;
-          }).filter(Boolean);
+          e.cards = normalizeOwnedCards(e.cards, e.id, deps);
           return e;
         }).filter(Boolean);
       out.archive = { cards: archiveCards, columns: archiveColumns };
@@ -183,7 +182,7 @@
           return normalizeCard(Model.createCard(card && card.columnId, card, deps), deps);
         }),
         columns: ((source.archive && Array.isArray(source.archive.columns)) ? source.archive.columns : []).map(function (entry) {
-          var entryId = entry && entry.id ? entry.id : d.uid();
+          var entryId = entry && typeof entry.id === 'string' && entry.id ? entry.id : d.uid();
           var cards = (entry && Array.isArray(entry.cards) ? entry.cards : []).map(function (card) {
             var normalized = normalizeCard(Model.createCard(entryId, card, deps), deps);
             if (normalized) normalized.columnId = entryId;

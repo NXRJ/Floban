@@ -541,6 +541,23 @@ test('adoptBoardShape forces cards inside archived columns to the entry id', () 
   assert.equal(board.archive.columns[0].cards[0].columnId, 'arch-1');
 });
 
+test('adoptBoardShape replaces non-string archived entry ids with generated string ids', () => {
+  const raw = {
+    labels: [],
+    columns: [],
+    archive: {
+      cards: [],
+      columns: [{ id: 123, title: 'Parked', cards: [{ id: 'c-1', title: 'X' }] }]
+    }
+  };
+  const board = Migration.adoptBoardShape(raw, 'Imported', makeDeps());
+  const entry = board.archive.columns[0];
+  assert.equal(typeof entry.id, 'string');
+  assert.notEqual(entry.id, 123);
+  assert.equal(typeof entry.cards[0].columnId, 'string');
+  assert.equal(entry.cards[0].columnId, entry.id);
+});
+
 test('adoptBoardShape deep-clones checklist items', () => {
   const raw = {
     labels: [],

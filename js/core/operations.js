@@ -63,10 +63,13 @@
       if (!source || !target) return noop(state, 'column-not-found');
       var fromIndex = source.cards.findIndex(function (c) { return c.id === command.cardId; });
       if (fromIndex === -1) return noop(state, 'card-not-found');
-      var card = source.cards.splice(fromIndex, 1)[0];
       var index = command.toIndex;
       if (command.columnId === command.targetColumnId && fromIndex < index) index -= 1;
       index = Math.max(0, Math.min(index, target.cards.length));
+      if (command.columnId === command.targetColumnId && index === fromIndex) {
+        return noop(state, 'no-position-change');
+      }
+      var card = source.cards.splice(fromIndex, 1)[0];
       card.columnId = command.targetColumnId;
       if (command.targetColumnId !== command.columnId) card.movedAt = d.now();
       target.cards.splice(index, 0, card);
