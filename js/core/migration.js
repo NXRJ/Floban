@@ -246,6 +246,8 @@
         description: typeof template.description === 'string' ? template.description : '',
         labels: Array.isArray(template.labels) ? template.labels.filter(function (id) { return typeof id === 'string'; }) : [],
         assignee: typeof template.assignee === 'string' ? template.assignee : '',
+        priority: pickIn(PRIORITIES, template.priority, 'none'),
+        size: pickIn(SIZES, template.size, 'none'),
         checklist: normalizeChecklist(template.checklist, deps)
       };
     }

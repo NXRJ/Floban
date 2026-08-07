@@ -6,8 +6,29 @@
   var SORT_OPTIONS = [
     { value: 'manual', label: 'Manual order' },
     { value: 'due', label: 'Due date' },
+    { value: 'priority', label: 'Priority' },
+    { value: 'size', label: 'Size' },
     { value: 'created', label: 'Created' },
     { value: 'updated', label: 'Last updated' }
+  ];
+
+  var PRIORITY_OPTIONS = [
+    ['', 'Any priority'],
+    ['urgent', 'Urgent'],
+    ['high', 'High'],
+    ['medium', 'Medium'],
+    ['low', 'Low'],
+    ['none', 'No priority']
+  ];
+
+  var SIZE_OPTIONS = [
+    ['', 'Any size'],
+    ['xl', 'XL'],
+    ['l', 'L'],
+    ['m', 'M'],
+    ['s', 'S'],
+    ['xs', 'XS'],
+    ['none', 'No size']
   ];
 
   var sortMode = 'manual';
@@ -25,7 +46,9 @@
       search: KB.el('search-input').value.trim(),
       labels: selectedLabels,
       assignee: KB.el('assignee-filter').value,
-      due: KB.el('due-filter').value
+      due: KB.el('due-filter').value,
+      priority: KB.el('priority-filter').value,
+      size: KB.el('size-filter').value
     };
   }
 
@@ -57,6 +80,8 @@
     UNASSIGNED: UNASSIGNED,
     selected: selectedLabels,
     SORT_OPTIONS: SORT_OPTIONS,
+    PRIORITY_OPTIONS: PRIORITY_OPTIONS,
+    SIZE_OPTIONS: SIZE_OPTIONS,
     read: read,
     matches: matches,
     active: active,
