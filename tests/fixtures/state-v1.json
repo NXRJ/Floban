@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "theme": "light",
+  "labels": [
+    { "id": "l-bug", "name": "Bug", "color": "#c81e14" },
+    { "id": "l-feat", "name": "Feature", "color": "not-a-color" }
+  ],
+  "columns": [
+    {
+      "id": "col-todo",
+      "title": "To Do",
+      "cards": [
+        {
+          "id": "card-1",
+          "title": "Plan the weekly sync",
+          "description": "Prepare the agenda.",
+          "labels": ["l-bug"],
+          "assignee": "Sam",
+          "createdAt": 100,
+          "updatedAt": 100
+        },
+        {
+          "id": "card-2",
+          "title": "Redesign the dashboard",
+          "labels": ["l-feat", "missing-label"],
+          "assignee": "Alex",
+          "createdAt": 200,
+          "updatedAt": 200
+        }
+      ]
+    },
+    {
+      "title": "In Progress",
+      "cards": []
+    }
+  ],
+  "archive": {
+    "cards": [
+      {
+        "id": "archived-card-1",
+        "columnId": "col-todo",
+        "title": "Old task",
+        "createdAt": 300,
+        "updatedAt": 300,
+        "archivedAt": 400,
+        "fromColumn": "To Do"
+      }
+    ],
+    "columns": [
+      {
+        "id": "col-archived",
+        "title": "Parked",
+        "cards": [
+          {
+            "id": "archived-col-card-1",
+            "title": "Parked task",
+            "createdAt": 500,
+            "updatedAt": 500
+          }
+        ],
+        "archivedAt": 600
+      }
+    ]
+  }
+}

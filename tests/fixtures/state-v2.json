@@ -1,0 +1,58 @@
+{
+  "version": 2,
+  "theme": "dark",
+  "activeBoardId": "board-1",
+  "boards": [
+    {
+      "id": "board-1",
+      "name": "My Board",
+      "labels": [
+        { "id": "l-bug", "name": "Bug", "color": "#c81e14" },
+        { "id": "l-feat", "name": "Feature", "color": "#2a58c4" }
+      ],
+      "templates": [
+        {
+          "id": "tpl-1",
+          "title": "Fix bug: ",
+          "description": "What happened and how to reproduce.",
+          "labels": ["l-bug"],
+          "assignee": "",
+          "checklist": []
+        }
+      ],
+      "columns": [
+        {
+          "id": "col-1",
+          "title": "To Do",
+          "isDone": false,
+          "wipLimit": 0,
+          "collapsed": false,
+          "cards": [
+            {
+              "id": "card-1",
+              "columnId": "col-1",
+              "title": "Plan the weekly sync",
+              "description": "",
+              "labels": ["l-bug"],
+              "assignee": "Sam",
+              "createdAt": 100,
+              "updatedAt": 100,
+              "movedAt": 100,
+              "due": "",
+              "checklist": []
+            }
+          ]
+        },
+        {
+          "id": "col-2",
+          "title": "In Progress",
+          "isDone": false,
+          "wipLimit": 0,
+          "collapsed": false,
+          "cards": []
+        }
+      ],
+      "archive": { "cards": [], "columns": [] }
+    }
+  ]
+}
