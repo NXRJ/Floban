@@ -390,6 +390,44 @@
 
     refreshRelations();
 
+    var recSection = h('div', { class: 'rel-section' });
+    recSection.appendChild(h('span', { class: 'check-editor-title', textContent: 'Recurrence' }));
+    if (isEdit && card.recurrenceId) {
+      var rec = KB.State.recurrences().find(function (r) { return r.id === card.recurrenceId; });
+      if (rec) {
+        var recRow = h('div', { class: 'rel-row' });
+        var recLabel = h('span', { class: 'rel-label' });
+        recLabel.textContent = rec.template.title + (rec.enabled ? '' : ' (paused)');
+        var recBtn = h('button', { type: 'button', class: 'btn ghost sm' });
+        recBtn.textContent = 'Manage';
+        recBtn.addEventListener('click', function () {
+          close();
+          KB.Modal.recurrenceEditor(rec);
+        });
+        recRow.appendChild(recLabel);
+        recRow.appendChild(h('span', { class: 'spacer' }));
+        recRow.appendChild(recBtn);
+        recSection.appendChild(recRow);
+      }
+    } else {
+      var recCreate = h('button', { type: 'button', class: 'btn ghost sm' });
+      recCreate.textContent = 'Create recurring work from this card…';
+      recCreate.addEventListener('click', function () {
+        close();
+        KB.Modal.recurrenceEditor(null, {
+          boardId: editorBoardId,
+          columnId: columnId,
+          title: titleInput.value.trim(),
+          description: descInput.value.trim(),
+          assignee: assigneeInput.value.trim(),
+          priority: priorityInput.value,
+          size: sizeInput.value
+        });
+      });
+      recSection.appendChild(recCreate);
+    }
+    form.appendChild(fieldBlock('', recSection));
+
     function collect() {
       return {
         title: titleInput.value.trim(),
@@ -931,6 +969,205 @@
     open(panel);
   }
 
+  function recurrenceEditor(existing, prefill) {
+    var form = h('form', { class: 'card-form' });
+    var heading = h('h2');
+    heading.textContent = existing ? 'Edit recurrence' : 'New recurrence';
+    form.appendChild(heading);
+
+    var nameInput = h('input', { type: 'text', maxlength: 120, placeholder: 'What recurs?', 'aria-label': 'Recurrence name' });
+    nameInput.value = existing ? (existing.template.title || '') : (prefill && prefill.title ? prefill.title : '');
+    form.appendChild(fieldBlock('Template title', nameInput, true));
+
+    var modeInput = h('select', { id: 'rc-mode', 'aria-label': 'Recurrence mode' });
+    [['scheduled', 'Scheduled — on a schedule'], ['after-completion', 'After completion — X days after each completion']].forEach(function (pair) {
+      modeInput.appendChild(new Option(pair[1], pair[0]));
+    });
+    modeInput.value = existing ? existing.mode : 'scheduled';
+    form.appendChild(fieldBlock('Mode', modeInput));
+
+    var freqInput = h('select', { id: 'rc-freq', 'aria-label': 'Frequency' });
+    [['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['custom', 'Every N days']].forEach(function (pair) {
+      freqInput.appendChild(new Option(pair[1], pair[0]));
+    });
+    freqInput.value = existing ? (existing.schedule.frequency || 'daily') : 'daily';
+    form.appendChild(fieldBlock('Frequency', freqInput));
+
+    var intervalInput = h('input', { type: 'number', min: 1, max: 999, id: 'rc-interval', 'aria-label': 'Interval' });
+    intervalInput.value = existing && existing.schedule.interval ? existing.schedule.interval : 1;
+    form.appendChild(fieldBlock('Every N units', intervalInput));
+
+    var weekdaysRow = h('div', { class: 'weekday-row' });
+    ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(function (name, index) {
+      var label = h('label', { class: 'wd-label' });
+      var box = h('input', { type: 'checkbox', value: index, 'aria-label': name });
+      box.checked = existing && Array.isArray(existing.schedule.weekdays) && existing.schedule.weekdays.indexOf(index) !== -1;
+      label.appendChild(box);
+      label.appendChild(document.createTextNode(name));
+      weekdaysRow.appendChild(label);
+    });
+    form.appendChild(fieldBlock('Weekdays (weekly)', weekdaysRow));
+
+    var domInput = h('input', { type: 'number', min: 1, max: 31, id: 'rc-dom', 'aria-label': 'Day of month' });
+    domInput.value = existing && existing.schedule.dayOfMonth ? existing.schedule.dayOfMonth : '';
+    form.appendChild(fieldBlock('Day of month (monthly)', domInput));
+
+    var delayInput = h('input', { type: 'number', min: 0, max: 365, id: 'rc-delay', 'aria-label': 'Delay after completion days' });
+    delayInput.value = existing && existing.schedule.delayAfterCompletionDays ? existing.schedule.delayAfterCompletionDays : '';
+    form.appendChild(fieldBlock('Days after completion (after-completion mode)', delayInput));
+
+    var dueOffsetInput = h('input', { type: 'number', min: -365, max: 365, id: 'rc-due', 'aria-label': 'Due date offset days' });
+    dueOffsetInput.value = existing && existing.dueOffsetDays !== null && existing.dueOffsetDays !== undefined ? existing.dueOffsetDays : '';
+    form.appendChild(fieldBlock('Due date offset days', dueOffsetInput));
+
+    var overlapInput = h('select', { id: 'rc-overlap', 'aria-label': 'Overlap policy' });
+    [['single-active', 'Single active — one instance at a time'], ['allow-overlap', 'Allow overlap']].forEach(function (pair) {
+      overlapInput.appendChild(new Option(pair[1], pair[0]));
+    });
+    overlapInput.value = existing ? existing.overlapPolicy : 'single-active';
+    form.appendChild(fieldBlock('Overlap policy', overlapInput));
+
+    var missedInput = h('select', { id: 'rc-missed', 'aria-label': 'Missed policy' });
+    [['skip', 'Skip missed'], ['create-one', 'Create one current occurrence'], ['catch-up-all', 'Catch up all missed']].forEach(function (pair) {
+      missedInput.appendChild(new Option(pair[1], pair[0]));
+    });
+    missedInput.value = existing ? existing.missedPolicy : 'create-one';
+    form.appendChild(fieldBlock('Missed runs', missedInput));
+
+    var boardSelect = h('select', { id: 'rc-board', 'aria-label': 'Target board' });
+    KB.State.boards().forEach(function (board) {
+      boardSelect.appendChild(new Option(board.name, board.id));
+    });
+    form.appendChild(fieldBlock('Target board', boardSelect));
+
+    var columnSelect = h('select', { id: 'rc-column', 'aria-label': 'Target column' });
+    form.appendChild(fieldBlock('Target column', columnSelect));
+
+    var descInput = h('textarea', { id: 'rc-desc', rows: 3, placeholder: 'Description for new cards', 'aria-label': 'Description' });
+    descInput.value = existing ? (existing.template.description || '') : (prefill && prefill.description ? prefill.description : '');
+    form.appendChild(fieldBlock('Description', descInput));
+
+    var priorityInput = h('select', { id: 'rc-priority', 'aria-label': 'Priority' });
+    KB.Filters.PRIORITY_OPTIONS.forEach(function (pair) { priorityInput.appendChild(new Option(pair[1], pair[0])); });
+    priorityInput.value = existing ? (existing.template.priority || 'none') : (prefill && prefill.priority ? prefill.priority : 'none');
+    form.appendChild(fieldBlock('Priority', priorityInput));
+
+    var sizeInput = h('select', { id: 'rc-size', 'aria-label': 'Size' });
+    KB.Filters.SIZE_OPTIONS.forEach(function (pair) { sizeInput.appendChild(new Option(pair[1], pair[0])); });
+    sizeInput.value = existing ? (existing.template.size || 'none') : (prefill && prefill.size ? prefill.size : 'none');
+    form.appendChild(fieldBlock('Size', sizeInput));
+
+    var labelsBox = h('div', { class: 'label-picker' });
+    var targetLabels = KB.State.activeBoard().labels;
+    if (existing) {
+      var targetBoard = KB.State.boardById(existing.target.boardId);
+      if (targetBoard) targetLabels = targetBoard.labels;
+    }
+    targetLabels.forEach(function (label) {
+      var active = existing && existing.template.labelIds.indexOf(label.id) !== -1;
+      labelsBox.appendChild(labelToggleChip(label, active));
+    });
+    form.appendChild(fieldBlock('Labels', labelsBox));
+
+    var assigneeInput = h('input', { type: 'text', list: 'assignee-list', maxlength: 60, 'aria-label': 'Assignee' });
+    assigneeInput.value = existing ? (existing.template.assignee || '') : (prefill && prefill.assignee ? prefill.assignee : '');
+    form.appendChild(fieldBlock('Assignee', assigneeInput));
+
+    function fillColumns() {
+      columnSelect.innerHTML = '';
+      var board = KB.State.boardById(boardSelect.value);
+      if (!board) return;
+      board.columns.forEach(function (column) {
+        columnSelect.appendChild(new Option(column.title, column.id));
+      });
+    }
+    boardSelect.addEventListener('change', fillColumns);
+    if (existing) {
+      var targetBoard = KB.State.boardById(existing.target.boardId);
+      if (targetBoard) boardSelect.value = targetBoard.id;
+    } else if (prefill && prefill.columnId) {
+      var pb = KB.State.boardById(prefill.boardId) || KB.State.activeBoard();
+      if (pb) boardSelect.value = pb.id;
+    }
+    fillColumns();
+    if (existing && existing.target.columnId) columnSelect.value = existing.target.columnId;
+    else if (prefill && prefill.columnId) columnSelect.value = prefill.columnId;
+
+    var actions = h('div', { class: 'modal-actions' });
+    if (existing) {
+      var deleteBtn = h('button', { type: 'button', class: 'btn danger' });
+      deleteBtn.textContent = 'Delete';
+      deleteBtn.addEventListener('click', function () {
+        KB.State.deleteRecurrence(existing.id);
+        KB.UI.toast('Recurrence deleted', 'info', 'Undo', KB.UI.undoAction);
+        close();
+        KB.App.refresh();
+      });
+      actions.appendChild(deleteBtn);
+    }
+    actions.appendChild(h('span', { class: 'spacer' }));
+    var cancelBtn = h('button', { type: 'button', class: 'btn ghost' });
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', close);
+    actions.appendChild(cancelBtn);
+    var saveBtn = h('button', { type: 'submit', class: 'btn primary' });
+    saveBtn.textContent = 'Save';
+    actions.appendChild(saveBtn);
+    form.appendChild(actions);
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var title = nameInput.value.trim();
+      if (!title) {
+        KB.UI.toast('A template title is required', 'error');
+        nameInput.focus();
+        return;
+      }
+      var weekdays = Array.prototype.map.call(weekdaysRow.querySelectorAll('input:checked'), function (box) {
+        return Number(box.value);
+      });
+      var domRaw = parseInt(domInput.value, 10);
+      var delayRaw = parseInt(delayInput.value, 10);
+      var dueRaw = parseInt(dueOffsetInput.value, 10);
+      var definition = {
+        mode: modeInput.value,
+        schedule: {
+          frequency: freqInput.value,
+          interval: Math.max(1, parseInt(intervalInput.value, 10) || 1),
+          weekdays: weekdays,
+          dayOfMonth: isFinite(domRaw) && domRaw >= 1 ? domRaw : null,
+          delayAfterCompletionDays: modeInput.value === 'after-completion' && isFinite(delayRaw) && delayRaw >= 0 ? delayRaw : null
+        },
+        target: { boardId: boardSelect.value, columnId: columnSelect.value },
+        template: {
+          title: title,
+          description: descInput.value.trim(),
+          labelIds: Array.prototype.map.call(labelsBox.querySelectorAll('.chip.active'), function (chip) {
+            return chip.dataset.id;
+          }),
+          assignee: assigneeInput.value.trim(),
+          priority: priorityInput.value,
+          size: sizeInput.value,
+          checklist: []
+        },
+        dueOffsetDays: isFinite(dueRaw) ? dueRaw : null,
+        overlapPolicy: overlapInput.value,
+        missedPolicy: missedInput.value
+      };
+      if (existing) {
+        KB.State.updateRecurrence(existing.id, definition);
+        KB.UI.toast('Recurrence updated', 'success');
+      } else {
+        KB.State.addRecurrence(definition);
+        KB.UI.toast('Recurrence created', 'success');
+      }
+      close();
+      KB.App.refresh();
+    });
+
+    open(form);
+  }
+
   function isOpen() {
     return overlay !== null;
   }
@@ -945,6 +1182,7 @@
     promptModal: promptModal,
     backupModal: backupModal,
     moveConfirmModal: moveConfirmModal,
+    recurrenceEditor: recurrenceEditor,
     isOpen: isOpen
   };
 })(window.KB = window.KB || {});
