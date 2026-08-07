@@ -66,7 +66,7 @@
     KB.Render.archivePanel();
     refreshHeader();
     updateBoardOverflow();
-    KB.Select.renderToolbar();
+    KB.Select.syncAll();
   }
 
   function updateBoardOverflow() {
@@ -288,6 +288,7 @@
     KB.Modal.moveConfirmModal('Move requires confirmation', evaluation, '', function (reason) {
       var moved = KB.State.moveCardChecked(fromColumnId, cardId, toColumnId, toIndex, { confirmed: true, overrideReason: reason });
       afterCardMove(moved);
+      KB.App.refresh();
       if (moved && moved.ok && KB.MoveTo.announce) {
         var target = KB.State.findColumn(toColumnId);
         KB.MoveTo.announce('Moved to ' + (target ? target.title : '') + ', position ' + ((toIndex || 0) + 1) + '.');
@@ -573,12 +574,12 @@
         return;
       }
       if (e.key === '/') {
-        if (typing) return;
+        if (typing || KB.Modal.isOpen()) return;
         e.preventDefault();
         KB.el('search-input').focus();
         return;
       }
-      if (typing || mod || e.altKey) return;
+      if (typing || mod || e.altKey || KB.Modal.isOpen()) return;
       if (e.key === 'n' || e.key === 'N') {
         e.preventDefault();
         var qa = KB.el('board').querySelector('.qa-input');

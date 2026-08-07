@@ -248,11 +248,19 @@ test('pausing an already-paused recurrence is a no-op', () => {
   assert.equal(result.changed, false);
 });
 
-test('a missing target column does not crash processing', () => {
+test('a missing target column marks the recurrence as needing attention', () => {
   const rec = recurrence({ nextRunAt: 500, target: { boardId: 'board-1', columnId: 'ghost' } });
   const result = Recurrence.processDueRecurrences(state([rec], [board()]), 1000, makeDeps());
-  assert.equal(result.changed, false);
+  assert.equal(result.changed, true);
   assert.equal(result.created, 0);
+  assert.equal(result.state.recurrences[0].needsAttention, true);
+});
+
+test('an existing target column clears the needs-attention mark', () => {
+  const rec = recurrence({ nextRunAt: 500, needsAttention: true });
+  const result = Recurrence.processDueRecurrences(state([rec], [board()]), 1000, makeDeps());
+  assert.equal(result.changed, true);
+  assert.equal(result.state.recurrences[0].needsAttention, false);
 });
 
 test('a missing target board disables the recurrence with a reason', () => {
@@ -304,6 +312,85 @@ test('no function relies on the system clock', () => {
   const result = Recurrence.processDueRecurrences(state([rec], [board()]), 1000, makeDeps());
   assert.equal(result.changed, true);
   assert.ok(result.state.boards[0].columns[0].cards.length === 1);
+});
+
+test('after-completion mode creates the next card once the delay has passed', () => {
+  const rec = recurrence({
+    mode: 'after-completion',
+    schedule: { frequency: 'custom', delayAfterCompletionDays: 7 },
+    nextRunAt: localDate(1970, 1, 8, 0)
+  });
+  const result = Recurrence.processDueRecurrences(state([rec], [board()]), localDate(1970, 1, 9, 0), makeDeps());
+  assert.equal(result.changed, true);
+  assert.equal(result.created, 1);
+  const card = result.state.boards[0].columns[0].cards[0];
+  assert.equal(card.title, 'Daily check');
+  assert.equal(card.recurrenceId, 'rec-1');
+});
+
+test('after-completion mode does not create before the delay passes', () => {
+  const rec = recurrence({
+    mode: 'after-completion',
+    schedule: { frequency: 'custom', delayAfterCompletionDays: 7 },
+    nextRunAt: localDate(1970, 1, 8, 0)
+  });
+  const result = Recurrence.processDueRecurrences(state([rec], [board()]), localDate(1970, 1, 7, 0), makeDeps());
+  assert.equal(result.changed, false);
+  assert.equal(result.created, 0);
+});
+
+test('after-completion mode seeds the first card when none is active', () => {
+  const rec = recurrence({
+    mode: 'after-completion',
+    schedule: { frequency: 'custom', delayAfterCompletionDays: 7 },
+    nextRunAt: null,
+    activeCardRef: null
+  });
+  const result = Recurrence.processDueRecurrences(state([rec], [board()]), 1000, makeDeps());
+  assert.equal(result.changed, true);
+  assert.equal(result.created, 1);
+  const processed = result.state.recurrences[0];
+  assert.equal(processed.nextRunAt, null);
+  assert.deepEqual(processed.activeCardRef, { boardId: 'board-1', cardId: 'gen-1' });
+  const again = Recurrence.processDueRecurrences(result.state, 1000, makeDeps());
+  assert.equal(again.created, 0);
+});
+
+test('a monthly day-31 schedule never returns the base date', () => {
+  const rec = recurrence({ schedule: { frequency: 'monthly', interval: 1, dayOfMonth: 31 } });
+  const jan31 = localDate(2026, 1, 31);
+  const next = Recurrence.computeNextRun(rec, jan31);
+  assert.ok(next > jan31);
+  assert.equal(new Date(next).getDate(), 28);
+  const feb28 = localDate(2026, 2, 28);
+  const afterFeb = Recurrence.computeNextRun(rec, feb28);
+  assert.equal(new Date(afterFeb).getDate(), 31);
+  assert.equal(new Date(afterFeb).getMonth(), 2);
+});
+
+test('a monthly day-31 schedule does not flood occurrences', () => {
+  const rec = recurrence({ schedule: { frequency: 'monthly', interval: 1, dayOfMonth: 31 }, nextRunAt: localDate(2026, 1, 31) });
+  const result = Recurrence.processDueRecurrences(state([rec], [board()]), localDate(2026, 2, 10), makeDeps());
+  assert.equal(result.created, 1);
+  assert.equal(result.state.boards[0].columns[0].cards.length, 1);
+});
+
+test('weekly schedule with weekdays honours the interval', () => {
+  const rec = recurrence({ schedule: { frequency: 'weekly', interval: 2, weekdays: [0] } });
+  const monday = localDate(2026, 8, 3);
+  const next = Recurrence.computeNextRun(rec, monday);
+  assert.equal(new Date(next).getDay(), 0);
+  assert.equal(next, localDate(2026, 8, 16, 0));
+});
+
+test('an occurrence created from an after-completion run does not schedule forward', () => {
+  const rec = recurrence({
+    mode: 'after-completion',
+    schedule: { frequency: 'custom', delayAfterCompletionDays: 7 },
+    nextRunAt: localDate(1970, 1, 8, 0)
+  });
+  const result = Recurrence.processDueRecurrences(state([rec], [board()]), localDate(1970, 1, 9, 0), makeDeps());
+  assert.equal(result.state.recurrences[0].nextRunAt, null);
 });
 
 

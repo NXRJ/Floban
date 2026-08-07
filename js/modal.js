@@ -136,6 +136,11 @@
     }).filter(function (item) { return item.text; });
   }
 
+  function labelsFor(boardId) {
+    var board = boardId ? KB.State.boardById(boardId) : null;
+    return board ? (board.labels || []) : (KB.State.labels() || []);
+  }
+
   function cardEditor(columnId, card, opener, boardId) {
     var isEdit = Boolean(card);
     var editorBoardId = typeof boardId === 'string' ? boardId : (KB.State.activeBoard() ? KB.State.activeBoard().id : '');
@@ -353,7 +358,7 @@
     form.appendChild(fieldBlock('', checkBox));
 
     var labelsBox = h('div', { class: 'label-picker' });
-    KB.State.labels().forEach(function (label) {
+    labelsFor(editorBoardId).forEach(function (label) {
       labelsBox.appendChild(labelToggleChip(label, isEdit && card.labels.indexOf(label.id) !== -1));
     });
     form.appendChild(fieldBlock('Labels', labelsBox));
@@ -375,14 +380,16 @@
         newName.focus();
         return;
       }
-      var exists = KB.State.labels().some(function (l) {
+      var boardLabels = labelsFor(editorBoardId);
+      var exists = boardLabels.some(function (l) {
         return l.name.toLowerCase() === name.toLowerCase();
       });
       if (exists) {
         KB.UI.toast('A label with that name already exists', 'error');
         return;
       }
-      var label = KB.State.addLabel(name, newColor.value);
+      var label = KB.State.addLabel(name, newColor.value, editorBoardId);
+      if (!label) return;
       labelsBox.appendChild(labelToggleChip(label, true));
       newName.value = '';
       KB.UI.toast('Label added', 'success');
@@ -978,10 +985,23 @@
     panel.appendChild(heading);
 
     var violations = evaluation.violations || [];
+    var criterionChecks = [];
     violations.forEach(function (violation) {
       var p = h('p', { class: 'policy-violation' });
       p.textContent = '\u25A2 ' + violation.message;
       panel.appendChild(p);
+      if (Array.isArray(violation.criteria) && violation.criteria.length > 0) {
+        violation.criteria.forEach(function (criterion) {
+          var wrap = h('label', { class: 'field check' });
+          var box = h('input', { type: 'checkbox', class: 'mv-criterion', 'aria-label': 'Confirm criterion' });
+          var text = h('span');
+          text.textContent = criterion;
+          wrap.appendChild(box);
+          wrap.appendChild(text);
+          criterionChecks.push(box);
+          panel.appendChild(wrap);
+        });
+      }
     });
 
     var reasonInput = null;
@@ -1001,6 +1021,10 @@
     var confirmBtn = h('button', { type: 'button', class: 'btn primary' });
     confirmBtn.textContent = 'Confirm move';
     confirmBtn.addEventListener('click', function () {
+      if (criterionChecks.length > 0 && !criterionChecks.every(function (box) { return box.checked; })) {
+        KB.UI.toast('Confirm every criterion to continue', 'error');
+        return;
+      }
       var reason = reasonInput ? reasonInput.value.trim() : '';
       if (evaluation.needsReason && !reason) {
         KB.UI.toast('An override reason is required', 'error');
@@ -1016,7 +1040,7 @@
     open(panel);
   }
 
-  function recurrenceEditor(existing, prefill) {
+  function recurrenceEditor(existing, prefill, convertFromInbox) {
     var form = h('form', { class: 'card-form' });
     var heading = h('h2');
     heading.textContent = existing ? 'Edit recurrence' : 'New recurrence';
@@ -1204,6 +1228,10 @@
       if (existing) {
         KB.State.updateRecurrence(existing.id, definition);
         KB.UI.toast('Recurrence updated', 'success');
+      } else if (convertFromInbox && convertFromInbox.inboxId) {
+        var converted = KB.State.convertInboxToRecurrence(convertFromInbox.inboxId, definition);
+        if (converted) KB.UI.toast('Inbox item converted to recurrence', 'success');
+        else KB.UI.toast('Could not convert that item', 'error');
       } else {
         KB.State.addRecurrence(definition);
         KB.UI.toast('Recurrence created', 'success');
@@ -1251,6 +1279,7 @@
         if (rec.nextRunAt) bits.push('next: ' + KB.Dom.fmtDate(rec.nextRunAt));
         if (rec.endAt) bits.push('ends: ' + KB.Dom.fmtDate(rec.endAt));
         if (typeof rec.remainingOccurrences === 'number') bits.push(rec.remainingOccurrences + ' left');
+        if (rec.needsAttention) bits.push('needs attention: target column missing');
         meta.textContent = bits.join(' \u00B7 ');
         main.appendChild(meta);
         if (rec.pausedReason) {
@@ -1481,6 +1510,18 @@
       KB.App.refresh();
     });
     actions.appendChild(archiveBtn);
+    var recurBtn = h('button', { type: 'button', class: 'btn ghost' });
+    recurBtn.textContent = 'Convert to recurrence';
+    recurBtn.addEventListener('click', function () {
+      close();
+      recurrenceEditor(null, {
+        boardId: boardSelect.value,
+        columnId: columnSelect.value,
+        title: item.title,
+        description: item.note || (item.url ? 'Source: ' + item.url : '')
+      }, { inboxId: item.id });
+    });
+    actions.appendChild(recurBtn);
     var deleteBtn = h('button', { type: 'button', class: 'btn danger-ghost' });
     deleteBtn.textContent = 'Delete';
     deleteBtn.addEventListener('click', function () {
@@ -1711,6 +1752,7 @@
     open: open,
     close: close,
     fieldBlock: fieldBlock,
+    labelToggleChip: labelToggleChip,
     cardEditor: cardEditor,
     columnEditor: columnEditor,
     labelManager: labelManager,

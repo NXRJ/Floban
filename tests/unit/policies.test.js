@@ -157,13 +157,25 @@ test('applyEntryDefaults never overwrites existing values', () => {
   assert.equal(card.assignee, 'Alex');
 });
 
-test('wipStatus reports over-limit columns', () => {
+test('wipStatus reports only exceeded columns as over', () => {
   const s = state();
-  const status = Policies.wipStatus(s.boards[0].columns[0]);
-  assert.equal(status.over, true);
-  assert.equal(status.mode, 'off');
+  const atLimit = Policies.wipStatus(s.boards[0].columns[0]);
+  assert.equal(atLimit.over, false);
   const ok = Policies.wipStatus(s.boards[0].columns[1]);
   assert.equal(ok.over, false);
+  s.boards[0].columns[0].cards.push({ id: 'c3' });
+  const exceeded = Policies.wipStatus(s.boards[0].columns[0]);
+  assert.equal(exceeded.over, true);
+  assert.equal(exceeded.mode, 'off');
+});
+
+test('a column at its WIP limit still requires override for hard entry', () => {
+  const s = state();
+  s.boards[0].columns[0].policy.wipMode = 'hard';
+  const result = Policies.evaluateMovePolicy(s, cardRef, { boardId: 'board-1', columnId: 'col-a' });
+  assert.equal(result.allowed, false);
+  assert.equal(result.requiresOverride, true);
+  assert.ok(result.violations.some(v => v.code === 'wip-limit'));
 });
 
 test('evaluateMovePolicy with a missing target is denied', () => {

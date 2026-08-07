@@ -97,7 +97,7 @@
           name: 'Recently Completed',
           scope: 'all-boards',
           boardIds: [],
-          query: { includeCompleted: true },
+          query: { includeCompleted: true, recentlyCompletedOnly: true },
           sort: { field: 'updated', direction: 'desc' },
           display: { density: 'compact', groupBy: 'board' }
         },
@@ -170,8 +170,9 @@
       if (!Filtering.matchesCard(card, filters, dateContext)) return false;
 
       var unresolved = Relations.getUnresolvedBlockers(state, ref, resolved, cards);
-      if (query.blockedOnly && unresolved.length === 0) return false;
-      if (query.readyOnly && unresolved.length > 0) return false;
+      var manualBlocked = card.flow && card.flow.state === 'blocked';
+      if (query.blockedOnly && unresolved.length === 0 && !manualBlocked) return false;
+      if (query.readyOnly && (unresolved.length > 0 || manualBlocked)) return false;
 
       if (query.recentlyCompletedOnly) {
         if (typeof card.completedAt !== 'number' || now - card.completedAt > 7 * 86400000) return false;

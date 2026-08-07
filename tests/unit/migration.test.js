@@ -913,3 +913,115 @@ test('board-only import adopts scoped lenses and skips others', () => {
   assert.equal(result.board.importedLenses.length, 2);
   assert.ok(result.board.importedLenses.every(l => l.id !== 'l-1' && l.id !== 'l-2'));
 });
+
+test('normalizeState keeps references to archived blocker cards', () => {
+  const deps = makeDeps();
+  const s = {
+    version: 3,
+    theme: 'dark',
+    activeBoardId: 'board-1',
+    inbox: { items: [] },
+    lenses: [],
+    recurrences: [],
+    boards: [{
+      id: 'board-1',
+      name: 'One',
+      labels: [],
+      templates: [],
+      columns: [{ id: 'col-1', title: 'To Do', role: 'queue', isDone: false, wipLimit: 0, collapsed: false, cards: [{
+        id: 'live-card',
+        columnId: 'col-1',
+        title: 'Depends on archived work',
+        description: '',
+        labels: [],
+        assignee: '',
+        createdAt: 1,
+        updatedAt: 1,
+        movedAt: 1,
+        priority: 'none',
+        size: 'none',
+        flow: { state: 'normal', reason: '', since: null, periods: [] },
+        dependencies: { blockers: [{ boardId: 'board-1', cardId: 'archived-card' }], related: [] },
+        recurrenceId: null,
+        transitions: []
+      }] }],
+      archive: {
+        cards: [{
+          id: 'archived-card',
+          columnId: 'col-1',
+          title: 'Archived blocker',
+          description: '',
+          labels: [],
+          assignee: '',
+          createdAt: 1,
+          updatedAt: 1,
+          movedAt: 1,
+          priority: 'none',
+          size: 'none',
+          flow: { state: 'normal', reason: '', since: null, periods: [] },
+          dependencies: { blockers: [], related: [] },
+          recurrenceId: null,
+          transitions: []
+        }],
+        columns: []
+      }
+    }]
+  };
+  const result = Migration.normalizeState(s, deps);
+  const card = result.boards[0].columns[0].cards[0];
+  assert.deepEqual(card.dependencies.blockers, [{ boardId: 'board-1', cardId: 'archived-card' }]);
+});
+
+test('normalizeState drops references to purged cards', () => {
+  const deps = makeDeps();
+  const s = {
+    version: 3,
+    theme: 'dark',
+    activeBoardId: 'board-1',
+    inbox: { items: [] },
+    lenses: [],
+    recurrences: [],
+    boards: [{
+      id: 'board-1',
+      name: 'One',
+      labels: [],
+      templates: [],
+      columns: [{ id: 'col-1', title: 'To Do', role: 'queue', isDone: false, wipLimit: 0, collapsed: false, cards: [{
+        id: 'live-card',
+        columnId: 'col-1',
+        title: 'Task',
+        description: '',
+        labels: [],
+        assignee: '',
+        createdAt: 1,
+        updatedAt: 1,
+        movedAt: 1,
+        priority: 'none',
+        size: 'none',
+        flow: { state: 'normal', reason: '', since: null, periods: [] },
+        dependencies: { blockers: [{ boardId: 'board-1', cardId: 'ghost-card' }], related: [] },
+        recurrenceId: null,
+        transitions: []
+      }] }],
+      archive: { cards: [], columns: [] }
+    }]
+  };
+  const result = Migration.normalizeState(s, deps);
+  assert.deepEqual(result.boards[0].columns[0].cards[0].dependencies.blockers, []);
+});
+
+test('normalizeLens preserves recent-completion and aging conditions', () => {
+  const result = Migration.normalizeLens({
+    name: 'Recently done',
+    scope: 'all-boards',
+    query: { includeCompleted: true, recentlyCompletedOnly: true, agingOnly: true, agingDays: 10 }
+  }, makeDeps());
+  assert.equal(result.query.recentlyCompletedOnly, true);
+  assert.equal(result.query.agingOnly, true);
+  assert.equal(result.query.agingDays, 10);
+});
+
+test('normalizeRecurrence keeps the needs-attention marker', () => {
+  const result = Migration.normalizeRecurrence({ needsAttention: true }, makeDeps());
+  assert.equal(result.needsAttention, true);
+});

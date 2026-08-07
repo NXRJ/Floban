@@ -94,11 +94,18 @@
       btn.textContent = text;
       btn.addEventListener('click', function () {
         var pop = h('div', { class: 'pop' });
+        function onDown(e) {
+          if (!pop.contains(e.target) && e.target !== btn) {
+            pop.remove();
+            document.removeEventListener('mousedown', onDown);
+          }
+        }
         items.forEach(function (item) {
           var button = h('button', { type: 'button', class: 'pop-item' });
           button.textContent = item.label;
           button.addEventListener('click', function () {
             pop.remove();
+            document.removeEventListener('mousedown', onDown);
             item.onClick();
           });
           pop.appendChild(button);
@@ -107,12 +114,6 @@
         var rect = btn.getBoundingClientRect();
         pop.style.top = (rect.bottom + 6) + 'px';
         pop.style.left = Math.max(4, Math.min(rect.left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
-        function onDown(e) {
-          if (!pop.contains(e.target) && e.target !== btn) {
-            pop.remove();
-            document.removeEventListener('mousedown', onDown);
-          }
-        }
         document.addEventListener('mousedown', onDown);
       });
       return btn;
@@ -182,11 +183,48 @@
     heading.textContent = 'Move ' + selected.size + ' cards';
     form.appendChild(heading);
 
-    var columnSelect = h('select', { id: 'bm-column', 'aria-label': 'Destination column' });
-    board.columns.forEach(function (column) {
-      columnSelect.appendChild(new Option(column.title, column.id));
+    var boardSelect = h('select', { id: 'bm-board', 'aria-label': 'Destination board' });
+    KB.State.boards().forEach(function (b) {
+      boardSelect.appendChild(new Option(b.name, b.id));
     });
+    boardSelect.value = board.id;
+    form.appendChild(KB.Modal.fieldBlock('Board', boardSelect));
+
+    var columnSelect = h('select', { id: 'bm-column', 'aria-label': 'Destination column' });
     form.appendChild(KB.Modal.fieldBlock('Column', columnSelect));
+
+    var warn = h('div', { class: 'form-hint mt-warn' });
+    form.appendChild(warn);
+
+    function fillColumns() {
+      columnSelect.innerHTML = '';
+      var targetBoard = KB.State.boardById(boardSelect.value);
+      (targetBoard.columns || []).forEach(function (column) {
+        columnSelect.appendChild(new Option(column.title, column.id));
+      });
+      updateWarning();
+    }
+
+    function updateWarning() {
+      warn.textContent = '';
+      if (boardSelect.value === board.id) return;
+      var dropped = [];
+      var kept = 0;
+      refs().forEach(function (ref) {
+        var source = KB.State.boardById(ref.boardId);
+        var card = KB.Core.Relations.findCard(KB.State.data(), ref.boardId, ref.cardId);
+        if (!source || !card) return;
+        var mapping = mapLabelsAcrossBoards(ref.boardId, card, KB.State.boardById(boardSelect.value));
+        kept += mapping.kept.length;
+        dropped.push.apply(dropped, mapping.dropped);
+      });
+      if (dropped.length > 0) {
+        warn.textContent = 'Labels mapped by name+color (' + kept + ' kept) — dropped: ' + Array.from(new Set(dropped)).join(', ');
+      }
+    }
+
+    boardSelect.addEventListener('change', fillColumns);
+    fillColumns();
 
     var actions = h('div', { class: 'modal-actions' });
     actions.appendChild(h('span', { class: 'spacer' }));
@@ -201,12 +239,22 @@
 
     form.addEventListener('submit', function (e) {
       e.preventDefault();
-      var target = { boardId: board.id, columnId: columnSelect.value };
-      var result = KB.State.bulkMove(refs(), target, {});
+      var target = { boardId: boardSelect.value, columnId: columnSelect.value };
+      var labelMappings = {};
+      var sameBoard = boardSelect.value === board.id;
+      if (!sameBoard) {
+        refs().forEach(function (ref) {
+          var source = KB.State.boardById(ref.boardId);
+          var card = KB.Core.Relations.findCard(KB.State.data(), ref.boardId, ref.cardId);
+          if (!source || !card) return;
+          labelMappings[ref.boardId + ':' + ref.cardId] = mapLabelsAcrossBoards(ref.boardId, card, KB.State.boardById(boardSelect.value)).kept;
+        });
+      }
+      var result = KB.State.bulkMove(refs(), target, { labelMappings: labelMappings });
       if (result && result.reason === 'policy-violations') {
         var message = result.violations.length + ' card(s) would violate a column policy.';
-        KB.Modal.moveConfirmModal('Bulk move requires confirmation', { violations: [{ code: 'policy', message: message }] }, '', function () {
-          KB.State.bulkMove(refs(), target, { confirmed: true });
+        KB.Modal.moveConfirmModal('Bulk move requires confirmation', { violations: [{ code: 'policy', message: message }] }, '', function (reason) {
+          KB.State.bulkMove(refs(), target, { confirmed: true, overrideReason: reason, labelMappings: labelMappings });
           KB.Modal.close();
           finishBulk('Card(s) moved');
         });
@@ -218,6 +266,32 @@
     });
 
     KB.Modal.open(form);
+  }
+
+  function mapLabelsAcrossBoards(sourceBoardId, card, targetBoard) {
+    var dropped = [];
+    var kept = [];
+    var targetLabels = targetBoard.labels || [];
+    var byNameColor = {};
+    targetLabels.forEach(function (label) {
+      byNameColor[label.name.toLowerCase() + '|' + label.color.toLowerCase()] = label.id;
+    });
+    var sourceBoard = KB.State.boardById(sourceBoardId);
+    var sourceLabels = sourceBoard ? sourceBoard.labels : [];
+    var cardLabelIds = card.labels || [];
+    cardLabelIds.forEach(function (id) {
+      var source = sourceLabels.find(function (l) { return l.id === id; });
+      if (!source) return;
+      var match = targetLabels.find(function (l) { return l.id === id; });
+      if (match) {
+        kept.push(match.id);
+        return;
+      }
+      var mapped = byNameColor[source.name.toLowerCase() + '|' + source.color.toLowerCase()];
+      if (mapped) kept.push(mapped);
+      else dropped.push(source.name);
+    });
+    return { kept: kept, dropped: dropped };
   }
 
   function finishBulk(message) {
@@ -233,14 +307,8 @@
     heading.textContent = add ? 'Add labels' : 'Remove labels';
     form.appendChild(heading);
     var labelsBox = h('div', { class: 'label-picker' });
-    var picked = new Set();
     board.labels.forEach(function (label) {
-      var chip = KB.Modal.labelToggleChip ? makeChip(label) : null;
-      labelsBox.appendChild(chip);
-      chip.addEventListener('click', function () {
-        if (picked.has(label.id)) picked.delete(label.id);
-        else picked.add(label.id);
-      });
+      labelsBox.appendChild(KB.Modal.labelToggleChip(label, false));
     });
     form.appendChild(KB.Modal.fieldBlock('Labels', labelsBox));
     var actions = h('div', { class: 'modal-actions' });
@@ -256,6 +324,9 @@
 
     form.addEventListener('submit', function (e) {
       e.preventDefault();
+      var picked = Array.prototype.map.call(labelsBox.querySelectorAll('.chip.active'), function (chip) {
+        return chip.dataset.id;
+      });
       var current = KB.State.data();
       var newLabels = [];
       refs().forEach(function (ref) {
@@ -277,16 +348,6 @@
     });
 
     KB.Modal.open(form);
-  }
-
-  function makeChip(label) {
-    var chip = h('button', { type: 'button', class: 'chip', 'data-id': label.id, title: 'Toggle label' });
-    var dot = h('span', { class: 'dot' });
-    dot.style.background = label.color;
-    chip.appendChild(dot);
-    chip.appendChild(document.createTextNode(label.name));
-    KB.Dom.paintChip(chip, label.color);
-    return chip;
   }
 
   function openBulkDue() {

@@ -168,6 +168,17 @@
     return result.value;
   }
 
+  function wrapResult(operation) {
+    return function () {
+      var result = null;
+      commit(function (current) {
+        result = operation(current);
+        return result;
+      });
+      return result;
+    };
+  }
+
   function activeBoard() {
     return state.boards.find(function (b) { return b.id === state.activeBoardId; }) || state.boards[0] || null;
   }
@@ -408,8 +419,28 @@
     return { ok: true, value: value };
   }
 
-  function boardById(boardId) {
-    return state.boards.find(function (b) { return b.id === boardId; }) || null;
+  function evaluateMoveTo(boardId, cardId, targetBoardId, targetColumnId, opts) {
+    var current = data();
+    var board = null;
+    var targetBoard = null;
+    var source = null;
+    for (var i = 0; i < current.boards.length; i++) {
+      if (current.boards[i].id === boardId) {
+        board = current.boards[i];
+        source = board.columns.find(function (c) {
+          return c.cards.some(function (card) { return card.id === cardId; });
+        });
+      }
+      if (current.boards[i].id === targetBoardId) targetBoard = current.boards[i];
+    }
+    if (!board || !targetBoard || !source) return null;
+    var target = targetBoard.columns.find(function (c) { return c.id === targetColumnId; });
+    if (!target) return null;
+    return KB.Core.Policies.evaluateMovePolicy(current, { boardId: boardId, cardId: cardId }, { boardId: targetBoardId, columnId: targetColumnId }, {
+      sourceColumn: source,
+      confirmed: opts && opts.confirmed,
+      overrideReason: opts && opts.overrideReason
+    });
   }
 
   function moveCardTo(boardId, cardId, targetBoardId, targetColumnId, toIndex, opts) {
@@ -585,10 +616,12 @@
     return true;
   }
 
-  function addLabel(name, color) {
+  function addLabel(name, color, boardId) {
+    var board = boardId ? state.boards.find(function (b) { return b.id === boardId; }) : activeBoard();
+    if (!board) return null;
     pushHistory();
     var label = freshLabel(name, color);
-    activeBoard().labels.push(label);
+    board.labels.push(label);
     save();
     return label;
   }
@@ -672,39 +705,27 @@
   }
 
   function addBlocker(targetBoardId, targetCardId, blockerBoardId, blockerCardId) {
-    var result = null;
-    commit(function (current) {
-      result = KB.Core.Relations.addBlocker(current, { boardId: targetBoardId, cardId: targetCardId }, { boardId: blockerBoardId, cardId: blockerCardId });
-      return result;
-    });
-    return { changed: result.changed, value: result.value, reason: result.reason };
+    return wrapResult(function (current) {
+      return KB.Core.Relations.addBlocker(current, { boardId: targetBoardId, cardId: targetCardId }, { boardId: blockerBoardId, cardId: blockerCardId });
+    })();
   }
 
   function removeBlocker(targetBoardId, targetCardId, blockerBoardId, blockerCardId) {
-    var result = null;
-    commit(function (current) {
-      result = KB.Core.Relations.removeBlocker(current, { boardId: targetBoardId, cardId: targetCardId }, { boardId: blockerBoardId, cardId: blockerCardId });
-      return result;
-    });
-    return { changed: result.changed, value: result.value, reason: result.reason };
+    return wrapResult(function (current) {
+      return KB.Core.Relations.removeBlocker(current, { boardId: targetBoardId, cardId: targetCardId }, { boardId: blockerBoardId, cardId: blockerCardId });
+    })();
   }
 
   function addRelated(leftBoardId, leftCardId, rightBoardId, rightCardId) {
-    var result = null;
-    commit(function (current) {
-      result = KB.Core.Relations.addRelated(current, { boardId: leftBoardId, cardId: leftCardId }, { boardId: rightBoardId, cardId: rightCardId });
-      return result;
-    });
-    return { changed: result.changed, value: result.value, reason: result.reason };
+    return wrapResult(function (current) {
+      return KB.Core.Relations.addRelated(current, { boardId: leftBoardId, cardId: leftCardId }, { boardId: rightBoardId, cardId: rightCardId });
+    })();
   }
 
   function removeRelated(leftBoardId, leftCardId, rightBoardId, rightCardId) {
-    var result = null;
-    commit(function (current) {
-      result = KB.Core.Relations.removeRelated(current, { boardId: leftBoardId, cardId: leftCardId }, { boardId: rightBoardId, cardId: rightCardId });
-      return result;
-    });
-    return { changed: result.changed, value: result.value, reason: result.reason };
+    return wrapResult(function (current) {
+      return KB.Core.Relations.removeRelated(current, { boardId: leftBoardId, cardId: leftCardId }, { boardId: rightBoardId, cardId: rightCardId });
+    })();
   }
 
   function setActiveBoard(id) {
@@ -717,12 +738,9 @@
   }
 
   function processRecurrences() {
-    var result = null;
-    commit(function (current) {
-      result = KB.Core.Recurrence.processDueRecurrences(current, now(), deps());
-      return result;
-    });
-    return result;
+    return wrapResult(function (current) {
+      return KB.Core.Recurrence.processDueRecurrences(current, now(), deps());
+    })();
   }
 
   function handleCardCompleted(boardId, cardId) {
@@ -848,6 +866,19 @@
     });
   }
 
+  function convertInboxToRecurrence(inboxId, definition) {
+    return commit(function (current) {
+      var next = JSON.parse(JSON.stringify(current));
+      var items = next.inbox && Array.isArray(next.inbox.items) ? next.inbox.items : [];
+      var index = items.findIndex(function (it) { return it.id === inboxId; });
+      if (index === -1) return { changed: false, state: current, value: null, reason: 'item-not-found' };
+      items.splice(index, 1);
+      var recurrence = KB.Core.Model.createRecurrence(definition, deps());
+      next.recurrences.push(recurrence);
+      return { changed: true, state: next, value: recurrence };
+    });
+  }
+
   function mergeInboxItem(inboxId, target) {
     return commit(function (current) {
       return KB.Core.Inbox.mergeIntoCard(current, inboxId, target, deps());
@@ -903,30 +934,21 @@
   }
 
   function bulkMove(cardRefs, target, opts) {
-    var result = null;
-    commit(function (current) {
-      result = KB.Core.Bulk.bulkMove(current, cardRefs, target, deps(), opts);
-      return result;
-    });
-    return result;
+    return wrapResult(function (current) {
+      return KB.Core.Bulk.bulkMove(current, cardRefs, target, deps(), opts);
+    })();
   }
 
   function bulkUpdate(cardRefs, patch) {
-    var result = null;
-    commit(function (current) {
-      result = KB.Core.Bulk.bulkUpdate(current, cardRefs, patch, deps());
-      return result;
-    });
-    return result;
+    return wrapResult(function (current) {
+      return KB.Core.Bulk.bulkUpdate(current, cardRefs, patch, deps());
+    })();
   }
 
   function bulkArchive(cardRefs) {
-    var result = null;
-    commit(function (current) {
-      result = KB.Core.Bulk.bulkArchive(current, cardRefs, deps());
-      return result;
-    });
-    return result;
+    return wrapResult(function (current) {
+      return KB.Core.Bulk.bulkArchive(current, cardRefs, deps());
+    })();
   }
 
   function setTheme(theme) {
@@ -1002,6 +1024,7 @@
     updateCardWithFlow: updateCardWithFlow,
     moveCard: moveCard,
     evaluateMove: evaluateMove,
+    evaluateMoveTo: evaluateMoveTo,
     moveCardChecked: moveCardChecked,
     moveCardTo: moveCardTo,
     restoreCardChecked: restoreCardChecked,
@@ -1043,6 +1066,7 @@
     updateInboxItem: updateInboxItem,
     deleteInboxItem: deleteInboxItem,
     triageInboxItem: triageInboxItem,
+    convertInboxToRecurrence: convertInboxToRecurrence,
     mergeInboxItem: mergeInboxItem,
     inboxItems: inboxItems,
     addLens: addLens,

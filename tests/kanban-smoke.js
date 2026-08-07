@@ -21,10 +21,35 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 
+  async function waitFor(fn, timeout, label) {
+    const args = Array.prototype.slice.call(arguments, 3);
+    const deadline = Date.now() + (timeout || 5000);
+    while (Date.now() < deadline) {
+      try {
+        if (await page.evaluate(fn, ...args)) return true;
+      } catch (e) {}
+      await sleep(25);
+    }
+    if (label) console.log('WAIT TIMEOUT: ' + label);
+    return false;
+  }
+
+  async function waitCount(selector, expected, timeout) {
+    return waitFor((sel, n) => document.querySelectorAll(sel).length === n, timeout || 4000, 'count ' + selector + '=' + expected, selector, expected);
+  }
+
+  async function waitBoard() {
+    return waitFor(() => !!document.querySelector('#board-name') && !!document.querySelector('#board'), 5000, 'board render');
+  }
+
   async function cardAction(col, card, action) {
+    const selector = `.column:nth-child(${col}) .card:nth-child(${card}) .card-actions [data-action="${action}"]`;
     await page.hover(`.column:nth-child(${col}) .card:nth-child(${card})`);
-    await sleep(60);
-    await page.click(`.column:nth-child(${col}) .card:nth-child(${card}) .card-actions [data-action="${action}"]`);
+    await waitFor((sel) => {
+      const el = document.querySelector(sel);
+      return el && getComputedStyle(el).display !== 'none' && el.offsetParent !== null;
+    }, 2500, 'card action visible ' + action, selector);
+    await page.click(selector);
   }
   async function clickByText(selector, text) {
     await page.evaluate((sel, t) => {
@@ -32,88 +57,84 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     }, selector, text);
   }
   async function blur() { await page.evaluate(() => document.activeElement && document.activeElement.blur()); }
-  async function pressUndo() { await page.keyboard.down('Control'); await page.keyboard.press('z'); await page.keyboard.up('Control'); await sleep(200); }
-  async function pressRedo() { await page.keyboard.down('Control'); await page.keyboard.press('y'); await page.keyboard.up('Control'); await sleep(200); }
+  async function pressUndo() { await page.keyboard.down('Control'); await page.keyboard.press('z'); await page.keyboard.up('Control'); }
+  async function pressRedo() { await page.keyboard.down('Control'); await page.keyboard.press('y'); await page.keyboard.up('Control'); }
 
   // ---- Fresh boot ----
   await page.goto(URL, { waitUntil: 'load' });
-  await sleep(600);
-  check('board renders 3 columns', await page.$$eval('.column', els => els.length) === 3);
+  await waitBoard();
+  check('board renders 3 columns', await waitCount('.column', 3));
   check('board switch shows name', (await page.$eval('#board-name', el => el.textContent)) === 'My Board');
-  check('quick-add rows present', await page.$$eval('.qa', els => els.length) === 3);
-  check('due chips render', await page.$$eval('.chip.due', els => els.length) >= 2);
-  check('checklist progress renders', await page.$$eval('.card-prog', els => els.length) >= 1);
+  check('quick-add rows present', await waitCount('.qa', 3));
+  check('due chips render', (await page.$$eval('.chip.due', els => els.length)) >= 2);
+  check('checklist progress renders', (await page.$$eval('.card-prog', els => els.length)) >= 1);
 
   // ---- Quick-add + undo/redo ----
   await page.type('.column:nth-child(1) .qa-input', 'Brand new task');
   await page.keyboard.press('Enter');
-  await sleep(200);
-  let count = await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  let count = await waitCount('.column:nth-child(1) .card', 3) ? 3 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
   check('quick-add creates card', count === 3);
 
   await blur();
   await pressUndo();
-  count = await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  count = await waitCount('.column:nth-child(1) .card', 2) ? 2 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
   check('ctrl+z undoes quick-add', count === 2);
 
   await pressRedo();
-  count = await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  count = await waitCount('.column:nth-child(1) .card', 3) ? 3 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
   check('ctrl+y redoes quick-add', count === 3);
 
   // ---- Bulk paste: one undo step ----
   await page.$eval('.column:nth-child(1) .qa-input', (el, v) => { el.value = v; el.focus(); }, 'One\nTwo\nThree');
   await page.keyboard.press('Enter');
-  await sleep(200);
-  count = await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  count = await waitCount('.column:nth-child(1) .card', 6) ? 6 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
   check('bulk paste adds 3 cards', count === 6);
 
   await blur();
   await pressUndo();
-  count = await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  count = await waitCount('.column:nth-child(1) .card', 3) ? 3 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
   check('bulk paste undoes as one step', count === 3);
 
   await pressRedo();
-  count = await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  count = await waitCount('.column:nth-child(1) .card', 6) ? 6 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
   check('bulk paste redoes as one step', count === 6);
 
   // ---- Card editor: due date + checklist + duplicate + template ----
   await cardAction(2, 1, 'edit-card');
-  await sleep(200);
+  await waitFor(() => !!document.querySelector('#cf-due'), 3000, 'editor opens');
   const today = new Date();
   const iso = today.toISOString().slice(0, 10);
   await page.$eval('#cf-due', (el, v) => { el.value = v; }, iso);
   await page.$eval('.check-add-row input', (el, v) => { el.value = v; }, 'Smoke test item');
   await page.click('.check-add-row .btn');
-  await sleep(150);
+  await waitFor(() => !!document.querySelector('.check-item'), 2000, 'checklist item added');
   await page.click('.check-item input[type="checkbox"]');
   await clickByText('.modal-actions .btn', 'Save');
-  await sleep(200);
+  await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'editor closes');
   check('editor save closes modal', (await page.$('.modal-panel')) === null);
-  check('due chip on edited card', await page.$$eval('.chip.due', els => els.length) >= 1);
+  check('due chip on edited card', (await page.$$eval('.chip.due', els => els.length)) >= 1);
 
   await cardAction(2, 1, 'edit-card');
-  await sleep(200);
+  await waitFor(() => !!document.querySelector('.modal-panel'), 3000, 'editor reopens');
   await clickByText('.modal-actions .btn', 'Duplicate');
-  await sleep(250);
-  count = await page.$$eval('.column:nth-child(2) .card', els => els.length);
+  count = await waitCount('.column:nth-child(2) .card', 3) ? 3 : await page.$$eval('.column:nth-child(2) .card', els => els.length);
   check('duplicate via editor', count === 3);
 
   await cardAction(2, 1, 'edit-card');
-  await sleep(200);
+  await waitFor(() => !!document.querySelector('.modal-panel'), 3000, 'editor reopens 2');
   await clickByText('.modal-actions .btn', 'Save as template');
-  await sleep(200);
+  await waitFor(() => [...document.querySelectorAll('.toast')].some(e => e.textContent.includes('Template saved')), 3000, 'template toast');
   check('template saved toast', await page.$$eval('.toast', els => els.some(e => e.textContent.includes('Template saved'))));
   await clickByText('.modal-actions .btn', 'Cancel');
-  await sleep(150);
+  await waitFor(() => !document.querySelector('.modal-panel'), 2000, 'editor cancels');
 
   // ---- Template use from quick-add ----
   await page.click('.column:nth-child(1) .qa-tpl');
-  await sleep(150);
+  await waitFor(() => document.querySelectorAll('.pop .pop-item').length >= 1, 2000, 'template popup');
   const popItems = await page.$$eval('.pop .pop-item', els => els.map(e => e.textContent.trim()));
   check('template popup lists templates', popItems.length >= 1);
   await page.click('.pop .pop-item');
-  await sleep(200);
-  count = await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  count = await waitCount('.column:nth-child(1) .card', 7) ? 7 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
   check('template creates card', count === 7);
 
   // ---- Column collapse ----
@@ -122,20 +143,22 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const cols = board.querySelectorAll('.column');
     board.scrollLeft = cols[2].offsetLeft;
   });
-  await sleep(100);
   await page.click('.column:nth-child(3) .column-header [data-action="col-collapse"]');
-  await sleep(200);
+  await waitFor(() => document.querySelector('.column:nth-child(3)').classList.contains('collapsed'), 2000, 'column collapses');
   check('column collapses', await page.$eval('.column:nth-child(3)', el => el.classList.contains('collapsed')));
   await page.click('.column:nth-child(3) .column-header [data-action="col-collapse"]');
-  await sleep(200);
+  await waitFor(() => !document.querySelector('.column:nth-child(3)').classList.contains('collapsed'), 2000, 'column expands');
   check('column expands', !(await page.$eval('.column:nth-child(3)', el => el.classList.contains('collapsed'))));
 
   // ---- WIP limit via column editor ----
   await page.click('.column:nth-child(2) .column-header [data-action="col-menu"]');
-  await sleep(150);
+  await waitFor(() => !!document.querySelector('#ce-wip'), 3000, 'column editor opens');
   await page.$eval('#ce-wip', (el) => { el.value = '1'; });
   await page.click('.modal-actions .btn.primary');
-  await sleep(200);
+  await waitFor(() => {
+    const el = document.querySelector('.column:nth-child(2) .col-count');
+    return el && el.textContent === '3/1';
+  }, 3000, 'wip text updates');
   const wipText = await page.$eval('.column:nth-child(2) .col-count', el => el.textContent);
   const wipOver = await page.$eval('.column:nth-child(2) .col-count', el => el.classList.contains('over'));
   check('WIP shows n/limit', wipText === '3/1');
@@ -143,52 +166,60 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   // ---- Board switcher: new board ----
   await page.click('#board-switch');
-  await sleep(150);
+  await waitFor(() => document.querySelectorAll('.pop .pop-item').length >= 1, 2000, 'board menu opens');
   const menuTexts = await page.$$eval('.pop .pop-item', els => els.map(e => e.textContent));
   check('board menu has actions', menuTexts.some(t => t.includes('New board')) && menuTexts.some(t => t.includes('Backup / restore')));
   await page.evaluate(() => { [...document.querySelectorAll('.pop .pop-item')].find(b => b.textContent.includes('New board')).click(); });
-  await sleep(150);
+  await waitFor(() => !!document.querySelector('.modal-panel input'), 2000, 'new board modal');
   await page.type('.modal-panel input', 'Sprint 42');
   await page.click('.modal-actions .btn.primary');
-  await sleep(250);
+  await waitFor(() => document.querySelector('#board-name') && document.querySelector('#board-name').textContent === 'Sprint 42', 3000, 'board switches');
   check('switched to new empty board', (await page.$eval('#board-name', el => el.textContent)) === 'Sprint 42');
-  check('new board is empty', await page.$$eval('.column', els => els.length) === 0);
+  check('new board is empty', await waitCount('.column', 0));
   check('empty board state', (await page.$('.empty-board')) !== null);
 
   // ---- Switch back via menu ----
   await page.click('#board-switch');
-  await sleep(150);
+  await waitFor(() => document.querySelectorAll('.pop .pop-item').length >= 1, 2000, 'board menu reopens');
   await page.evaluate(() => { [...document.querySelectorAll('.pop .pop-item')].find(b => b.textContent.includes('My Board')).click(); });
-  await sleep(200);
+  await waitFor(() => document.querySelector('#board-name') && document.querySelector('#board-name').textContent === 'My Board', 3000, 'switch back');
   check('switch back to My Board', (await page.$eval('#board-name', el => el.textContent)) === 'My Board');
 
   // ---- Undo board switch ----
   await pressUndo();
+  await waitFor(() => document.querySelector('#board-name') && document.querySelector('#board-name').textContent === 'Sprint 42', 3000, 'undo board switch');
   check('undo board switch', (await page.$eval('#board-name', el => el.textContent)) === 'Sprint 42');
   await pressUndo();
+  await waitFor(() => document.querySelector('#board-name') && document.querySelector('#board-name').textContent === 'My Board', 3000, 'second undo');
   check('second undo returns to My Board', (await page.$eval('#board-name', el => el.textContent)) === 'My Board');
 
   // ---- Theme undo re-applies to the DOM ----
   const themeBefore = await page.evaluate(() => document.documentElement.dataset.theme);
   await page.click('#toggle-theme');
-  await sleep(150);
+  await waitFor((before) => document.documentElement.dataset.theme !== before, 2000, 'theme flips', themeBefore);
   const themeAfter = await page.evaluate(() => document.documentElement.dataset.theme);
   check('theme toggle flips data-theme', themeAfter !== themeBefore);
   await blur();
   await pressUndo();
+  await waitFor((before) => document.documentElement.dataset.theme === before, 2000, 'theme undo', themeBefore);
   const themeReverted = await page.evaluate(() => document.documentElement.dataset.theme);
   check('undo re-applies theme to DOM', themeReverted === themeBefore);
 
   // ---- Sort by due ----
   await page.select('#sort-select', 'due');
-  await sleep(200);
+  await waitFor(() => {
+    const cols = [...document.querySelectorAll('.column')];
+    return cols[1] && [...cols[1].querySelectorAll('.card-title')].length === 3;
+  }, 3000, 'sort renders');
   const sorted = await page.evaluate(() => {
     const cols = [...document.querySelectorAll('.column')];
     return cols.map(c => [...c.querySelectorAll('.card-title')].map(t => t.textContent));
   });
   check('sort by due orders by date', JSON.stringify(sorted[1]) === JSON.stringify(['Fix card drag on touch screens', 'Copy of Fix card drag on touch screens', 'Write tests for the archive flow']));
+  const sortOptions = await page.$$eval('#sort-select option', els => els.map(e => e.value));
+  check('longest-blocked sort exposed in board sort', sortOptions.includes('blocked-duration'));
   await page.select('#sort-select', 'manual');
-  await sleep(200);
+  await waitFor(() => true, 100, 'sort settle');
 
   // ---- Filter by due (make dues deterministic in LOCAL time) ----
   await page.evaluate(() => {
@@ -207,30 +238,30 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     localStorage.setItem('kanban.board.v1', JSON.stringify(b));
   });
   await page.goto(URL, { waitUntil: 'load' });
-  await sleep(400);
+  await waitBoard();
   await page.select('#due-filter', 'overdue');
-  await sleep(200);
+  await waitFor(() => {
+    const titles = [...document.querySelectorAll('.column .card-title')].map(e => e.textContent);
+    return titles.length === 2 && titles.every(t => t.includes('Fix card drag'));
+  }, 3000, 'overdue filter');
   const visibleTitles = await page.$$eval('.column .card-title', els => els.map(e => e.textContent));
   check('overdue filter shows only overdue', visibleTitles.length === 2 && visibleTitles.every(t => t.includes('Fix card drag')));
   await page.select('#due-filter', '');
-  await sleep(200);
+  await waitFor(() => true, 100, 'filter settle');
 
   // ---- Archive + undo toast ----
   await cardAction(1, 1, 'archive-card');
-  await sleep(200);
-  count = await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  count = await waitCount('.column:nth-child(1) .card', 6) ? 6 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
   check('archive removes card', count === 6);
   const undoBtns = await page.$$('.toast .toast-btn');
   check('toast has undo button', undoBtns.length >= 1);
   await undoBtns[undoBtns.length - 1].click();
-  await sleep(200);
-  count = await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  count = await waitCount('.column:nth-child(1) .card', 7) ? 7 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
   check('toast undo restores card', count === 7);
 
   // ---- Duplicate from card hover ----
   await cardAction(1, 1, 'duplicate-card');
-  await sleep(200);
-  count = await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  count = await waitCount('.column:nth-child(1) .card', 8) ? 8 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
   check('duplicate adds a card', count === 8);
 
   // ---- Persistence & migration ----
@@ -243,11 +274,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     localStorage.setItem('kanban.board.v1', JSON.stringify(v1));
   });
   await page.goto(URL, { waitUntil: 'load' });
-  await sleep(400);
+  await waitBoard();
   const migrated = await page.evaluate(() => JSON.parse(localStorage.getItem('kanban.board.v1')));
   check('v1 migrates to v3 boards', migrated.version === 3 && migrated.boards.length === 1);
   check('migrated cards normalized', migrated.boards[0].columns.every(c => c.cards.every(card => typeof card.due === 'string' && Array.isArray(card.checklist))));
-  check('migrated board renders', await page.$$eval('.column', els => els.length) === 3);
+  check('migrated board renders', await waitCount('.column', 3));
 
   // ---- Corrupt payload resilience ----
   await page.evaluate(() => {
@@ -261,8 +292,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     localStorage.setItem('kanban.board.v1', JSON.stringify(b));
   });
   await page.goto(URL, { waitUntil: 'load' });
-  await sleep(400);
-  check('corrupt labels payload still renders', await page.$$eval('.column', els => els.length) === 3);
+  await waitBoard();
+  check('corrupt labels payload still renders', await waitCount('.column', 3));
   const healed = await page.evaluate(() => JSON.parse(localStorage.getItem('kanban.board.v1')));
   const c0 = healed.boards[0].columns[0];
   check('labels normalized to array', Array.isArray(c0.cards[0].labels) && Array.isArray(c0.cards[1].labels));
@@ -290,7 +321,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     localStorage.setItem('kanban.board.v1', JSON.stringify(b));
   });
   await page.goto(URL, { waitUntil: 'load' });
-  await sleep(400);
+  await waitBoard();
+  await waitFor(() => !!document.querySelector('.card-desc'), 3000, 'markdown renders');
   const md = await page.$eval('.card-desc', el => el.innerHTML);
   check('markdown renders bold', md.includes('<strong>bold</strong>'));
   check('markdown renders link', md.includes('href="https://example.com"'));
@@ -302,18 +334,19 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     localStorage.setItem('kanban.board.v1', JSON.stringify(b));
   });
   await page.goto(URL, { waitUntil: 'load' });
-  await sleep(400);
+  await waitBoard();
+  await waitFor(() => !!document.querySelector('.card-desc'), 3000, 'xss case renders');
   const md2 = await page.$eval('.card-desc', el => el.innerHTML);
   check('markdown is XSS safe', md2.indexOf('<img') === -1 && md2.indexOf('&lt;img') !== -1);
 
   // ---- Delete board: must toast and refresh the UI ----
   await page.evaluate(() => { window.confirm = () => true; KB.State.addBoard('Delete Me'); KB.App.refresh(); });
-  await sleep(200);
+  await waitFor(() => document.querySelector('#board-name') && document.querySelector('#board-name').textContent === 'Delete Me', 3000, 'delete board setup');
   check('delete-board setup board active', (await page.$eval('#board-name', el => el.textContent)) === 'Delete Me');
   await page.click('#board-switch');
-  await sleep(150);
+  await waitFor(() => document.querySelectorAll('.pop .pop-item').length >= 1, 2000, 'board menu for delete');
   await page.evaluate(() => { [...document.querySelectorAll('.pop .pop-item')].find(b => b.textContent.includes('Delete board')).click(); });
-  await sleep(250);
+  await waitFor(() => document.querySelector('#board-name') && document.querySelector('#board-name').textContent === 'My Board', 3000, 'delete switches board');
   check('delete board switches board and toasts',
     (await page.$eval('#board-name', el => el.textContent)) === 'My Board' &&
     (await page.$$eval('.toast', els => els.some(e => e.textContent.includes('Board deleted')))));
@@ -342,14 +375,15 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       renameResult: Boolean(renameResult)
     };
   });
-  await sleep(200);
   check('failed mutations return falsey results',
     probe.added && !probe.updateResult && !probe.moveResult && !probe.purgeResult && !probe.purgeColResult &&
     probe.blankResult === 0 && !probe.renameResult);
+  await waitFor(() => [...document.querySelectorAll('.column .card-title')].some(e => e.textContent === 'History probe'), 3000, 'probe card renders');
   const probeTitles = await page.$$eval('.column .card-title', els => els.map(e => e.textContent));
   check('probe card renders after failed mutations', probeTitles.some(t => t === 'History probe'));
   await blur();
   await pressUndo();
+  await waitFor(() => ![...document.querySelectorAll('.column .card-title')].some(e => e.textContent === 'History probe'), 3000, 'probe undone');
   const afterUndo = await page.$$eval('.column .card-title', els => els.map(e => e.textContent));
   check('single undo removes only the probe card', !afterUndo.some(t => t === 'History probe'));
 
@@ -363,25 +397,29 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     localStorage.setItem('kanban.board.v1', JSON.stringify(b));
   });
   await page.goto(URL, { waitUntil: 'load' });
-  await sleep(400);
+  await waitBoard();
+  await waitFor(() => {
+    const el = document.querySelector('.column:nth-child(1) .card:nth-child(1) .chip.priority');
+    return el && el.textContent.trim() === 'URGENT';
+  }, 3000, 'priority chip');
   check('priority chip renders', await page.$eval('.column:nth-child(1) .card:nth-child(1) .chip.priority', el => el.textContent.trim()) === 'URGENT');
   check('size badge renders', await page.$eval('.column:nth-child(1) .card:nth-child(1) .chip.size', el => el.textContent.trim()) === 'XL');
   await page.select('#priority-filter', 'urgent');
-  await sleep(200);
+  await waitCount('.column:nth-child(1) .card', 1);
   check('priority filter narrows cards', await page.$$eval('.column:nth-child(1) .card', els => els.length) === 1);
   await page.select('#priority-filter', '');
   await page.select('#size-filter', 'xl');
-  await sleep(200);
+  await waitCount('.column:nth-child(1) .card', 1);
   check('size filter narrows cards', await page.$$eval('.column:nth-child(1) .card', els => els.length) === 1);
   await page.select('#size-filter', '');
-  await sleep(150);
+  await waitFor(() => true, 100, 'filter settle');
 
   await cardAction(1, 1, 'edit-card');
-  await sleep(200);
+  await waitFor(() => !!document.querySelector('#cf-priority'), 3000, 'editor for priority');
   await page.select('#cf-priority', 'high');
   await page.select('#cf-size', 'm');
   await clickByText('.modal-actions .btn', 'Save');
-  await sleep(200);
+  await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'priority editor closes');
   const editedMeta = await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     const card = b.boards.find(x => x.id === b.activeBoardId).columns[0].cards[0];
@@ -392,10 +430,10 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   // ---- Column roles ----
   check('role badge renders on columns', await page.$$eval('.col-role', els => els.length) === 3);
   await page.click('.column:nth-child(2) .column-header [data-action="col-menu"]');
-  await sleep(150);
+  await waitFor(() => !!document.querySelector('#ce-role'), 3000, 'column editor roles');
   await page.select('#ce-role', 'backlog');
   await page.click('.modal-actions .btn.primary');
-  await sleep(200);
+  await waitFor(() => true, 200, 'role save settle');
   const roleSaved = await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     const board = b.boards.find(x => x.id === b.activeBoardId);
@@ -407,11 +445,14 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   // ---- Manual flow states ----
   await cardAction(1, 1, 'edit-card');
-  await sleep(200);
+  await waitFor(() => !!document.querySelector('#cf-flow'), 3000, 'editor for flow');
   await page.select('#cf-flow', 'blocked');
   await page.$eval('#cf-flow-reason', (el, v) => { el.value = v; }, 'Waiting for API credentials');
   await clickByText('.modal-actions .btn', 'Save');
-  await sleep(200);
+  await waitFor(() => {
+    const el = document.querySelector('.column:nth-child(1) .card:nth-child(1) .chip.flow');
+    return el && el.textContent.includes('BLOCKED');
+  }, 3000, 'flow badge');
   check('flow badge shows blocked', await page.$eval('.column:nth-child(1) .card:nth-child(1) .chip.flow', el => el.textContent.includes('BLOCKED')));
   const flowStateSaved = await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
@@ -421,12 +462,16 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('flow state persists with reason and timestamp',
     flowStateSaved.state === 'blocked' && flowStateSaved.reason === 'Waiting for API credentials' && typeof flowStateSaved.since === 'number');
   await page.select('#flow-filter', 'blocked');
-  await sleep(200);
+  await waitCount('.column:nth-child(1) .card', 1);
   check('flow state filter narrows cards', await page.$$eval('.column:nth-child(1) .card', els => els.length) === 1);
   await page.select('#flow-filter', '');
-  await sleep(150);
+  await waitFor(() => true, 100, 'flow filter settle');
   await blur();
   await pressUndo();
+  await waitFor(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    return b.boards.find(x => x.id === b.activeBoardId).columns[0].cards[0].flow.state === 'normal';
+  }, 3000, 'flow undo');
   const flowUndone = await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     return b.boards.find(x => x.id === b.activeBoardId).columns[0].cards[0].flow.state;
@@ -452,10 +497,10 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       blockedCount: KB.Core.Relations.getUnresolvedBlockers(KB.State.data(), { boardId: board.id, cardId: a.id }).length
     };
   });
-  await sleep(200);
   check('addBlocker links dependencies', depResult.linked && depResult.blockedCount === 1);
   check('dependency cycle is rejected', depResult.cycleReason === 'dependency-cycle');
   check('duplicate dependency is rejected', depResult.dupReason === 'duplicate');
+  await waitFor(() => !!document.querySelector('.column .card .chip.dep.dep-blocked'), 3000, 'dep blocked badge');
   check('dependency blocked badge renders', await page.$eval('.column .card .chip.dep.dep-blocked', el => el.textContent.includes('BLOCKER')));
 
   await page.evaluate((ids) => {
@@ -464,12 +509,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     KB.State.moveCard(board.columns[0].id, ids.blockerId, doneCol.id, 0);
     KB.App.refresh();
   }, depResult);
-  await sleep(150);
   const ready = await page.evaluate((ids) => {
     const board = KB.State.activeBoard();
     return KB.Core.Relations.isReadyToPull(KB.State.data(), { boardId: board.id, cardId: ids.targetId });
   }, depResult);
   check('completing a blocker makes the target ready', ready === true);
+  await waitFor(() => !!document.querySelector('.column .card .chip.dep.dep-ready'), 3000, 'ready badge');
   check('ready badge renders', await page.$eval('.column .card .chip.dep.dep-ready', el => el.textContent.trim() === 'READY'));
 
   await page.evaluate(() => KB.State.undo());
@@ -491,11 +536,9 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   await page.$eval('#ready-filter', (el) => { el.checked = true; });
   await page.evaluate(() => KB.App.refresh());
-  await sleep(150);
   check('ready-only filter hides blocked cards', await page.$$eval('.column .card', els => els.every(el => !el.querySelector('.chip.dep.dep-blocked'))));
   await page.$eval('#ready-filter', (el) => { el.checked = false; });
   await page.evaluate(() => KB.App.refresh());
-  await sleep(150);
 
   // ---- Column policies: soft WIP, hard WIP, entry defaults ----
   const policySetup = await page.evaluate(() => {
@@ -529,7 +572,6 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     KB.App.refresh();
     return { activeId: active.id, doneId: done.id };
   });
-  await sleep(150);
   const softResult = await page.evaluate((ids) => {
     const board = KB.State.activeBoard();
     const card = board.columns[0].cards[0];
@@ -558,6 +600,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('hard WIP confirmed override succeeds', hardConfirmed.ok === true);
   await blur();
   await pressUndo();
+  await waitFor((ids) => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    return board.columns[0].cards.some(c => c.id === ids[0]);
+  }, 3000, 'policy undo', beforeUndo);
   const policyAfterUndo = await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     return b.boards.find(x => x.id === b.activeBoardId).columns[0].cards.map(c => c.id);
@@ -573,13 +620,15 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   // ---- Review workspace ----
   await page.evaluate(() => KB.Workspaces.set('review'));
-  await sleep(300);
+  await waitFor(() => document.querySelectorAll('.metric-card').length >= 4, 3000, 'review summary');
   check('review workspace renders summary', await page.$$eval('.metric-card', els => els.length) >= 4);
+  await waitFor(() => document.querySelectorAll('.review-row').length >= 1, 3000, 'review queue');
   check('review workspace renders attention queue', await page.$$eval('.review-row', els => els.length) >= 1);
   const reviewFirst = await page.$eval('.review-row .review-title', el => el.textContent);
   check('review row explains why', (await page.$$eval('.review-row .review-reason', els => els.map(e => e.textContent))).length >= 1);
+  check('review summary shows p85 cycle time', (await page.$$eval('.metric-label', els => els.map(e => e.textContent))).some(t => t.includes('P85')));
   await page.evaluate(() => KB.Workspaces.set('board'));
-  await sleep(200);
+  await waitFor(() => !!document.querySelector('.column'), 3000, 'back to board');
 
   // ---- Lifecycle fields follow role-based moves ----
   await page.evaluate(() => {
@@ -613,7 +662,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     localStorage.setItem('kanban.board.v1', JSON.stringify(b));
   });
   await page.goto(URL, { waitUntil: 'load' });
-  await sleep(400);
+  await waitBoard();
   const colCount = await page.$$eval('.column', els => els.length);
   check('lifecycle board renders', colCount === 3);
   const lifeCols = await page.evaluate(() => {
@@ -690,10 +739,10 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       nextRunInFuture: recAfter.nextRunAt > Date.now()
     };
   });
-  await sleep(150);
   check('recurrence processing creates one occurrence', recResult.created === 1 && recResult.count === 1);
   check('single-active tracks the active instance', recResult.activeCard === true);
   check('recurrence advances its next run', recResult.nextRunInFuture === true);
+  await waitFor(() => document.querySelectorAll('.chip.rec').length >= 1, 3000, 'recurrence chip');
   check('recurrence chip renders', await page.$$eval('.chip.rec', els => els.length) >= 1);
 
   const recSecond = await page.evaluate(() => {
@@ -728,13 +777,42 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     KB.State.moveCard(col.id, card.id, doneCol.id, 0);
     KB.State.handleCardCompleted(board.id, card.id);
     const recAfter = KB.State.recurrences().find(r => r.id === rec.id);
+    const startOfDay = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
     return {
       scheduled: recAfter.nextRunAt !== null,
       activeCleared: recAfter.activeCardRef === null,
-      delayDays: recAfter.nextRunAt - Math.floor(recAfter.nextRunAt / 86400000) * 86400000 >= 0 ? Math.round((recAfter.nextRunAt - (recAfter.lastCompletedAt ? recAfter.lastCompletedAt : 0)) / 86400000) : null
+      delayDays: Math.max(0, Math.round((recAfter.nextRunAt - startOfDay(recAfter.lastCompletedAt)) / 86400000))
     };
   });
   check('completing a recurring card schedules the next run', afterCompletion.scheduled === true && afterCompletion.activeCleared === true);
+  check('completion delay is respected', afterCompletion.delayDays === 7);
+
+  const afterCompletionCreated = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const rec = KB.State.recurrences().find(r => r.template.title === 'Quarterly review');
+    rec.nextRunAt = 1;
+    KB.State.updateRecurrence(rec.id, { nextRunAt: 1 });
+    const processed = KB.State.processRecurrences();
+    const freshBoard = KB.State.activeBoard();
+    const cards = freshBoard.columns[0].cards.filter(c => c.title === 'Quarterly review');
+    return { created: processed ? processed.created : 0, count: cards.length };
+  });
+  check('after-completion creates the next card when the delay has passed', afterCompletionCreated.created >= 1 && afterCompletionCreated.count === 1);
+  const recNeedAttention = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const rec = KB.State.addRecurrence({
+      mode: 'scheduled',
+      schedule: { frequency: 'daily', interval: 1 },
+      target: { boardId: board.id, columnId: 'ghost-column' },
+      template: { title: 'Orphan rec', priority: 'none', size: 'none', checklist: [] },
+      overlapPolicy: 'single-active',
+      missedPolicy: 'create-one'
+    });
+    const processed = KB.State.processRecurrences();
+    const after = KB.State.recurrences().find(r => r.id === rec.id);
+    return { needsAttention: after.needsAttention, changed: Boolean(processed) };
+  });
+  check('missing target column marks the recurrence', recNeedAttention.needsAttention === true && recNeedAttention.changed === true);
 
   // ---- Inbox capture and triage ----
   const inboxResult = await page.evaluate(() => {
@@ -759,13 +837,17 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       cardAssignee: created && created.assignee
     };
   });
-  await sleep(200);
   check('inbox capture stores items', inboxResult.captured && inboxResult.multi === true);
   check('inbox triage is atomic', inboxResult.triaged && inboxResult.beforeTriage === 3 && inboxResult.afterTriage === 2);
   check('triage card keeps the patch', inboxResult.cardPriority === 'medium' && inboxResult.cardAssignee === 'Sam');
 
   await blur();
   await pressUndo();
+  await waitFor(() => {
+    const items = KB.State.inboxItems();
+    const card = KB.State.activeBoard().columns[0].cards.find(c => c.title === 'Order new laptop');
+    return items.length === 3 && !card;
+  }, 3000, 'triage undo');
   const inboxUndo = await page.evaluate(() => {
     const items = KB.State.inboxItems();
     const card = KB.State.activeBoard().columns[0].cards.find(c => c.title === 'Order new laptop');
@@ -782,19 +864,30 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   check('merge appends into the target card', mergeResult.merged && mergeResult.descHasNote === true);
 
+  const mergeUrlKept = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const card = board.columns[0].cards[0];
+    const before = card.description;
+    const captured = KB.State.captureInbox({ title: 'URL merge item', note: 'Context note', url: 'https://example.com/keep' });
+    const merged = KB.State.mergeInboxItem(captured.id, { boardId: board.id, cardId: card.id });
+    const after = merged ? KB.State.activeBoard().columns[0].cards[0].description : before;
+    return merged && after.includes('Context note') && after.includes('https://example.com/keep');
+  });
+  check('merge keeps the URL with a note', mergeUrlKept === true);
+
   await page.evaluate(() => KB.Workspaces.set('inbox'));
-  await sleep(250);
+  await waitFor(() => document.querySelectorAll('.inbox-item').length >= 1, 3000, 'inbox workspace');
   check('inbox workspace shows items', await page.$$eval('.inbox-item', els => els.length) >= 1);
   check('inbox pressure summary renders', await page.$eval('.inbox-pressure', el => el.textContent.includes('unprocessed')));
   await page.evaluate(() => KB.Workspaces.set('board'));
-  await sleep(150);
+  await waitFor(() => !!document.querySelector('.column'), 3000, 'back to board after inbox');
 
   // ---- My Desk and saved lenses ----
   await page.evaluate(() => KB.Workspaces.set('mydesk'));
-  await sleep(250);
+  await waitFor(() => document.querySelectorAll('.desk-section').length === 5, 3000, 'my desk sections');
   check('my desk renders default sections', await page.$$eval('.desk-section', els => els.length) === 5);
   await page.evaluate(() => { document.querySelector('.lens-bar [data-lens="builtin-aging"]').click(); });
-  await sleep(200);
+  await waitFor(() => document.querySelectorAll('.desk-section').length >= 1, 3000, 'aging lens');
   check('built-in lens renders grouped results', await page.$$eval('.desk-section', els => els.length) >= 1);
   const lensSave = await page.evaluate(() => {
     const lens = KB.State.addLens({
@@ -808,13 +901,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     KB.Workspaces.set('mydesk');
     return lens && lens.id;
   });
-  await sleep(200);
   check('user lens created', typeof lensSave === 'string');
   await page.evaluate((id) => { document.querySelector('.lens-bar [data-lens="' + id + '"]').click(); }, lensSave);
-  await sleep(200);
+  await waitFor(() => document.querySelectorAll('.compact-card').length >= 1, 3000, 'user lens applies');
   check('user lens applies', await page.$$eval('.compact-card', els => els.length) >= 1);
   await page.evaluate(() => { KB.Workspaces.set('board'); });
-  await sleep(150);
+  await waitFor(() => !!document.querySelector('.column'), 3000, 'back to board after lens');
 
   // ---- Move-to menu and keyboard movement ----
   const kbCardId = await page.evaluate(() => {
@@ -826,20 +918,18 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     KB.App.refresh();
     return card.id;
   });
-  await sleep(150);
+  await waitFor((id) => !!document.querySelector('.column:nth-child(2) .card[data-id="' + id + '"]'), 3000, 'keyboard card placed', kbCardId);
   await page.evaluate((cardId) => {
     const card = document.querySelector('.column:nth-child(2) .card[data-id="' + cardId + '"]');
     card.focus();
   }, kbCardId);
-  await sleep(100);
   await page.keyboard.press('m');
-  await sleep(150);
+  await waitFor(() => document.querySelector('.column:nth-child(2) .card') && document.querySelector('.column:nth-child(2) .card').classList.contains('move-pos-target'), 3000, 'move mode highlight');
   check('keyboard move mode highlights the card', await page.$eval('.column:nth-child(2) .card', el => el.classList.contains('move-pos-target')));
   await page.keyboard.press('ArrowRight');
-  await sleep(100);
+  await waitFor(() => document.querySelector('.column:nth-child(3)').classList.contains('move-col-target'), 2000, 'arrow right target');
   check('arrow right moves the target column', await page.$eval('.column:nth-child(3)', el => el.classList.contains('move-col-target')));
   await page.keyboard.press('Enter');
-  await sleep(250);
   const confirmOpen = await page.$('.modal-panel');
   if (confirmOpen) {
     await page.evaluate(() => {
@@ -847,21 +937,25 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       const confirm = btns.find(b => b.textContent.trim() === 'Confirm move');
       if (confirm) confirm.click();
     });
-    await sleep(250);
   }
+  await waitFor((id) => {
+    const el = document.querySelector('.column:nth-child(3) .card');
+    return el && el.dataset.id === id;
+  }, 4000, 'keyboard move commits', kbCardId);
   check('enter commits the keyboard move', await page.$eval('.column:nth-child(3) .card', (el, id) => el.dataset.id === id, kbCardId) === true);
+  await waitFor(() => document.querySelector('#live-region').textContent.includes('Moved'), 3000, 'move announcement');
   check('keyboard move announces the result', (await page.$eval('#live-region', el => el.textContent)).includes('Moved') === true);
 
   await page.evaluate(() => {
     const card = document.querySelector('.column:nth-child(3) .card');
     card.focus();
   });
-  await sleep(80);
   await page.keyboard.press('m');
-  await sleep(120);
+  await waitFor(() => document.querySelector('.column:nth-child(3) .card').classList.contains('move-pos-target'), 2000, 'cancel move mode start');
   await page.keyboard.press('Escape');
-  await sleep(120);
+  await waitFor(() => [...document.querySelectorAll('.column')].every(c => !c.classList.contains('move-col-target')), 2000, 'move mode cancelled');
   check('escape cancels keyboard move', (await page.$$eval('.column', els => els.every(c => !c.classList.contains('move-col-target')))) === true);
+  await waitFor(() => document.querySelector('#live-region').textContent === 'Move cancelled.', 2000, 'cancel announcement');
   check('cancel announcement reads Move cancelled', (await page.$eval('#live-region', el => el.textContent)) === 'Move cancelled.');
 
   const movedCardId = await page.evaluate(() => {
@@ -872,21 +966,71 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const board = KB.State.activeBoard();
     KB.MoveTo.moveToMenu(board.id, board.columns[1].id, board.columns[1].cards[0].id);
   });
-  await sleep(200);
+  await waitFor(() => !!document.querySelector('#mt-board'), 3000, 'move-to menu opens');
   check('move-to menu opens', await page.$eval('#mt-board', el => el.tagName === 'SELECT') === true);
+  check('move-to menu offers before/after positions', (await page.$$eval('#mt-position option', els => els.map(e => e.value))).every(v => ['top', 'bottom', 'before', 'after'].includes(v)));
   await page.evaluate(() => {
     const columnSelect = document.querySelector('#mt-column');
     const last = columnSelect.options[columnSelect.options.length - 1].value;
     columnSelect.value = last;
     document.querySelector('.modal-panel .btn.primary').click();
   });
-  await sleep(250);
+  const moveConfirm = await page.$('.modal-panel .mv-criterion, .modal-panel .policy-violation');
+  if (moveConfirm) {
+    await page.evaluate(() => {
+      const confirm = [...document.querySelectorAll('.modal-actions .btn')].find(b => b.textContent.trim() === 'Confirm move');
+      if (confirm) confirm.click();
+    });
+  }
+  await waitFor((id) => {
+    const board = KB.State.activeBoard();
+    const done = board.columns[board.columns.length - 1];
+    return done.cards.some(c => c.id === id);
+  }, 3000, 'move-to commits', movedCardId);
   const moveToLanded = await page.evaluate((id) => {
     const board = KB.State.activeBoard();
     const done = board.columns[board.columns.length - 1];
     return done.cards.some(c => c.id === id);
   }, movedCardId);
   check('move-to menu commits the move', moveToLanded === true);
+
+  // ---- Policy criteria confirmation in the move dialog ----
+  const criteriaMove = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns.find(c => c.cards.length > 0);
+    board.columns[1].policy.entryCriteria = ['Acceptance criteria written', 'Dependencies resolved'];
+    KB.State.updateColumn(board.columns[1].id, { policy: board.columns[1].policy });
+    const card = col.cards[col.cards.length - 1];
+    KB.Modal.moveConfirmModal('Move requires confirmation', {
+      violations: [{
+        code: 'entry-criteria',
+        message: 'Entry criteria need confirming.',
+        criteria: ['Acceptance criteria written', 'Dependencies resolved']
+      }]
+    }, '', function () { KB.State.moveCardChecked(col.id, card.id, board.columns[1].id, 0, { confirmed: true }); });
+    return { cardId: card.id };
+  });
+  await waitFor(() => document.querySelectorAll('.mv-criterion').length === 2, 3000, 'criteria checkboxes');
+  check('move dialog lists each criterion', await page.$$eval('.mv-criterion', els => els.length) === 2);
+  await page.evaluate(() => {
+    const confirm = [...document.querySelectorAll('.modal-actions .btn')].find(b => b.textContent.trim() === 'Confirm move');
+    confirm.click();
+  });
+  await waitFor(() => [...document.querySelectorAll('.toast')].some(e => e.textContent.includes('Confirm every criterion')), 3000, 'unconfirmed blocked');
+  check('unconfirmed criteria block the move', (await page.$$eval('.toast', els => els.some(e => e.textContent.includes('Confirm every criterion')))) === true);
+  await page.evaluate(() => {
+    document.querySelectorAll('.mv-criterion').forEach(box => { box.checked = true; });
+    const confirm = [...document.querySelectorAll('.modal-actions .btn')].find(b => b.textContent.trim() === 'Confirm move');
+    confirm.click();
+  });
+  await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'criteria confirmed');
+  check('confirmed criteria proceed', (await page.$('.modal-panel')) === null);
+  await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    board.columns[1].policy.entryCriteria = [];
+    KB.State.updateColumn(board.columns[1].id, { policy: board.columns[1].policy });
+    KB.App.refresh();
+  });
 
   // ---- Multi-select and bulk actions ----
   const bulkResult = await page.evaluate(() => {
@@ -912,13 +1056,16 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       archivedState: archived && archived.changed ? archived.reason : null
     };
   });
-  await sleep(150);
   check('bulk toolbar shows the selection', bulkResult.toolbarShown === true);
   check('bulk update patches selected cards', bulkResult.bulkChanged === true);
   check('bulk archive archives the selection', bulkResult.archivedCount === 2 && bulkResult.archiveDelta === 2);
 
   await blur();
   await pressUndo();
+  await waitFor(() => {
+    const board = KB.State.activeBoard();
+    return board.archive.cards.length === 0;
+  }, 3000, 'bulk undo');
   const bulkUndo = await page.evaluate(() => {
     const board = KB.State.activeBoard();
     return { archiveSize: board.archive.cards.length, colCards: board.columns.reduce((n, c) => n + c.cards.length, 0) };
@@ -939,11 +1086,32 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     from.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true, ctrlKey: false }));
     to.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true, ctrlKey: false }));
   }, shiftSelect);
-  await sleep(150);
+  await waitFor(() => document.querySelectorAll('.card.selected').length >= 2, 3000, 'shift range');
   check('shift-click selects a range', await page.$$eval('.card.selected', els => els.length) >= 2);
   await page.keyboard.press('Escape');
-  await sleep(100);
+  await waitFor(() => document.querySelectorAll('.card.selected').length === 0, 2000, 'escape clears');
   check('escape clears the selection', await page.$$eval('.card.selected', els => els.length) === 0);
+
+  // ---- Archived dependencies survive a reload ----
+  const archivedDepIds = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns.find(c => c.cards.length > 0);
+    const target = KB.State.addCard(col.id, { title: 'Dep persistence target' });
+    const blocker = KB.State.addCard(col.id, { title: 'Dep persistence blocker' });
+    KB.State.addBlocker(board.id, target.id, board.id, blocker.id);
+    KB.State.archiveCard(col.id, blocker.id, board.id);
+    return { targetId: target.id, blockerId: blocker.id };
+  });
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  const archivedDepSurvived = await page.evaluate((ids) => {
+    const board = KB.State.activeBoard();
+    let card = null;
+    board.columns.forEach(c => { if (!card) card = c.cards.find(x => x.id === ids.targetId) || null; });
+    if (!card) return null;
+    return card.dependencies.blockers.some(b => b.cardId === ids.blockerId);
+  }, archivedDepIds);
+  check('archived dependency reference survives reload', archivedDepSurvived === true);
 
   // ---- Activity view ----
   await page.evaluate(() => {
@@ -957,12 +1125,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const col = board.columns.find(c => c.cards.length > 0);
     KB.Modal.cardEditor(col.id, col.cards[0], null, board.id);
   });
-  await sleep(200);
+  await waitFor(() => document.querySelectorAll('.activity-row').length >= 2, 3000, 'activity rows');
   check('activity section renders events', await page.$$eval('.activity-row', els => els.length) >= 2);
   check('activity shows created and move events',
     (await page.$$eval('.activity-label', els => els.map(e => e.textContent))).some(t => t === 'Created'));
   await clickByText('.modal-actions .btn', 'Cancel');
-  await sleep(150);
+  await waitFor(() => !document.querySelector('.modal-panel'), 2000, 'activity editor closes');
 
   // ---- Version 3 export/import round trip ----
   const v3RoundTrip = await page.evaluate(() => {
@@ -993,7 +1161,6 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const lensCountAfter = KB.State.lenses().length;
     return { hasRec, hasLens, importResult, recCountBefore, recCountAfter, lensCountAfter, recId: rec.id, boardCount: KB.State.boards().length };
   });
-  await sleep(150);
   check('board export includes recurrences and lenses', v3RoundTrip.hasRec && v3RoundTrip.hasLens);
   check('board import brings recurrences and lenses', v3RoundTrip.importResult === 'board' && v3RoundTrip.recCountAfter > v3RoundTrip.recCountBefore && v3RoundTrip.lensCountAfter >= 2);
   const recIdConflict = await page.evaluate((id) => {
@@ -1009,7 +1176,3 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await browser.close();
   process.exit(failures === 0 ? 0 : 1);
 })().catch((e) => { console.error('TEST CRASH:', e); process.exit(2); });
-
-
-
-

@@ -43,7 +43,14 @@
       var key;
       if (!obj || typeof obj !== 'object') return out;
       for (key in obj) {
-        if (Object.prototype.hasOwnProperty.call(obj, key)) out[key] = obj[key];
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          Object.defineProperty(out, key, {
+            value: obj[key],
+            enumerable: true,
+            writable: true,
+            configurable: true
+          });
+        }
       }
       return out;
     }
@@ -332,7 +339,7 @@
         scope: scope,
         boardIds: Array.isArray(lens.boardIds)
           ? lens.boardIds.filter(function (id) { return typeof id === 'string'; })
-          : (scope === 'selected-boards' ? [] : []),
+          : [],
         query: {
           search: typeof querySource.search === 'string' ? querySource.search : '',
           labelIds: Array.isArray(querySource.labelIds) ? querySource.labelIds.filter(function (id) { return typeof id === 'string'; }) : [],
@@ -343,6 +350,9 @@
           flowStates: Array.isArray(querySource.flowStates) ? querySource.flowStates.filter(function (s) { return FLOW_STATES.indexOf(s) !== -1; }) : [],
           blockedOnly: Boolean(querySource.blockedOnly),
           readyOnly: Boolean(querySource.readyOnly),
+          recentlyCompletedOnly: Boolean(querySource.recentlyCompletedOnly),
+          agingOnly: Boolean(querySource.agingOnly),
+          agingDays: Math.max(0, toInt(querySource.agingDays, 7)),
           columnRoles: Array.isArray(querySource.columnRoles) ? querySource.columnRoles.filter(function (r) { return COLUMN_ROLES.indexOf(r) !== -1; }) : [],
           includeCompleted: querySource.includeCompleted === false ? false : true
         },
@@ -377,7 +387,7 @@
           interval: Math.max(1, toInt(scheduleSource.interval, 1)),
           weekdays: Array.isArray(scheduleSource.weekdays)
             ? scheduleSource.weekdays.filter(function (w) { return typeof w === 'number' && w >= 0 && w <= 6; })
-            : (frequency === 'weekly' ? [] : []),
+            : [],
           dayOfMonth: toNullableInt(scheduleSource.dayOfMonth),
           delayAfterCompletionDays: toNullableInt(scheduleSource.delayAfterCompletionDays)
         },
@@ -403,18 +413,11 @@
         lastCompletedAt: toNumberOrNull(recurrence.lastCompletedAt),
         endAt: toNumberOrNull(recurrence.endAt),
         remainingOccurrences: toNullableInt(recurrence.remainingOccurrences),
+        needsAttention: Boolean(recurrence.needsAttention),
         pausedReason: typeof recurrence.pausedReason === 'string' ? recurrence.pausedReason : '',
         createdAt: toNumberOrNull(recurrence.createdAt) === null ? now : toNumberOrNull(recurrence.createdAt),
         updatedAt: toNumberOrNull(recurrence.updatedAt) === null ? now : toNumberOrNull(recurrence.updatedAt)
       };
-    }
-
-    function cardIndex(state) {
-      var index = {};
-      state.boards.forEach(function (board) {
-        index[board.id] = board;
-      });
-      return index;
     }
 
     function columnIndex(state) {
@@ -427,16 +430,21 @@
       return index;
     }
 
-    function cardExistsInBoard(board, ref) {
-      if (!board || board.id !== ref.boardId) return false;
-      return board.columns.some(function (c) {
-        return c.cards.some(function (card) { return card.id === ref.cardId; });
+    function locationIndex(state) {
+      var index = {};
+      state.boards.forEach(function (board) {
+        var add = function (card) {
+          index[board.id + ':' + card.id] = card;
+        };
+        board.columns.forEach(function (c) { c.cards.forEach(add); });
+        board.archive.cards.forEach(add);
+        board.archive.columns.forEach(function (entry) { entry.cards.forEach(add); });
       });
+      return index;
     }
 
     function repairDependencies(state) {
-      var boards = cardIndex(state);
-      var columns = columnIndex(state);
+      var locations = locationIndex(state);
       state.boards.forEach(function (board) {
         var allCards = [];
         board.columns.forEach(function (c) { allCards.push.apply(allCards, c.cards); });
@@ -447,12 +455,8 @@
             var list = card.dependencies[side];
             if (!Array.isArray(list)) list = [];
             card.dependencies[side] = list.filter(function (ref) {
-              var boardId = ref && ref.boardId;
-              var cardId = ref && ref.cardId;
-              if (!boardId || !cardId) return false;
-              var targetBoard = boards[boardId];
-              if (!targetBoard) return false;
-              return cardExistsInBoard(targetBoard, { boardId: boardId, cardId: cardId });
+              if (!ref || !ref.boardId || !ref.cardId) return false;
+              return locations[ref.boardId + ':' + ref.cardId] !== undefined;
             });
           });
           var self = { boardId: board.id, cardId: card.id };
@@ -468,6 +472,7 @@
     }
 
     function repairRecurrences(state, deps) {
+      var locations = locationIndex(state);
       var columns = columnIndex(state);
       state.recurrences.forEach(function (recurrence) {
         var target = columns[recurrence.target.columnId];
@@ -477,9 +482,7 @@
         }
         var cardRef = recurrence.activeCardRef;
         if (!cardRef) return;
-        var board = cardIndex(state)[cardRef.boardId];
-        var stillExists = cardExistsInBoard(board, cardRef);
-        if (!stillExists) recurrence.activeCardRef = null;
+        if (locations[cardRef.boardId + ':' + cardRef.cardId] === undefined) recurrence.activeCardRef = null;
       });
       return state;
     }
@@ -553,7 +556,7 @@
             if (normalized) normalized.columnId = entryId;
             return normalized;
           });
-          return Object.assign({}, entry, { id: entryId, cards: cards });
+          return Object.assign(cloneShallow(entry), { id: entryId, cards: cards });
         })
       };
       if (originalId) {
