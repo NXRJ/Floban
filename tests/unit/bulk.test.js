@@ -149,3 +149,37 @@ test('bulkMove across boards preserves order within the selection', () => {
   assert.equal(result.changed, true);
   assert.deepEqual(result.state.boards[0].columns[1].cards.map(c => c.id), ['c4', 'x1', 'c1']);
 });
+
+test('bulkMove with no cards is a clean no-op', () => {
+  const result = Bulk.bulkMove(state(), [], { boardId: 'board-1', columnId: 'col-b' }, deps);
+  assert.equal(result.changed, false);
+  assert.equal(result.reason, 'no-cards');
+});
+
+test('same-column bulk reorder does not append a transition', () => {
+  const result = Bulk.bulkMove(state(), [ref('board-1', 'c1'), ref('board-1', 'c3')], { boardId: 'board-1', columnId: 'col-a' }, deps);
+  assert.equal(result.changed, true);
+  const cardA = result.state.boards[0].columns[0].cards.find(c => c.id === 'c1');
+  assert.equal(cardA.transitions.length, 0);
+});
+
+test('cross-board bulk move applies per-card label mappings', () => {
+  const s = state();
+  s.boards.push({
+    id: 'board-2',
+    name: 'Two',
+    flowSettings: {},
+    labels: [{ id: 'l-2', name: 'Bug', color: '#c81e14' }],
+    templates: [],
+    columns: [
+      { id: 'col-x', title: 'To Do', role: 'queue', isDone: false, wipLimit: 0, policy: {}, cards: [] }
+    ],
+    archive: { cards: [], columns: [] }
+  });
+  s.boards[0].columns[0].cards[0].labels = ['l-1'];
+  const result = Bulk.bulkMove(s, [ref('board-1', 'c1')], { boardId: 'board-2', columnId: 'col-x' }, deps, {
+    labelMappings: { 'board-1:c1': ['l-2'] }
+  });
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.state.boards[1].columns[0].cards[0].labels, ['l-2']);
+});

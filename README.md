@@ -142,7 +142,7 @@ Your current workspace is remembered across reloads.
 - Filters combine with AND logic across categories, while multiple selected
   labels match a card if it has *any* of them (OR within the label group).
 - **Sort** cards within each column (manual / due date / priority / size /
-  created / last updated) from the filter bar.
+  created / last updated / longest blocked) from the filter bar.
 - Press `/` anywhere to jump to the search box. "Clear filters" resets
   everything.
 
@@ -153,8 +153,9 @@ Your current workspace is remembered across reloads.
 - Bulk operations are atomic — one undo entry restores the whole selection.
 
 ### Review workspace
-- A **flow summary** (WIP, completed 7/30d, median cycle time, SLE, blocked
-  totals, over-WIP bottlenecks with plain-language explanations) and an
+- A **flow summary** (WIP, completed 7/30d, median and 85th-percentile cycle
+  time, SLE, blocked totals and blocked duration for recently completed cards,
+  over-WIP bottlenecks with plain-language explanations) and an
   **attention queue** ordered by: manually blocked longest → dependency
   blocked → waiting longest → beyond SLE → over-WIP column → overdue → stale →
   oversized checklist → paused → completed long enough to archive.
@@ -181,7 +182,8 @@ Your current workspace is remembered across reloads.
   `javascript:`/`data:` URLs are never stored as links.
 - **Triage** turns an item into a card (board, column, due date, labels,
   assignee, priority, size) in one atomic, undoable step. Items can also be
-  **merged** into an existing card or archived as references.
+  **converted to a recurring definition**, **merged** into an existing card or
+  archived as references.
 - The header badge and the workspace show triage pressure ("3 unprocessed ·
   oldest: 2d").
 

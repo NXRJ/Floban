@@ -143,9 +143,6 @@
           if (unresolved.length > 0 || (card.flow && card.flow.state === 'blocked')) {
             sections.blocked.push({ boardId: board.id, column: column, card: card });
           }
-          if (card.flow && card.flow.state === 'waiting') {
-            sections.ready.push({ boardId: board.id, column: column, card: card });
-          }
           if (column.role === 'active') {
             sections.active.push({ boardId: board.id, column: column, card: card });
           }
@@ -379,10 +376,12 @@
     metric('Completed 7d', String(summary.completed7d));
     metric('Completed 30d', String(summary.completed30d));
     metric('Median cycle time', summary.medianCycleTime === null ? '—' : Math.round(summary.medianCycleTime * 10) / 10 + 'd');
+    metric('Cycle time P85', summary.cycleTimeP85 === null ? '—' : Math.round(summary.cycleTimeP85 * 10) / 10 + 'd');
     metric('SLE', summary.sle.sleDays === null
       ? (summary.sle.sampleCount === null ? '—' : 'Not enough completed work yet (' + summary.sle.sampleCount + ' samples)')
       : Math.round(summary.sle.sleDays) + 'd');
     metric('Currently blocked', String(summary.blockedTotal));
+    metric('Blocked duration (completed 30d)', summary.blockedRecentlyCompletedMs === 0 ? '—' : Math.round(summary.blockedRecentlyCompletedMs / 86400000 * 10) / 10 + 'd');
     metric('Oldest active', summary.oldestActive ? summary.oldestActive.title : '—');
     summary.overWipColumns.forEach(function (bottleneck) {
       metric('Over-WIP: ' + bottleneck.title, bottleneck.explanation);

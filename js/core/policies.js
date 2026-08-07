@@ -67,6 +67,20 @@
       };
     }
 
+    function wipExceeded(column) {
+      var limit = column && column.wipLimit ? column.wipLimit : 0;
+      if (limit <= 0) return null;
+      var policy = column && column.policy ? column.policy : {};
+      var mode = WIP_MODES.indexOf(policy.wipMode) !== -1 ? policy.wipMode : 'off';
+      var count = column.cards ? column.cards.length : 0;
+      if (count <= limit) return null;
+      return {
+        code: 'wip-limit',
+        message: column.title + ' holds ' + count + ' cards against a WIP limit of ' + limit + '.',
+        mode: mode
+      };
+    }
+
     function evaluateMovePolicy(state, cardRef, targetColumnRef, opts) {
       var options = opts || {};
       var sourceColumn = options.sourceColumn || null;
@@ -84,6 +98,15 @@
       var violations = [];
       var requiresOverride = false;
 
+      if (sourceColumn && target && sourceColumn.id === target.id) {
+        return {
+          allowed: true,
+          requiresOverride: false,
+          needsReason: false,
+          violations: []
+        };
+      }
+
       var wip = wipViolation(target);
       if (wip) {
         violations.push({ code: 'wip-limit', message: wip.message });
@@ -94,7 +117,8 @@
       if (Array.isArray(targetPolicy.entryCriteria) && targetPolicy.entryCriteria.length > 0) {
         violations.push({
           code: 'entry-criteria',
-          message: 'Entry criteria for "' + target.title + '" need confirming.'
+          message: 'Entry criteria for "' + target.title + '" need confirming.',
+          criteria: targetPolicy.entryCriteria.slice()
         });
         requiresOverride = true;
       }
@@ -104,7 +128,8 @@
         if (Array.isArray(sourcePolicy.exitCriteria) && sourcePolicy.exitCriteria.length > 0) {
           violations.push({
             code: 'exit-criteria',
-            message: 'Exit criteria for "' + sourceColumn.title + '" need confirming.'
+            message: 'Exit criteria for "' + sourceColumn.title + '" need confirming.',
+            criteria: sourcePolicy.exitCriteria.slice()
           });
           requiresOverride = true;
         }
@@ -171,12 +196,17 @@
         card.assignee = policy.defaultAssignee;
         defaultsApplied.assignee = true;
       }
-      card._defaultsApplied = defaultsApplied;
+      Object.defineProperty(card, '_defaultsApplied', {
+        value: defaultsApplied,
+        enumerable: false,
+        writable: true,
+        configurable: true
+      });
       return card;
     }
 
     function wipStatus(column) {
-      var wip = wipViolation(column);
+      var wip = wipExceeded(column);
       if (!wip) {
         return { over: false, mode: 'ok', message: '' };
       }

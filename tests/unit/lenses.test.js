@@ -203,3 +203,34 @@ test('normalizeLens repairs malformed definitions', () => {
   assert.equal(result.query.due, 'any');
   assert.equal(result.sort.field, 'manual');
 });
+
+test('recently-completed built-in matches only cards completed within 7 days', () => {
+  const s = state();
+  const now = 1000;
+  const builtin = Lenses.builtInLenses().find(b => b.id === 'builtin-recently-completed');
+  s.boards[0].columns[1].cards.push(card('old-done', 'c2', { completedAt: now - 8 * 86400000 }));
+  s.boards[0].columns[1].cards[0].completedAt = now - 3 * 86400000;
+  const result = Lenses.applyLens(s, builtin, now);
+  const ids = result.map(r => r.card.id);
+  assert.ok(ids.includes('done1'));
+  assert.ok(!ids.includes('old-done'));
+});
+
+test('blocked built-in includes manually blocked cards and dependency-blocked work', () => {
+  const s = state();
+  s.boards[0].columns[0].cards.push(card('dep-blocked', 'c1', {
+    dependencies: { blockers: [{ boardId: 'b2', cardId: 'x' }], related: [] }
+  }));
+  const builtin = Lenses.builtInLenses().find(b => b.id === 'builtin-blocked');
+  const result = Lenses.applyLens(s, builtin, 1000);
+  const ids = result.map(r => r.card.id);
+  assert.ok(ids.includes('b'));
+  assert.ok(ids.includes('dep-blocked'));
+  assert.ok(!ids.includes('a'));
+});
+
+test('ready-only excludes manually blocked cards', () => {
+  const s = state();
+  const result = Lenses.applyLens(s, lens({ query: { readyOnly: true } }), 1000);
+  assert.ok(result.every(r => r.card.id !== 'b'));
+});

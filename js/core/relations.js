@@ -225,6 +225,9 @@
       if (leftRef.boardId === rightRef.boardId && leftRef.cardId === rightRef.cardId) {
         return noop(state, 'self-reference');
       }
+      var left = findCard(state, leftRef.boardId, leftRef.cardId);
+      var right = findCard(state, rightRef.boardId, rightRef.cardId);
+      if (!left || !right) return noop(state, 'card-not-found');
       var status = normalizeRelatedPair(state, leftRef, rightRef);
       if (status === 'duplicate') return noop(state, 'duplicate');
       var next = cloneState(state);

@@ -267,15 +267,17 @@
       boardSelect.appendChild(new Option(board.name, board.id));
     });
     boardSelect.value = boardId;
-    form.appendChild(KB.Modal.fieldBlock ? fieldBlock('Board', boardSelect) : labelWrap('Board', boardSelect));
+    form.appendChild(KB.Modal.fieldBlock('Board', boardSelect));
 
     var columnSelect = h('select', { id: 'mt-column', 'aria-label': 'Destination column' });
     var positionSelect = h('select', { id: 'mt-position', 'aria-label': 'Position' });
-    [['top', 'Top'], ['bottom', 'Bottom']].forEach(function (pair) {
+    [['top', 'Top'], ['bottom', 'Bottom'], ['before', 'Before card…'], ['after', 'After card…']].forEach(function (pair) {
       positionSelect.appendChild(new Option(pair[1], pair[0]));
     });
-    form.appendChild(fieldBlock('Column', columnSelect));
-    form.appendChild(fieldBlock('Position', positionSelect));
+    var cardSelect = h('select', { id: 'mt-card', 'aria-label': 'Reference card' });
+    form.appendChild(KB.Modal.fieldBlock('Column', columnSelect));
+    form.appendChild(KB.Modal.fieldBlock('Position', positionSelect));
+    form.appendChild(KB.Modal.fieldBlock('Card', cardSelect));
 
     var warn = h('div', { class: 'form-hint mt-warn' });
     form.appendChild(warn);
@@ -287,7 +289,19 @@
         columnSelect.appendChild(new Option(column.title, column.id));
       });
       if (options.columnId && board.id === boardId) columnSelect.value = options.columnId;
+      fillCards();
       updateWarning();
+    }
+
+    function fillCards() {
+      cardSelect.innerHTML = '';
+      var board = KB.State.boardById(boardSelect.value);
+      var column = board.columns.find(function (c) { return c.id === columnSelect.value; });
+      (column ? column.cards : []).forEach(function (c) {
+        if (c.id === cardId) return;
+        cardSelect.appendChild(new Option(c.title, c.id));
+      });
+      cardSelect.classList.toggle('hidden', positionSelect.value === 'top' || positionSelect.value === 'bottom');
     }
 
     function updateWarning() {
@@ -311,7 +325,11 @@
     }
 
     boardSelect.addEventListener('change', fillColumns);
-    columnSelect.addEventListener('change', updateWarning);
+    columnSelect.addEventListener('change', function () {
+      fillCards();
+      updateWarning();
+    });
+    positionSelect.addEventListener('change', fillCards);
     fillColumns();
 
     var actions = h('div', { class: 'modal-actions' });
@@ -330,51 +348,68 @@
       var targetBoardId = boardSelect.value;
       var targetColumnId = columnSelect.value;
       var position = positionSelect.value;
-      var toIndex = position === 'top' ? 0 : undefined;
+      var toIndex = position === 'top' ? 0 : null;
+      if (position === 'bottom' || position === 'before' || position === 'after') {
+        var positionBoard = KB.State.boardById(targetBoardId);
+        var positionColumn = positionBoard.columns.find(function (c) { return c.id === targetColumnId; });
+        if (position === 'bottom') {
+          toIndex = positionColumn.cards.length;
+        } else {
+          var refIndex = positionColumn.cards.findIndex(function (c) { return c.id === cardSelect.value; });
+          if (refIndex === -1) {
+            KB.UI.toast('Choose a card to position against', 'error');
+            return;
+          }
+          toIndex = position === 'before' ? refIndex : refIndex + 1;
+        }
+      }
       var sameBoard = targetBoardId === boardId;
       var labelMapping = null;
       if (!sameBoard) {
         labelMapping = mapLabelsAcrossBoards(boardId, card, KB.State.boardById(targetBoardId));
       }
-      var moved = null;
-      if (sameBoard) {
-        moved = KB.State.moveCardChecked(columnId, cardId, targetColumnId, toIndex, { confirmed: true });
+      var evaluation = sameBoard
+        ? KB.State.evaluateMove(columnId, cardId, targetColumnId)
+        : KB.State.evaluateMoveTo(boardId, cardId, targetBoardId, targetColumnId);
+      if (!evaluation) {
+        KB.Modal.close();
+        KB.UI.toast('Move not available', 'error');
+        KB.App.refresh();
+        if (options.onDone) options.onDone(null);
+        return;
+      }
+      var finish = function (moved) {
+        KB.Modal.close();
+        if (moved && moved.ok) {
+          var labelNote = '';
+          if (labelMapping && labelMapping.dropped.length > 0) {
+            labelNote = ' — dropped labels: ' + labelMapping.dropped.join(', ');
+          }
+          KB.UI.toast('Card moved' + labelNote, 'success', 'Undo', KB.UI.undoAction);
+        } else {
+          KB.UI.toast('Move not allowed', 'error');
+        }
+        KB.App.refresh();
+        if (options.onDone) options.onDone(moved);
+      };
+      var doMove = function (reason) {
+        var opts = { confirmed: true, overrideReason: reason };
+        if (!sameBoard && labelMapping) opts.labelMapping = labelMapping.kept;
+        var moved = sameBoard
+          ? KB.State.moveCardChecked(columnId, cardId, targetColumnId, toIndex, opts)
+          : KB.State.moveCardTo(boardId, cardId, targetBoardId, targetColumnId, toIndex, opts);
+        finish(moved);
+      };
+      if (evaluation.allowed) {
+        doMove();
       } else {
-        moved = KB.State.moveCardTo(boardId, cardId, targetBoardId, targetColumnId, toIndex, {
-          confirmed: true,
-          labelMapping: labelMapping ? labelMapping.kept : null
+        KB.Modal.moveConfirmModal('Move requires confirmation', evaluation, '', function (reason) {
+          doMove(reason);
         });
       }
-      KB.Modal.close();
-      if (moved && moved.ok) {
-        var labelNote = '';
-        if (labelMapping && labelMapping.dropped.length > 0) {
-          labelNote = ' — dropped labels: ' + labelMapping.dropped.join(', ');
-        }
-        KB.UI.toast('Card moved' + labelNote, 'success', 'Undo', KB.UI.undoAction);
-      } else {
-        KB.UI.toast('Move not allowed', 'error');
-      }
-      KB.App.refresh();
-      if (options.onDone) options.onDone(moved);
     });
 
     KB.Modal.open(form);
-  }
-
-  function fieldBlock(labelText, control) {
-    var wrap = h('label', { class: 'field' });
-    if (labelText) {
-      var label = h('span');
-      label.textContent = labelText;
-      wrap.appendChild(label);
-    }
-    wrap.appendChild(control);
-    return wrap;
-  }
-
-  function labelWrap(labelText, control) {
-    return fieldBlock(labelText, control);
   }
 
   KB.MoveTo = { moveToMenu: moveToMenu, wireKeyboardMove: wireKeyboardMove, announce: announce };

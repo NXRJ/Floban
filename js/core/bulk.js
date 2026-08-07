@@ -35,6 +35,9 @@
     function bulkMove(state, cardRefs, target, deps, opts) {
       var options = opts || {};
       var now = deps ? deps.now() : 0;
+      if (!Array.isArray(cardRefs) || cardRefs.length === 0) {
+        return { changed: false, state: state, value: null, reason: 'no-cards' };
+      }
       var next = cloneState(state);
       var targetBoard = next.boards.find(function (b) { return b.id === target.boardId; });
       if (!targetBoard) return { changed: false, state: state, value: null, reason: 'board-not-found' };
@@ -51,7 +54,8 @@
         }
         var evaluation = Policies.evaluateMovePolicy(next, ref, { boardId: target.boardId, columnId: target.columnId }, {
           sourceColumn: located.column,
-          confirmed: Boolean(options.confirmed)
+          confirmed: Boolean(options.confirmed),
+          overrideReason: options.overrideReason
         });
         if (!evaluation.allowed) {
           violations.push({ ref: ref, code: evaluation.violations[0] ? evaluation.violations[0].code : 'policy', message: 'Policy blocks this card.' });
@@ -78,10 +82,20 @@
         var located = resolveCard(next, entry.ref);
         if (!located) return;
         var card = located.column.cards.splice(located.index, 1)[0];
-        var lifecycle = Lifecycle.transitionCard(card, located.column, targetColumn, now);
-        card = lifecycle.card;
+        var sameColumn = located.column.id === targetColumn.id;
+        var prevMovedAt = card.movedAt;
+        if (!sameColumn) {
+          var lifecycle = Lifecycle.transitionCard(card, located.column, targetColumn, now);
+          card = lifecycle.card;
+        }
         card.columnId = target.columnId;
-        card = Policies.applyEntryDefaults(card, targetColumn);
+        if (sameColumn) card.movedAt = prevMovedAt;
+        if (!sameColumn) {
+          var mappings = options.labelMappings || {};
+          var mapped = mappings[entry.ref.boardId + ':' + entry.ref.cardId];
+          if (Array.isArray(mapped)) card.labels = mapped.slice();
+          card = Policies.applyEntryDefaults(card, targetColumn);
+        }
         movedCards.push(card);
       });
 

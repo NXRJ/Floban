@@ -188,8 +188,38 @@ test('inboxSummary handles an empty inbox', () => {
 test('inbox survives board deletion since it is global', () => {
   const s = state();
   const captured = Inbox.captureItem(s, { title: 'Global item' }, makeDeps());
-  s.boards = [];
-  assert.equal(captured.state.inbox.items.length, 1);
+  const withoutBoards = Object.assign({}, captured.state, { boards: [] });
+  assert.equal(Inbox.inboxSummary(withoutBoards, 5000).count, 1);
+  assert.equal(Inbox.captureItem(withoutBoards, { title: 'Another' }, makeDeps()).changed, true);
+});
+
+test('mergeIntoCard keeps the URL when the item also has a note', () => {
+  const s = state();
+  s.boards[0].columns[0].cards = [{
+    id: 'c1',
+    columnId: 'col-1',
+    title: 'Existing',
+    description: 'Original description',
+    labels: [],
+    assignee: '',
+    createdAt: 100,
+    updatedAt: 100,
+    movedAt: 100,
+    due: '',
+    checklist: [],
+    priority: 'none',
+    size: 'none',
+    flow: { state: 'normal', reason: '', since: null, periods: [] },
+    dependencies: { blockers: [], related: [] },
+    recurrenceId: null,
+    transitions: []
+  }];
+  const captured = Inbox.captureItem(s, { title: 'Link with note', note: 'Context', url: 'https://example.com/doc' }, makeDeps());
+  const merged = Inbox.mergeIntoCard(captured.state, captured.value.id, { boardId: 'board-1', cardId: 'c1' }, makeDeps());
+  assert.equal(merged.changed, true);
+  assert.ok(merged.value.description.includes('Context'));
+  assert.ok(merged.value.description.includes('Source: https://example.com/doc'));
+  assert.equal(merged.state.inbox.items.length, 0);
 });
 
 test('inbox operations never mutate the input state', () => {

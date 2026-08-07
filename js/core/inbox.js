@@ -58,12 +58,10 @@
       var title = titleText;
       if (urlInfo.url && titleText === urlInfo.url) title = urlInfo.title || '';
       if (!title && urlInfo.title) title = urlInfo.title;
-      var note = noteText;
-      if (urlInfo.url && noteText === titleText) note = noteText;
       return {
         id: d.uid(),
         title: title,
-        note: note,
+        note: noteText,
         url: urlInfo.url,
         capturedAt: now,
         updatedAt: now
@@ -188,7 +186,10 @@
         card = column.cards.find(function (c) { return c.id === target.cardId; }) || null;
       });
       if (!card) return noop(state, 'card-not-found');
-      var note = item.note || (item.url ? 'Source: ' + item.url : '');
+      var parts = [];
+      if (item.note) parts.push(item.note);
+      if (item.url) parts.push('Source: ' + item.url);
+      var note = parts.join('\n');
       if (note) {
         card.description = card.description
           ? card.description + '\n\n---\n' + item.title + '\n' + note
@@ -197,9 +198,6 @@
         card.description = card.description
           ? card.description + '\n\n---\n' + item.title
           : item.title;
-      }
-      if (item.url && !card.due) {
-        // url is embedded in the note above; nothing extra needed
       }
       card.updatedAt = d.now();
       items.splice(index, 1);

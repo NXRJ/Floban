@@ -72,11 +72,6 @@
       return cards;
     }
 
-    function cardIsInDone(board, card) {
-      if (!card || typeof card.completedAt !== 'number') return false;
-      return true;
-    }
-
     function completedCardsInRange(board, from, to) {
       var out = [];
       allBoardCards(board).forEach(function (entry) {
@@ -170,10 +165,11 @@
         completed7d: 0,
         completed30d: 0,
         medianCycleTime: null,
+        cycleTimeP85: null,
         sle: { sleDays: null, sampleCount: 0 },
         oldestActive: null,
         blockedTotal: 0,
-        blockedRecentlyCompleted: 0,
+        blockedRecentlyCompletedMs: 0,
         overWipColumns: []
       };
       if (!board) return summary;
@@ -186,6 +182,7 @@
       summary.completed30d = throughput(board, now - 30 * MS_PER_DAY, now);
       var times = cycleTimes(board);
       summary.medianCycleTime = median(times);
+      summary.cycleTimeP85 = percentile(times, 0.85);
       summary.sle = calculateSle(board);
       var oldest = oldestActiveCards(board, now);
       if (oldest.length > 0) {
@@ -198,7 +195,7 @@
       });
       summary.blockedTotal = blockedInCols;
       var recentlyCompleted = completedCardsInRange(board, now - 30 * MS_PER_DAY, now);
-      summary.blockedRecentlyCompleted = recentlyCompleted.reduce(function (n, card) {
+      summary.blockedRecentlyCompletedMs = recentlyCompleted.reduce(function (n, card) {
         return n + Lifecycle.totalFlowDuration(card, 'blocked', now);
       }, 0);
       summary.overWipColumns = overWipColumns(board, now);

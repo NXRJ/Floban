@@ -48,16 +48,22 @@
 
       switch (frequency) {
         case 'monthly': {
-          var d = new Date(base);
-          var target = typeof dayOfMonth === 'number' && dayOfMonth >= 1 && dayOfMonth <= 31 ? dayOfMonth : d.getDate();
-          if (d.getDate() > target) {
-            d = new Date(d.getFullYear(), d.getMonth() + interval, target);
-          } else {
-            d = new Date(d.getFullYear(), d.getMonth(), target);
-          }
-          var maxDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-          if (target > maxDay) d = new Date(d.getFullYear(), d.getMonth(), maxDay);
-          return d.getTime();
+          var baseDate = new Date(base);
+          var target = typeof dayOfMonth === 'number' && dayOfMonth >= 1 && dayOfMonth <= 31 ? dayOfMonth : baseDate.getDate();
+          var monthIndex = baseDate.getFullYear() * 12 + baseDate.getMonth();
+          var offset = baseDate.getDate() > target ? interval : 0;
+          var candidate = null;
+          var attempts = 0;
+          do {
+            var index = monthIndex + offset;
+            var year = Math.floor(index / 12);
+            var month = index % 12;
+            var maxDay = new Date(year, month + 1, 0).getDate();
+            candidate = new Date(year, month, Math.min(target, maxDay));
+            offset += interval;
+            attempts += 1;
+          } while (candidate.getTime() <= base && attempts < 12);
+          return candidate.getTime();
         }
         case 'weekly': {
           if (weekdays.length === 0) {
@@ -68,7 +74,10 @@
           for (var i = 1; i <= 7; i++) {
             var candidate = new Date(base);
             candidate.setDate(candidate.getDate() + i);
-            if (weekdays.indexOf(candidate.getDay()) !== -1) return candidate.getTime();
+            if (weekdays.indexOf(candidate.getDay()) !== -1) {
+              candidate.setDate(candidate.getDate() + 7 * (interval - 1));
+              return candidate.getTime();
+            }
           }
           return base + 7 * interval * MS_PER_DAY;
         }
@@ -116,7 +125,7 @@
       column.cards.push(card);
       recurrence.activeCardRef = { boardId: recurrence.target.boardId, cardId: card.id };
       recurrence.lastRunAt = now;
-      recurrence.nextRunAt = computeNextRun(recurrence, now);
+      recurrence.nextRunAt = recurrence.mode === 'after-completion' ? null : computeNextRun(recurrence, now);
       recurrence.lastCompletedAt = null;
       if (typeof recurrence.remainingOccurrences === 'number') {
         recurrence.remainingOccurrences -= 1;
@@ -175,10 +184,10 @@
       var skippedWaiting = 0;
       var disabled = 0;
       var advanced = 0;
+      var attention = 0;
 
       (next.recurrences || []).forEach(function (recurrence) {
         if (!recurrence.enabled) return;
-        if (recurrence.mode !== 'scheduled') return;
 
         if (recurrence.endAt !== null && now >= recurrence.endAt) {
           recurrence.enabled = false;
@@ -201,9 +210,26 @@
           return;
         }
         var column = board.columns.find(function (c) { return c.id === recurrence.target.columnId; });
-        if (!column) return;
+        if (!column) {
+          if (!recurrence.needsAttention) {
+            recurrence.needsAttention = true;
+            attention += 1;
+          }
+          return;
+        }
+        if (recurrence.needsAttention) {
+          recurrence.needsAttention = false;
+          attention += 1;
+        }
 
         if (recurrence.nextRunAt === null) {
+          if (recurrence.mode === 'after-completion') {
+            if (!recurrence.activeCardRef) {
+              var seed = createOccurrence(next, recurrence, deps);
+              if (seed.changed) created += 1;
+            }
+            return;
+          }
           recurrence.nextRunAt = computeNextRun(recurrence, recurrence.createdAt || now);
         }
 
@@ -216,6 +242,12 @@
         }
 
         if (recurrence.nextRunAt > now) return;
+
+        if (recurrence.mode === 'after-completion') {
+          var result = createOccurrence(next, recurrence, deps);
+          if (result.changed) created += 1;
+          return;
+        }
 
         var missed = occurrencesMissedSince(recurrence, now);
         var toCreate = 1;
@@ -238,7 +270,7 @@
         }
       });
 
-      if (created === 0 && disabled === 0 && advanced === 0) {
+      if (created === 0 && disabled === 0 && advanced === 0 && attention === 0) {
         return { changed: false, state: state, created: 0, skippedWaiting: skippedWaiting, disabled: 0, advanced: 0 };
       }
       return { changed: true, state: next, created: created, skippedWaiting: skippedWaiting, disabled: disabled, advanced: advanced };

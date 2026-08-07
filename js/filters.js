@@ -9,7 +9,8 @@
     { value: 'priority', label: 'Priority' },
     { value: 'size', label: 'Size' },
     { value: 'created', label: 'Created' },
-    { value: 'updated', label: 'Last updated' }
+    { value: 'updated', label: 'Last updated' },
+    { value: 'blocked-duration', label: 'Longest blocked' }
   ];
 
   var PRIORITY_OPTIONS = [
@@ -73,7 +74,7 @@
   }
 
   function compare(cardA, cardB) {
-    return Core.compareCards(cardA, cardB, sortMode);
+    return Core.compareCards(cardA, cardB, sortMode, { now: Date.now() });
   }
 
   function sortActive() {

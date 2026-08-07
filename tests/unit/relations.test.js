@@ -263,3 +263,17 @@ test('relations operations never mutate the input state', () => {
   Relations.cleanupBoardReferences(s, 'board-2');
   assert.equal(JSON.stringify(s), before);
 });
+
+test('addRelated with a missing card is a no-op, not a crash', () => {
+  const s = state();
+  const result = Relations.addRelated(s, ref('board-1', 'ghost'), ref('board-1', 'c2'));
+  assert.equal(result.changed, false);
+  assert.equal(result.reason, 'card-not-found');
+});
+
+test('addRelated with a missing card on either side returns card-not-found', () => {
+  const s = state();
+  const result = Relations.addRelated(s, ref('board-1', 'c1'), ref('ghost-board', 'c2'));
+  assert.equal(result.changed, false);
+  assert.equal(result.reason, 'card-not-found');
+});
