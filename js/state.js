@@ -858,6 +858,50 @@
     return state.inbox && state.inbox.items ? state.inbox.items : [];
   }
 
+  function addLens(definition) {
+    return commit(function (current) {
+      var next = JSON.parse(JSON.stringify(current));
+      var lens = KB.Core.Lenses.normalizeLens(definition, deps());
+      lens.id = uid();
+      lens.createdAt = now();
+      lens.updatedAt = now();
+      next.lenses.push(lens);
+      return { changed: true, state: next, value: lens };
+    });
+  }
+
+  function updateLens(lensId, patch) {
+    return commit(function (current) {
+      var next = JSON.parse(JSON.stringify(current));
+      var lens = next.lenses.find(function (l) { return l.id === lensId; });
+      if (!lens) return { changed: false, state: current, value: null, reason: 'not-found' };
+      var changed = false;
+      Object.keys(patch || {}).forEach(function (key) {
+        if (JSON.stringify(lens[key]) !== JSON.stringify(patch[key])) {
+          lens[key] = patch[key];
+          changed = true;
+        }
+      });
+      if (!changed) return { changed: false, state: current, value: null, reason: 'no-change' };
+      lens.updatedAt = now();
+      return { changed: true, state: next, value: lens };
+    });
+  }
+
+  function deleteLens(lensId) {
+    return commit(function (current) {
+      var next = JSON.parse(JSON.stringify(current));
+      var index = next.lenses.findIndex(function (l) { return l.id === lensId; });
+      if (index === -1) return { changed: false, state: current, value: null, reason: 'not-found' };
+      next.lenses.splice(index, 1);
+      return { changed: true, state: next, value: true };
+    });
+  }
+
+  function lenses() {
+    return state.lenses || [];
+  }
+
   function setTheme(theme) {
     pushHistory();
     state.theme = theme;
@@ -956,6 +1000,10 @@
     triageInboxItem: triageInboxItem,
     mergeInboxItem: mergeInboxItem,
     inboxItems: inboxItems,
+    addLens: addLens,
+    updateLens: updateLens,
+    deleteLens: deleteLens,
+    lenses: lenses,
     setTheme: setTheme,
     exportAll: exportAll,
     exportBoard: exportBoard,
