@@ -816,6 +816,78 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await page.evaluate(() => { KB.Workspaces.set('board'); });
   await sleep(150);
 
+  // ---- Move-to menu and keyboard movement ----
+  const kbCardId = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const sourceCol = board.columns.find(c => c.cards.length > 0) || board.columns[0];
+    const card = sourceCol.cards[sourceCol.cards.length - 1];
+    const target = board.columns[1];
+    KB.State.moveCardChecked(sourceCol.id, card.id, target.id, 0, { confirmed: true });
+    KB.App.refresh();
+    return card.id;
+  });
+  await sleep(150);
+  await page.evaluate((cardId) => {
+    const card = document.querySelector('.column:nth-child(2) .card[data-id="' + cardId + '"]');
+    card.focus();
+  }, kbCardId);
+  await sleep(100);
+  await page.keyboard.press('m');
+  await sleep(150);
+  check('keyboard move mode highlights the card', await page.$eval('.column:nth-child(2) .card', el => el.classList.contains('move-pos-target')));
+  await page.keyboard.press('ArrowRight');
+  await sleep(100);
+  check('arrow right moves the target column', await page.$eval('.column:nth-child(3)', el => el.classList.contains('move-col-target')));
+  await page.keyboard.press('Enter');
+  await sleep(250);
+  const confirmOpen = await page.$('.modal-panel');
+  if (confirmOpen) {
+    await page.evaluate(() => {
+      const btns = [...document.querySelectorAll('.modal-actions .btn')];
+      const confirm = btns.find(b => b.textContent.trim() === 'Confirm move');
+      if (confirm) confirm.click();
+    });
+    await sleep(250);
+  }
+  check('enter commits the keyboard move', await page.$eval('.column:nth-child(3) .card', (el, id) => el.dataset.id === id, kbCardId) === true);
+  check('keyboard move announces the result', (await page.$eval('#live-region', el => el.textContent)).includes('Moved') === true);
+
+  await page.evaluate(() => {
+    const card = document.querySelector('.column:nth-child(3) .card');
+    card.focus();
+  });
+  await sleep(80);
+  await page.keyboard.press('m');
+  await sleep(120);
+  await page.keyboard.press('Escape');
+  await sleep(120);
+  check('escape cancels keyboard move', (await page.$$eval('.column', els => els.every(c => !c.classList.contains('move-col-target')))) === true);
+  check('cancel announcement reads Move cancelled', (await page.$eval('#live-region', el => el.textContent)) === 'Move cancelled.');
+
+  const movedCardId = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    return board.columns[1].cards[0].id;
+  });
+  await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    KB.MoveTo.moveToMenu(board.id, board.columns[1].id, board.columns[1].cards[0].id);
+  });
+  await sleep(200);
+  check('move-to menu opens', await page.$eval('#mt-board', el => el.tagName === 'SELECT') === true);
+  await page.evaluate(() => {
+    const columnSelect = document.querySelector('#mt-column');
+    const last = columnSelect.options[columnSelect.options.length - 1].value;
+    columnSelect.value = last;
+    document.querySelector('.modal-panel .btn.primary').click();
+  });
+  await sleep(250);
+  const moveToLanded = await page.evaluate((id) => {
+    const board = KB.State.activeBoard();
+    const done = board.columns[board.columns.length - 1];
+    return done.cards.some(c => c.id === id);
+  }, movedCardId);
+  check('move-to menu commits the move', moveToLanded === true);
+
   check('no unexpected page errors', errors.filter(e => !e.includes('ERR_CONNECTION_REFUSED')).length === 0);
 
   console.log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECKS FAILED');
