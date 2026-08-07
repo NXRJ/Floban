@@ -29,19 +29,11 @@
   }
 
   function escapeHtml(text) {
-    return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return KB.Core.Markdown.escapeHtml(text);
   }
 
   function mdLite(text) {
-    var esc = escapeHtml(text);
-    esc = esc.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g,
-      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-    esc = esc.replace(/`([^`]+)`/g, '<code>$1</code>');
-    esc = esc.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    esc = esc.replace(/(^|[^*])\*([^*\s][^*]*)\*(?!\*)/g, '$1<em>$2</em>');
-    esc = esc.replace(/\n/g, '<br>');
-    return esc;
+    return KB.Core.Markdown.renderMarkdownLite(text);
   }
 
   function fmtShortDate(iso) {
@@ -58,8 +50,9 @@
     chip.innerHTML = icon('calendar');
     if (!isDone) {
       var tomorrow = KB.Dom.isoDaysFromNow(1);
-      if (card.due < today) chip.classList.add('overdue');
-      else if (card.due <= tomorrow) chip.classList.add('soon');
+      var state = KB.Core.Date.classifyDueDate(card.due, today, tomorrow);
+      if (state === 'overdue') chip.classList.add('overdue');
+      else if (state === 'soon') chip.classList.add('soon');
     }
     chip.appendChild(document.createTextNode(fmtShortDate(card.due)));
     chip.title = 'Due ' + fmtShortDate(card.due);
@@ -68,7 +61,7 @@
 
   function agingChip(card, isDone) {
     if (isDone || !card.movedAt) return null;
-    var days = Math.floor((Date.now() - card.movedAt) / 86400000);
+    var days = KB.Core.Date.ageInDays(card.movedAt, Date.now());
     if (days < 1) return null;
     var chip = h('span', { class: 'chip chip-static aging' });
     chip.innerHTML = icon('clock');
