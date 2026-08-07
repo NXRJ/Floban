@@ -47,6 +47,9 @@
       var fromRole = columnRole(fromColumn);
       var toRole = columnRole(toColumn);
       var cardCopy = cloneCard(card);
+      if (!Array.isArray(cardCopy.transitions)) cardCopy.transitions = [];
+      if (cardCopy.startedAt === undefined) cardCopy.startedAt = null;
+      if (cardCopy.completedAt === undefined) cardCopy.completedAt = null;
 
       cardCopy.movedAt = now;
       cardCopy.updatedAt = now;
@@ -79,6 +82,10 @@
     function setFlowState(card, nextState, reason, now) {
       if (FLOW_STATES.indexOf(nextState) === -1) return noop(card, 'invalid-flow-state');
       var cardCopy = cloneCard(card);
+      if (!cardCopy.flow || typeof cardCopy.flow !== 'object') {
+        cardCopy.flow = { state: 'normal', reason: '', since: null, periods: [] };
+      }
+      if (!Array.isArray(cardCopy.flow.periods)) cardCopy.flow.periods = [];
       if (cardCopy.flow.state === nextState) {
         if (nextState === 'normal' || (reason !== undefined && cardCopy.flow.reason === reason)) {
           return noop(card, 'flow-state-unchanged');

@@ -36,6 +36,7 @@ function makeState(overrides) {
             id: 'column-1',
             title: 'To Do',
             isDone: false,
+            role: 'queue',
             wipLimit: 0,
             collapsed: false,
             cards: [
@@ -47,6 +48,7 @@ function makeState(overrides) {
             id: 'column-2',
             title: 'Done',
             isDone: true,
+            role: 'done',
             wipLimit: 0,
             collapsed: false,
             cards: [
@@ -643,4 +645,62 @@ test('helper functions expose active board and column lookups', () => {
   assert.equal(Operations.findCard(state.boards[0].columns[0], 'card-a').title, 'Alpha');
   assert.equal(Operations.findCard(state.boards[0].columns[0], 'ghost'), null);
   assert.equal(Operations.labelInUse(state.boards[0], 'label-1'), false);
+});
+
+test('moveCard into a done column records completion lifecycle fields', () => {
+  const result = Operations.moveCard(makeState(), { columnId: 'column-1', cardId: 'card-a', targetColumnId: 'column-2', toIndex: 0 }, makeDeps());
+  const moved = result.state.boards[0].columns[1].cards[0];
+  assert.equal(moved.completedAt, 9000);
+  assert.equal(moved.transitions.length, 1);
+  assert.equal(moved.transitions[0].toRole, 'done');
+  assert.equal(moved.transitions[0].fromRole, 'queue');
+});
+
+test('moveCard out of a done column clears completedAt', () => {
+  const state = makeState();
+  state.boards[0].columns[1].cards[0].completedAt = 8000;
+  const result = Operations.moveCard(state, { columnId: 'column-2', cardId: 'card-c', targetColumnId: 'column-1', toIndex: 0 }, makeDeps());
+  const moved = result.state.boards[0].columns[0].cards[0];
+  assert.equal(moved.completedAt, null);
+  assert.equal(moved.transitions[0].toRole, 'queue');
+});
+
+test('moveCard within a column preserves movedAt but records the move', () => {
+  const result = Operations.moveCard(makeState(), { columnId: 'column-1', cardId: 'card-a', targetColumnId: 'column-1', toIndex: 2 }, makeDeps());
+  const moved = result.state.boards[0].columns[0].cards[1];
+  assert.equal(moved.movedAt, 100);
+  assert.equal(moved.transitions.length, 1);
+  assert.equal(moved.transitions[0].toColumnId, 'column-1');
+});
+
+test('restoreCard into a done column records completion', () => {
+  const state = makeState();
+  state.boards[0].archive.cards = [makeCard({ id: 'arch-x', columnId: 'column-2', title: 'Old', archivedAt: 500 })];
+  const result = Operations.restoreCard(state, { cardId: 'arch-x' }, makeDeps());
+  const card = result.state.boards[0].columns[1].cards[1];
+  assert.equal(card.completedAt, 9000);
+  assert.equal(card.transitions.length, 1);
+});
+
+test('duplicateCard resets lifecycle and relationship fields', () => {
+  const state = makeState();
+  const source = state.boards[0].columns[0].cards[0];
+  source.priority = 'high';
+  source.size = 'l';
+  source.startedAt = 100;
+  source.completedAt = 500;
+  source.flow = { state: 'blocked', reason: 'x', since: 100, periods: [] };
+  source.dependencies = { blockers: [{ boardId: 'board-1', cardId: 'card-b' }], related: [] };
+  source.recurrenceId = 'rec-1';
+  source.transitions = [{ fromColumnId: null, toColumnId: 'column-1', fromRole: null, toRole: 'queue', at: 10 }];
+  const result = Operations.duplicateCard(state, { columnId: 'column-1', cardId: 'card-a' }, makeDeps());
+  const copy = result.state.boards[0].columns[0].cards[1];
+  assert.equal(copy.priority, 'high');
+  assert.equal(copy.size, 'l');
+  assert.equal(copy.startedAt, null);
+  assert.equal(copy.completedAt, null);
+  assert.equal(copy.flow.state, 'normal');
+  assert.deepEqual(copy.dependencies, { blockers: [], related: [] });
+  assert.equal(copy.recurrenceId, null);
+  assert.deepEqual(copy.transitions, []);
 });
