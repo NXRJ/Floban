@@ -375,7 +375,10 @@
     var board = activeBoard();
     var index = board.archive.cards.findIndex(function (c) { return c.id === cardId; });
     if (index === -1) return false;
+    var purgedRef = { boardId: board.id, cardId: cardId };
     pushHistory();
+    state = KB.Core.Relations.cleanupCardReferences(state, purgedRef);
+    board = activeBoard();
     board.archive.cards.splice(index, 1);
     save();
     return true;
@@ -467,7 +470,37 @@
 
   function deleteBoard(id) {
     return commit(function (current) {
-      return KB.Core.Operations.deleteBoard(current, { boardId: id });
+      var result = KB.Core.Operations.deleteBoard(current, { boardId: id });
+      if (!result.changed) return result;
+      return {
+        changed: true,
+        state: KB.Core.Relations.cleanupBoardReferences(result.state, id),
+        value: result.value
+      };
+    });
+  }
+
+  function addBlocker(targetBoardId, targetCardId, blockerBoardId, blockerCardId) {
+    return commit(function (current) {
+      return KB.Core.Relations.addBlocker(current, { boardId: targetBoardId, cardId: targetCardId }, { boardId: blockerBoardId, cardId: blockerCardId });
+    });
+  }
+
+  function removeBlocker(targetBoardId, targetCardId, blockerBoardId, blockerCardId) {
+    return commit(function (current) {
+      return KB.Core.Relations.removeBlocker(current, { boardId: targetBoardId, cardId: targetCardId }, { boardId: blockerBoardId, cardId: blockerCardId });
+    });
+  }
+
+  function addRelated(leftBoardId, leftCardId, rightBoardId, rightCardId) {
+    return commit(function (current) {
+      return KB.Core.Relations.addRelated(current, { boardId: leftBoardId, cardId: leftCardId }, { boardId: rightBoardId, cardId: rightCardId });
+    });
+  }
+
+  function removeRelated(leftBoardId, leftCardId, rightBoardId, rightCardId) {
+    return commit(function (current) {
+      return KB.Core.Relations.removeRelated(current, { boardId: leftBoardId, cardId: leftCardId }, { boardId: rightBoardId, cardId: rightCardId });
     });
   }
 
@@ -551,6 +584,10 @@
     renameBoard: renameBoard,
     duplicateBoard: duplicateBoard,
     deleteBoard: deleteBoard,
+    addBlocker: addBlocker,
+    removeBlocker: removeBlocker,
+    addRelated: addRelated,
+    removeRelated: removeRelated,
     setActiveBoard: setActiveBoard,
     setTheme: setTheme,
     exportAll: exportAll,
