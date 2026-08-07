@@ -1,5 +1,8 @@
 (function (root, factory) {
-  var api = factory();
+  var pipelineCore = (typeof module === 'object' && module.exports)
+    ? require('./pipeline.js')
+    : root.KB.Core.Pipeline;
+  var api = factory(pipelineCore);
 
   if (typeof module === 'object' && module.exports) {
     module.exports = api;
@@ -10,7 +13,7 @@
   }
 })(
   typeof globalThis !== 'undefined' ? globalThis : this,
-  function () {
+  function (Pipeline) {
     var MS_PER_DAY = 86400000;
     var CATCH_UP_CAP = 100;
     var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -122,15 +125,22 @@
         recurrenceId: recurrence.id,
         transitions: []
       };
-      column.cards.push(card);
-      recurrence.activeCardRef = { boardId: recurrence.target.boardId, cardId: card.id };
+      var placed = Pipeline.placeCard(state, card, null, board, column, {
+        recurrenceSideEffect: false
+      }, deps);
+      if (!placed.changed) {
+        return { changed: false, state: state, reason: placed.reason || 'placement-failed', evaluation: placed.evaluation };
+      }
+      var created = placed.value;
+      recurrence.activeCardRef = { boardId: recurrence.target.boardId, cardId: created.id };
       recurrence.lastRunAt = now;
       recurrence.nextRunAt = recurrence.mode === 'after-completion' ? null : computeNextRun(recurrence, now);
       recurrence.lastCompletedAt = null;
+      recurrence.policyBlocked = false;
       if (typeof recurrence.remainingOccurrences === 'number') {
         recurrence.remainingOccurrences -= 1;
       }
-      return { changed: true, state: state, value: card, reason: null };
+      return { changed: true, state: state, value: created, reason: null };
     }
 
     function activeCardIsOpen(state, recurrence) {
@@ -175,6 +185,14 @@
         run = computeNextRun(recurrence, run);
       }
       return count;
+    }
+
+    function markPolicyBlocked(result, recurrence) {
+      if (result && result.reason === 'policy' && !recurrence.policyBlocked) {
+        recurrence.policyBlocked = true;
+        return true;
+      }
+      return false;
     }
 
     function processDueRecurrences(state, now, deps) {
@@ -227,6 +245,7 @@
             if (!recurrence.activeCardRef) {
               var seed = createOccurrence(next, recurrence, deps);
               if (seed.changed) created += 1;
+              else if (markPolicyBlocked(seed, recurrence)) attention += 1;
             }
             return;
           }
@@ -246,6 +265,7 @@
         if (recurrence.mode === 'after-completion') {
           var result = createOccurrence(next, recurrence, deps);
           if (result.changed) created += 1;
+          else if (markPolicyBlocked(result, recurrence)) attention += 1;
           return;
         }
 
@@ -264,8 +284,11 @@
 
         for (var i = 0; i < toCreate; i++) {
           if (!catchingUp && recurrence.overlapPolicy === 'single-active' && activeCardIsOpen(next, recurrence)) break;
-          var result = createOccurrence(next, recurrence, deps);
-          if (!result.changed) break;
+          var result2 = createOccurrence(next, recurrence, deps);
+          if (!result2.changed) {
+            if (markPolicyBlocked(result2, recurrence)) attention += 1;
+            break;
+          }
           created += 1;
         }
       });

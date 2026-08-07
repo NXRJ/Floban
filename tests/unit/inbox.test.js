@@ -222,6 +222,75 @@ test('mergeIntoCard keeps the URL when the item also has a note', () => {
   assert.equal(merged.state.inbox.items.length, 0);
 });
 
+test('triage through the pipeline initializes lifecycle for active columns', () => {
+  const s = state();
+  s.boards[0].columns[0].role = 'active';
+  const captured = Inbox.captureItem(s, { title: 'Lifecycle triage' }, makeDeps());
+  const triaged = Inbox.triageInboxItem(captured.state, captured.value.id, { boardId: 'board-1', columnId: 'col-1' }, {}, makeDeps());
+  const card = triaged.state.boards[0].columns[0].cards[0];
+  assert.equal(card.startedAt, 1000);
+  assert.equal(card.transitions.length, 1);
+});
+
+test('triage into a done column records completion', () => {
+  const s = state();
+  s.boards[0].columns[0].role = 'done';
+  s.boards[0].columns[0].isDone = true;
+  const captured = Inbox.captureItem(s, { title: 'Done triage' }, makeDeps());
+  const triaged = Inbox.triageInboxItem(captured.state, captured.value.id, { boardId: 'board-1', columnId: 'col-1' }, {}, makeDeps());
+  const card = triaged.state.boards[0].columns[0].cards[0];
+  assert.equal(card.completedAt, 1000);
+});
+
+test('triage applies entry defaults from the target column', () => {
+  const s = state();
+  s.boards[0].labels = [{ id: 'l-1', name: 'Bug', color: '#c81e14' }];
+  s.boards[0].columns[0].policy = { defaultLabelIds: ['l-1'], defaultAssignee: 'Sam' };
+  const captured = Inbox.captureItem(s, { title: 'Defaulted triage' }, makeDeps());
+  const triaged = Inbox.triageInboxItem(captured.state, captured.value.id, { boardId: 'board-1', columnId: 'col-1' }, {}, makeDeps());
+  const card = triaged.state.boards[0].columns[0].cards[0];
+  assert.deepEqual(card.labels, ['l-1']);
+  assert.equal(card.assignee, 'Sam');
+});
+
+test('triage blocked by a hard WIP policy keeps the item and reports policy', () => {
+  const s = state();
+  s.boards[0].columns[0].wipLimit = 1;
+  s.boards[0].columns[0].policy = { wipMode: 'hard' };
+  s.boards[0].columns[0].cards = [{ id: 'existing', columnId: 'col-1', title: 'Existing' }];
+  const captured = Inbox.captureItem(s, { title: 'Blocked triage' }, makeDeps());
+  const triaged = Inbox.triageInboxItem(captured.state, captured.value.id, { boardId: 'board-1', columnId: 'col-1' }, {}, makeDeps());
+  assert.equal(triaged.changed, false);
+  assert.equal(triaged.reason, 'policy');
+  assert.equal(triaged.evaluation.blocking, true);
+  assert.equal(captured.state.inbox.items.length, 1);
+});
+
+test('triage passes once the policy is confirmed', () => {
+  const s = state();
+  s.boards[0].columns[0].wipLimit = 1;
+  s.boards[0].columns[0].policy = { wipMode: 'hard' };
+  s.boards[0].columns[0].cards = [{ id: 'existing', columnId: 'col-1', title: 'Existing' }];
+  const captured = Inbox.captureItem(s, { title: 'Confirmed triage' }, makeDeps());
+  const triaged = Inbox.triageInboxItem(captured.state, captured.value.id, { boardId: 'board-1', columnId: 'col-1' }, {}, makeDeps(), { confirmed: true });
+  assert.equal(triaged.changed, true);
+  assert.equal(triaged.state.boards[0].columns[0].cards.length, 2);
+  assert.equal(triaged.state.inbox.items.length, 0);
+});
+
+test('inboxSummary excludes archived reference items from pressure', () => {
+  const s = state();
+  s.inbox.items = [
+    { id: 'a', title: 'A', capturedAt: 500 },
+    { id: 'b', title: 'B', capturedAt: 200, archived: true },
+    { id: 'c', title: 'C', capturedAt: 800, archived: true }
+  ];
+  const summary = Inbox.inboxSummary(s, 5000);
+  assert.equal(summary.count, 1);
+  assert.equal(summary.oldestAt, 500);
+  assert.equal(summary.oldestDays, Math.floor(4500 / 86400000));
+});
+
 test('inbox operations never mutate the input state', () => {
   const s = state();
   const before = JSON.stringify(s);

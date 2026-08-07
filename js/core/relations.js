@@ -78,6 +78,15 @@
       return index;
     }
 
+    function archivedCards(board) {
+      var cards = (board.archive && board.archive.cards) || [];
+      var nested = [];
+      (board.archive && board.archive.columns || []).forEach(function (entry) {
+        (entry.cards || []).forEach(function (card) { nested.push(card); });
+      });
+      return cards.concat(nested);
+    }
+
     function resolvedIndex(state) {
       var index = {};
       state.boards.forEach(function (board) {
@@ -88,6 +97,11 @@
             column.cards.forEach(function (card) {
               index[board.id + ':' + card.id] = true;
             });
+          }
+        });
+        archivedCards(board).forEach(function (card) {
+          if (card && typeof card.completedAt === 'number') {
+            index[board.id + ':' + card.id] = true;
           }
         });
       });
@@ -113,6 +127,8 @@
           if (column.cards[k].id === ref.cardId) return role === 'done';
         }
       }
+      var archived = archivedCards(board).find(function (card) { return card && card.id === ref.cardId; });
+      if (archived) return typeof archived.completedAt === 'number';
       return false;
     }
 
@@ -263,30 +279,52 @@
       return getUnresolvedBlockers(state, cardRef).length === 0;
     }
 
-    function cleanupCardReferences(state, deletedRef) {
-      if (!validRef(deletedRef)) return state;
-      var next = cloneState(state);
+    function stripReferences(next, deletedRefs) {
+      var keys = {};
+      deletedRefs.forEach(function (ref) {
+        if (validRef(ref)) keys[ref.boardId + ':' + ref.cardId] = true;
+      });
       next.boards.forEach(function (board) {
         var scan = function (card) {
+          if (!card || !card.dependencies || typeof card.dependencies !== 'object') return;
           card.dependencies.blockers = (card.dependencies.blockers || []).filter(function (b) {
-            return !(b.boardId === deletedRef.boardId && b.cardId === deletedRef.cardId);
+            return !(b && keys[b.boardId + ':' + b.cardId]);
           });
           card.dependencies.related = (card.dependencies.related || []).filter(function (r) {
-            return !(r.boardId === deletedRef.boardId && r.cardId === deletedRef.cardId);
+            return !(r && keys[r.boardId + ':' + r.cardId]);
           });
         };
-        board.columns.forEach(function (column) { column.cards.forEach(scan); });
-        board.archive.cards.forEach(scan);
-        board.archive.columns.forEach(function (entry) { entry.cards.forEach(scan); });
+        board.columns.forEach(function (column) { (column.cards || []).forEach(scan); });
+        (board.archive.cards || []).forEach(scan);
+        (board.archive.columns || []).forEach(function (entry) { (entry.cards || []).forEach(scan); });
       });
       next.recurrences = (next.recurrences || []).map(function (rec) {
-        if (rec.activeCardRef && rec.activeCardRef.boardId === deletedRef.boardId && rec.activeCardRef.cardId === deletedRef.cardId) {
+        if (rec.activeCardRef && keys[rec.activeCardRef.boardId + ':' + rec.activeCardRef.cardId]) {
           rec.activeCardRef = null;
           rec.lastCompletedAt = null;
         }
         return rec;
       });
       return next;
+    }
+
+    function cleanupCardReferences(state, deletedRef) {
+      return stripReferences(cloneState(state), [deletedRef]);
+    }
+
+    function purgeArchiveColumn(state, boardId, columnId) {
+      var next = cloneState(state);
+      var board = next.boards.find(function (b) { return b.id === boardId; });
+      if (!board) return { changed: false, state: state, value: null, reason: 'board-not-found' };
+      var index = board.archive.columns.findIndex(function (c) { return c.id === columnId; });
+      if (index === -1) return { changed: false, state: state, value: null, reason: 'column-not-found' };
+      var entry = board.archive.columns[index];
+      var refs = (entry.cards || []).map(function (card) { return { boardId: boardId, cardId: card.id }; });
+      next = stripReferences(next, refs);
+      var nextBoard = next.boards.find(function (b) { return b.id === boardId; });
+      var nextIndex = nextBoard.archive.columns.findIndex(function (c) { return c.id === columnId; });
+      nextBoard.archive.columns.splice(nextIndex, 1);
+      return { changed: true, state: next, value: entry.cards.length };
     }
 
     function cleanupBoardReferences(state, deletedBoardId) {
@@ -339,6 +377,7 @@
       getCardsBlockedBy: getCardsBlockedBy,
       isReadyToPull: isReadyToPull,
       cleanupCardReferences: cleanupCardReferences,
+      purgeArchiveColumn: purgeArchiveColumn,
       cleanupBoardReferences: cleanupBoardReferences
     };
   }

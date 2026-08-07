@@ -61,7 +61,7 @@
           name: 'Aging',
           scope: 'all-boards',
           boardIds: [],
-          query: { includeCompleted: false },
+          query: { includeCompleted: false, agingOnly: true, agingDays: 7 },
           sort: { field: 'age', direction: 'desc' },
           display: { density: 'comfortable', groupBy: 'board' }
         },
@@ -106,7 +106,7 @@
           name: 'Needs Triage',
           scope: 'all-boards',
           boardIds: [],
-          query: { includeCompleted: false },
+          query: { includeCompleted: false, needsTriageOnly: true },
           sort: { field: 'age', direction: 'desc' },
           display: { density: 'compact', groupBy: 'board' }
         }
@@ -176,6 +176,13 @@
 
       if (query.recentlyCompletedOnly) {
         if (typeof card.completedAt !== 'number' || now - card.completedAt > 7 * 86400000) return false;
+      }
+      if (query.needsTriageOnly) {
+        var triaged = (card.priority && card.priority !== 'none') ||
+          (card.size && card.size !== 'none') ||
+          Boolean(card.assignee) ||
+          (Array.isArray(card.labels) && card.labels.length > 0);
+        if (triaged) return false;
       }
       if (query.agingOnly) {
         var age = Lifecycle.workItemAgeDays(card, now);

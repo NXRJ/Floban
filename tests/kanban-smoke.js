@@ -618,6 +618,38 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   check('policy settings persist', wipModeSaved === 'hard');
 
+  // ---- Soft WIP asks before proceeding (Move anyway) ----
+  const softWip = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col2 = board.columns[1];
+    KB.State.updateColumn(col2.id, { wipLimit: 1, policy: { wipMode: 'soft', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' } });
+    const card = board.columns[0].cards[0];
+    const ev = KB.State.evaluateMove(board.columns[0].id, card.id, col2.id);
+    KB.App.requestMove(board.columns[0].id, card.id, col2.id, 0);
+    return { cardId: card.id, col1: board.columns[0].id, col2: col2.id };
+  });
+  await waitFor(() => [...document.querySelectorAll('.modal-actions .btn')].some(b => b.textContent.trim() === 'Move anyway'), 3000, 'soft wip warning modal');
+  check('soft WIP shows a Move-anyway warning', (await page.$$eval('.modal-actions .btn', els => els.map(e => e.textContent.trim()))).includes('Move anyway') === true);
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('.modal-actions .btn')].find(b => b.textContent.trim() === 'Move anyway');
+    if (btn) btn.click();
+  });
+  await waitFor((ids) => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    return board.columns.find(c => c.id === ids.col2).cards.some(c => c.id === ids.cardId);
+  }, 3000, 'soft wip move commits', softWip);
+  check('Move-anyway commits the soft move', true);
+  await blur();
+  await pressUndo();
+  await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    board.columns.forEach(col => { col.wipLimit = 0; });
+    localStorage.setItem('kanban.board.v1', JSON.stringify(b));
+  });
+  await page.evaluate(() => KB.App.refresh());
+
   // ---- Review workspace ----
   await page.evaluate(() => KB.Workspaces.set('review'));
   await waitFor(() => document.querySelectorAll('.metric-card').length >= 4, 3000, 'review summary');
@@ -774,7 +806,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     });
     const card = KB.State.addCard(col.id, { title: 'Quarterly review', recurrenceId: rec.id });
     const doneCol = board.columns.find(c => c.role === 'done');
-    KB.State.moveCard(col.id, card.id, doneCol.id, 0);
+    KB.State.moveCard(col.id, card.id, doneCol.id, 0, { confirmed: true });
     KB.State.handleCardCompleted(board.id, card.id);
     const recAfter = KB.State.recurrences().find(r => r.id === rec.id);
     const startOfDay = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
@@ -813,6 +845,67 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     return { needsAttention: after.needsAttention, changed: Boolean(processed) };
   });
   check('missing target column marks the recurrence', recNeedAttention.needsAttention === true && recNeedAttention.changed === true);
+
+  // ---- Composition: recurrence -> bulk move into hard-WIP done -> confirm -> scheduled -> one undo ----
+  const composition = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col0 = board.columns[0];
+    const doneCol = board.columns.find(c => c.role === 'done');
+    KB.State.updateColumn(doneCol.id, {
+      wipLimit: 1,
+      policy: { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' }
+    });
+    const rec = KB.State.addRecurrence({
+      mode: 'after-completion',
+      schedule: { frequency: 'custom', interval: 1, delayAfterCompletionDays: 2 },
+      target: { boardId: board.id, columnId: col0.id },
+      template: { title: 'Composition rec', description: '', labelIds: [], assignee: '', priority: 'none', size: 'none', checklist: [] },
+      dueOffsetDays: null,
+      overlapPolicy: 'single-active',
+      missedPolicy: 'create-one'
+    });
+    const seeded = KB.State.processRecurrences();
+    const card = KB.State.activeBoard().columns[0].cards.find(c => c.title === 'Composition rec');
+    const blocked = KB.State.bulkMove([{ boardId: board.id, cardId: card.id }], { boardId: board.id, columnId: doneCol.id });
+    return {
+      recId: rec.id,
+      cardId: card.id,
+      seeded: Boolean(seeded && seeded.created >= 1),
+      blockedReason: blocked && blocked.reason,
+      blockedBlocking: blocked && blocked.blocking
+    };
+  });
+  check('composition: recurrence seeds a card', composition.seeded === true);
+  check('composition: bulk move is blocked by hard WIP', composition.blockedReason === 'policy-violations' && composition.blockedBlocking === true);
+
+  const compositionMoved = await page.evaluate((ids) => {
+    const board = KB.State.activeBoard();
+    const doneCol = board.columns.find(c => c.role === 'done');
+    const result = KB.State.bulkMove([{ boardId: board.id, cardId: ids.cardId }], { boardId: board.id, columnId: doneCol.id }, { confirmed: true });
+    const rec = KB.State.recurrences().find(r => r.id === ids.recId);
+    const card = KB.State.activeBoard().columns.find(c => c.role === 'done').cards.find(c => c.id === ids.cardId);
+    return {
+      changed: Boolean(result && result.changed),
+      completedAt: card ? card.completedAt : null,
+      activeCleared: rec.activeCardRef === null,
+      scheduled: rec.nextRunAt !== null && rec.nextRunAt > Date.now()
+    };
+  }, composition);
+  check('composition: confirmed bulk move into done completes the card', compositionMoved.changed === true && typeof compositionMoved.completedAt === 'number');
+  check('composition: bulk move schedules the next occurrence', compositionMoved.activeCleared === true && compositionMoved.scheduled === true);
+
+  await page.evaluate(() => KB.State.undo());
+  const compositionUndone = await page.evaluate((ids) => {
+    const board = KB.State.activeBoard();
+    const card = board.columns[0].cards.find(c => c.id === ids.cardId);
+    const rec = KB.State.recurrences().find(r => r.id === ids.recId);
+    return {
+      backInQueue: Boolean(card),
+      activeRestored: Boolean(rec.activeCardRef && rec.activeCardRef.cardId === ids.cardId),
+      nextNull: rec.nextRunAt === null
+    };
+  }, composition);
+  check('composition: one undo restores everything', compositionUndone.backInQueue && compositionUndone.activeRestored && compositionUndone.nextNull);
 
   // ---- Inbox capture and triage ----
   const inboxResult = await page.evaluate(() => {
@@ -855,6 +948,30 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   check('undo restores both sides of triage', inboxUndo.items === 3 && !inboxUndo.cardExists);
 
+  // ---- Triage respects column policies and initializes lifecycle ----
+  const triageLifecycle = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const captured = KB.State.captureInbox({ title: 'Triage into active' });
+    const doneCol = board.columns.find(c => c.role === 'done');
+    const triaged = KB.State.triageInboxItem(captured.id, { boardId: board.id, columnId: doneCol.id }, { priority: 'low' });
+    const blocked = triaged && triaged.reason === 'policy';
+    const confirmed = blocked
+      ? KB.State.triageInboxItem(captured.id, { boardId: board.id, columnId: doneCol.id }, { priority: 'low' }, { confirmed: true })
+      : null;
+    const card = confirmed && confirmed.changed
+      ? KB.State.activeBoard().columns.find(c => c.role === 'done').cards.find(c => c.title === 'Triage into active')
+      : null;
+    return {
+      blocked: blocked,
+      confirmed: Boolean(confirmed && confirmed.changed),
+      completedAt: card ? card.completedAt : null,
+      itemGone: KB.State.inboxItems().every(it => it.id !== captured.id)
+    };
+  });
+  check('triage respects hard WIP and needs confirmation', triageLifecycle.blocked === true);
+  check('confirmed triage into done records completion',
+    triageLifecycle.confirmed === true && typeof triageLifecycle.completedAt === 'number' && triageLifecycle.itemGone === true);
+
   const mergeResult = await page.evaluate(() => {
     const board = KB.State.activeBoard();
     const card = board.columns[0].cards[0];
@@ -879,6 +996,26 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await waitFor(() => document.querySelectorAll('.inbox-item').length >= 1, 3000, 'inbox workspace');
   check('inbox workspace shows items', await page.$$eval('.inbox-item', els => els.length) >= 1);
   check('inbox pressure summary renders', await page.$eval('.inbox-pressure', el => el.textContent.includes('unprocessed')));
+
+  const inboxPressure = await page.evaluate(() => {
+    const item = KB.State.inboxItems()[0];
+    if (item) KB.State.updateInboxItem(item.id, { archived: true });
+    const after = KB.Core.Inbox.inboxSummary(KB.State.data(), Date.now());
+    KB.App.refresh();
+    const badge = document.querySelector('#inbox-badge');
+    const result = {
+      openCount: after.count,
+      allCount: KB.State.inboxItems().length,
+      badgeText: badge ? badge.textContent.trim() : '',
+      badgeHidden: badge ? badge.hidden : true
+    };
+    if (item) KB.State.updateInboxItem(item.id, { archived: false });
+    KB.App.refresh();
+    return result;
+  });
+  check('inbox pressure excludes archived references',
+    inboxPressure.openCount < inboxPressure.allCount && inboxPressure.openCount > 0 && !inboxPressure.badgeHidden && inboxPressure.badgeText === String(inboxPressure.openCount));
+
   await page.evaluate(() => KB.Workspaces.set('board'));
   await waitFor(() => !!document.querySelector('.column'), 3000, 'back to board after inbox');
 
@@ -886,6 +1023,13 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await page.evaluate(() => KB.Workspaces.set('mydesk'));
   await waitFor(() => document.querySelectorAll('.desk-section').length === 5, 3000, 'my desk sections');
   check('my desk renders default sections', await page.$$eval('.desk-section', els => els.length) === 5);
+  await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns.find(c => c.cards.length > 0);
+    if (col && col.cards[0]) {
+      KB.State.updateCard(col.id, col.cards[0].id, { startedAt: Date.now() - 30 * 86400000 });
+    }
+  });
   await page.evaluate(() => { document.querySelector('.lens-bar [data-lens="builtin-aging"]').click(); });
   await waitFor(() => document.querySelectorAll('.desk-section').length >= 1, 3000, 'aging lens');
   check('built-in lens renders grouped results', await page.$$eval('.desk-section', els => els.length) >= 1);
@@ -1112,6 +1256,50 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     return card.dependencies.blockers.some(b => b.cardId === ids.blockerId);
   }, archivedDepIds);
   check('archived dependency reference survives reload', archivedDepSurvived === true);
+
+  // ---- Archived completed blockers resolve; purging a column cleans references ----
+  const archivedResolver = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns.find(c => c.cards.length > 0);
+    const target = KB.State.addCard(col.id, { title: 'Archived resolution target' });
+    const blocker = KB.State.addCard(col.id, { title: 'Archived resolution blocker' });
+    KB.State.addBlocker(board.id, target.id, board.id, blocker.id);
+    const doneCol = board.columns.find(c => c.role === 'done');
+    KB.State.moveCard(col.id, blocker.id, doneCol.id, 0, { confirmed: true });
+    KB.State.archiveCard(doneCol.id, blocker.id, board.id);
+    const unresolved = KB.Core.Relations.getUnresolvedBlockers(KB.State.data(), { boardId: board.id, cardId: target.id });
+    KB.App.refresh();
+    return {
+      targetId: target.id,
+      unresolved: unresolved.length,
+      archivedCompleted: Boolean(KB.State.data().boards.find(x => x.id === board.id).archive.cards.find(c => c.id === blocker.id))
+    };
+  });
+  check('archived completed blocker does not block dependents',
+    archivedResolver.unresolved === 0 && archivedResolver.archivedCompleted === true);
+
+  const purgeCol = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    const victim = KB.State.addCard(col.id, { title: 'Purge victim' });
+    const target = KB.State.addCard(col.id, { title: 'Purge target' });
+    KB.State.addBlocker(board.id, target.id, board.id, victim.id);
+    const doneCol = board.columns.find(c => c.role === 'done');
+    KB.State.moveCard(col.id, victim.id, doneCol.id, 0, { confirmed: true });
+    KB.State.archiveCard(doneCol.id, victim.id, board.id);
+    const data = KB.State.data();
+    const b = data.boards.find(x => x.id === board.id);
+    const card = b.archive.cards.pop();
+    b.archive.columns.push({ id: 'purge-col', title: 'Purge col', isDone: false, wipLimit: 0, cards: [card], archivedAt: Date.now() });
+    KB.App.refresh();
+    const purged = KB.State.purgeColumn('purge-col');
+    const targetCard = KB.State.data().boards.find(x => x.id === board.id).columns[0].cards.find(c => c.title === 'Purge target');
+    return {
+      purged: Boolean(purged),
+      blockersAfter: targetCard ? targetCard.dependencies.blockers.length : -1
+    };
+  });
+  check('purge of an archived column cleans dangling references', purgeCol.purged === true && purgeCol.blockersAfter === 0);
 
   // ---- Activity view ----
   await page.evaluate(() => {

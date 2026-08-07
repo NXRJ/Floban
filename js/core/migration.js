@@ -352,6 +352,7 @@
           readyOnly: Boolean(querySource.readyOnly),
           recentlyCompletedOnly: Boolean(querySource.recentlyCompletedOnly),
           agingOnly: Boolean(querySource.agingOnly),
+          needsTriageOnly: Boolean(querySource.needsTriageOnly),
           agingDays: Math.max(0, toInt(querySource.agingDays, 7)),
           columnRoles: Array.isArray(querySource.columnRoles) ? querySource.columnRoles.filter(function (r) { return COLUMN_ROLES.indexOf(r) !== -1; }) : [],
           includeCompleted: querySource.includeCompleted === false ? false : true
@@ -414,6 +415,7 @@
         endAt: toNumberOrNull(recurrence.endAt),
         remainingOccurrences: toNullableInt(recurrence.remainingOccurrences),
         needsAttention: Boolean(recurrence.needsAttention),
+        policyBlocked: Boolean(recurrence.policyBlocked),
         pausedReason: typeof recurrence.pausedReason === 'string' ? recurrence.pausedReason : '',
         createdAt: toNumberOrNull(recurrence.createdAt) === null ? now : toNumberOrNull(recurrence.createdAt),
         updatedAt: toNumberOrNull(recurrence.updatedAt) === null ? now : toNumberOrNull(recurrence.updatedAt)

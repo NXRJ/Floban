@@ -704,3 +704,45 @@ test('duplicateCard resets lifecycle and relationship fields', () => {
   assert.equal(copy.recurrenceId, null);
   assert.deepEqual(copy.transitions, []);
 });
+
+test('moveCard routes through policy and blocks hard WIP without confirmation', () => {
+  const state = makeState();
+  state.boards[0].columns[1].wipLimit = 1;
+  state.boards[0].columns[1].policy = { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' };
+  const result = Operations.moveCard(state, { columnId: 'column-1', cardId: 'card-a', targetColumnId: 'column-2', toIndex: 0 }, makeDeps());
+  assert.equal(result.changed, false);
+  assert.equal(result.reason, 'policy');
+  assert.equal(state.boards[0].columns[0].cards.length, 2);
+});
+
+test('moveCard passes a confirmed override through the pipeline', () => {
+  const state = makeState();
+  state.boards[0].columns[1].wipLimit = 1;
+  state.boards[0].columns[1].policy = { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' };
+  const result = Operations.moveCard(state, { columnId: 'column-1', cardId: 'card-a', targetColumnId: 'column-2', toIndex: 0, confirmed: true }, makeDeps());
+  assert.equal(result.changed, true);
+  assert.equal(result.state.boards[0].columns[1].cards[0].id, 'card-a');
+  assert.equal(result.state.boards[0].columns[1].cards[0].completedAt, 9000);
+});
+
+test('moveCard applies entry defaults through the pipeline', () => {
+  const state = makeState();
+  state.boards[0].columns[1].policy = { wipMode: 'off', defaultLabelIds: ['label-1'], defaultAssignee: 'Sam', entryCriteria: [], exitCriteria: [] };
+  const result = Operations.moveCard(state, { columnId: 'column-1', cardId: 'card-a', targetColumnId: 'column-2', toIndex: 0 }, makeDeps());
+  const moved = result.state.boards[0].columns[1].cards[0];
+  assert.deepEqual(moved.labels, ['label-1']);
+  assert.equal(moved.assignee, 'Sam');
+});
+
+test('restoreCard accepts a confirmed override', () => {
+  const state = makeState();
+  state.boards[0].archive.cards = [makeCard({ id: 'arch-x', columnId: 'column-1', title: 'Old', archivedAt: 500, startedAt: null, completedAt: null, flow: { state: 'normal', reason: '', since: null, periods: [] }, dependencies: { blockers: [], related: [] }, recurrenceId: null, transitions: [] })];
+  state.boards[0].columns[0].wipLimit = 1;
+  state.boards[0].columns[0].policy = { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' };
+  const blocked = Operations.restoreCard(state, { cardId: 'arch-x' }, makeDeps());
+  assert.equal(blocked.changed, false);
+  assert.equal(blocked.reason, 'policy');
+  const restored = Operations.restoreCard(state, { cardId: 'arch-x', confirmed: true }, makeDeps());
+  assert.equal(restored.changed, true);
+  assert.equal(restored.state.boards[0].columns[0].cards.length, 3);
+});

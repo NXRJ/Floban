@@ -1,11 +1,14 @@
 (function (root, factory) {
+  var pipelineCore = (typeof module === 'object' && module.exports)
+    ? require('./pipeline.js')
+    : root.KB.Core.Pipeline;
   var lifecycleCore = (typeof module === 'object' && module.exports)
     ? require('./lifecycle.js')
     : root.KB.Core.Lifecycle;
   var policiesCore = (typeof module === 'object' && module.exports)
     ? require('./policies.js')
     : root.KB.Core.Policies;
-  var api = factory(lifecycleCore, policiesCore);
+  var api = factory(pipelineCore, lifecycleCore, policiesCore);
 
   if (typeof module === 'object' && module.exports) {
     module.exports = api;
@@ -16,7 +19,7 @@
   }
 })(
   typeof globalThis !== 'undefined' ? globalThis : this,
-  function (Lifecycle, Policies) {
+  function (Pipeline, Lifecycle, Policies) {
     function cloneState(state) {
       return JSON.parse(JSON.stringify(state));
     }
@@ -34,7 +37,6 @@
 
     function bulkMove(state, cardRefs, target, deps, opts) {
       var options = opts || {};
-      var now = deps ? deps.now() : 0;
       if (!Array.isArray(cardRefs) || cardRefs.length === 0) {
         return { changed: false, state: state, value: null, reason: 'no-cards' };
       }
@@ -49,7 +51,7 @@
       cardRefs.forEach(function (ref) {
         var located = resolveCard(next, ref);
         if (!located) {
-          violations.push({ ref: ref, code: 'card-not-found', message: 'A selected card no longer exists.' });
+          violations.push({ ref: ref, code: 'card-not-found', message: 'A selected card no longer exists.', blocking: true });
           return;
         }
         var evaluation = Policies.evaluateMovePolicy(next, ref, { boardId: target.boardId, columnId: target.columnId }, {
@@ -58,12 +60,26 @@
           overrideReason: options.overrideReason
         });
         if (!evaluation.allowed) {
-          violations.push({ ref: ref, code: evaluation.violations[0] ? evaluation.violations[0].code : 'policy', message: 'Policy blocks this card.' });
+          var first = evaluation.violations[0] || { code: 'policy', message: 'Policy blocks this card.' };
+          violations.push({ ref: ref, code: first.code, message: first.message, blocking: true, criteria: first.criteria });
+        } else if (evaluation.requiresConfirmation && !options.confirmed) {
+          var soft = evaluation.violations[0] || { code: 'wip-limit', message: 'A soft WIP limit would be exceeded.' };
+          violations.push({ ref: ref, code: soft.code, message: soft.message, blocking: false, criteria: soft.criteria });
         }
       });
 
-      if (violations.length > 0) {
-        return { changed: false, state: state, value: null, reason: 'policy-violations', violations: violations };
+      var anyBlocking = violations.some(function (v) { return v.blocking; });
+      var needWarn = violations.length > 0 && !options.confirmed;
+      if (anyBlocking && !options.confirmed) needWarn = true;
+      if (needWarn) {
+        return {
+          changed: false,
+          state: state,
+          value: null,
+          reason: 'policy-violations',
+          violations: violations,
+          blocking: anyBlocking
+        };
       }
 
       var order = {};
@@ -81,23 +97,29 @@
       sourceEntries.forEach(function (entry) {
         var located = resolveCard(next, entry.ref);
         if (!located) return;
-        var card = located.column.cards.splice(located.index, 1)[0];
+        var card = located.column.cards[located.index];
         var sameColumn = located.column.id === targetColumn.id;
-        var prevMovedAt = card.movedAt;
-        if (!sameColumn) {
-          var lifecycle = Lifecycle.transitionCard(card, located.column, targetColumn, now);
-          card = lifecycle.card;
+        var mappings = options.labelMappings || {};
+        var mapped = mappings[entry.ref.boardId + ':' + entry.ref.cardId];
+        var placed = Pipeline.placeCard(next, card, located.column, targetBoard, targetColumn, {
+          sameColumnMode: sameColumn ? 'preserve' : 'transition',
+          labelMapping: Array.isArray(mapped) ? mapped : undefined,
+          confirmed: Boolean(options.confirmed),
+          overrideReason: options.overrideReason
+        }, deps);
+        if (!placed.changed) {
+          violations.push({ ref: entry.ref, code: placed.reason || 'policy', message: 'Policy blocks this card.', blocking: true });
+          return;
         }
-        card.columnId = target.columnId;
-        if (sameColumn) card.movedAt = prevMovedAt;
-        if (!sameColumn) {
-          var mappings = options.labelMappings || {};
-          var mapped = mappings[entry.ref.boardId + ':' + entry.ref.cardId];
-          if (Array.isArray(mapped)) card.labels = mapped.slice();
-          card = Policies.applyEntryDefaults(card, targetColumn);
-        }
-        movedCards.push(card);
+        movedCards.push(placed.value);
       });
+
+      if (movedCards.length === 0) {
+        if (violations.length > 0) {
+          return { changed: false, state: state, value: null, reason: 'policy-violations', violations: violations, blocking: true };
+        }
+        return { changed: false, state: state, value: null, reason: 'no-cards' };
+      }
 
       if (target.boardId === sourceEntries[0].located.board.id && target.columnId === sourceEntries[0].located.column.id) {
         var firstIndex = -1;
@@ -106,18 +128,51 @@
             if (firstIndex === -1 || entry.located.index < firstIndex) firstIndex = entry.located.index;
           }
         });
+        targetColumn.cards.splice(targetColumn.cards.length - movedCards.length, movedCards.length);
         movedCards.forEach(function (card) {
           targetColumn.cards.splice(Math.max(0, firstIndex), 0, card);
           firstIndex += 1;
         });
-      } else {
-        movedCards.forEach(function (card) {
-          targetColumn.cards.push(card);
-        });
       }
       moved = movedCards.length;
-      if (moved === 0) return { changed: false, state: state, value: null, reason: 'no-cards' };
       return { changed: true, state: next, value: movedCards };
+    }
+
+    function bulkSetLabels(state, entries, deps) {
+      var next = cloneState(state);
+      var changed = 0;
+      entries.forEach(function (entry) {
+        var located = resolveCard(next, entry.ref);
+        if (!located) return;
+        var labels = Array.isArray(entry.labels) ? entry.labels.slice() : [];
+        var same = (located.card.labels || []).length === labels.length &&
+          labels.every(function (id) { return (located.card.labels || []).indexOf(id) !== -1; });
+        if (!same) {
+          located.card.labels = labels;
+          located.card.updatedAt = deps ? deps.now() : 0;
+          changed += 1;
+        }
+      });
+      if (changed === 0) return { changed: false, state: state, value: null, reason: 'no-change' };
+      return { changed: true, state: next, value: changed };
+    }
+
+    function bulkSetFlow(state, entries, deps) {
+      var next = cloneState(state);
+      var changed = 0;
+      var now = deps ? deps.now() : 0;
+      entries.forEach(function (entry) {
+        var located = resolveCard(next, entry.ref);
+        if (!located) return;
+        var result = Lifecycle.setFlowState(located.card, entry.flow, typeof entry.reason === 'string' ? entry.reason : '', now);
+        if (result.changed) {
+          located.card.flow = result.card.flow;
+          located.card.updatedAt = result.card.updatedAt;
+          changed += 1;
+        }
+      });
+      if (changed === 0) return { changed: false, state: state, value: null, reason: 'no-change' };
+      return { changed: true, state: next, value: changed };
     }
 
     function bulkUpdate(state, cardRefs, patch, deps) {
@@ -163,6 +218,8 @@
     return {
       bulkMove: bulkMove,
       bulkUpdate: bulkUpdate,
+      bulkSetLabels: bulkSetLabels,
+      bulkSetFlow: bulkSetFlow,
       bulkArchive: bulkArchive
     };
   }

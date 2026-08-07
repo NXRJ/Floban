@@ -1,5 +1,8 @@
 (function (root, factory) {
-  var api = factory();
+  var pipelineCore = (typeof module === 'object' && module.exports)
+    ? require('./pipeline.js')
+    : root.KB.Core.Pipeline;
+  var api = factory(pipelineCore);
 
   if (typeof module === 'object' && module.exports) {
     module.exports = api;
@@ -10,7 +13,7 @@
   }
 })(
   typeof globalThis !== 'undefined' ? globalThis : this,
-  function () {
+  function (Pipeline) {
     var SAFE_URL_RE = /^https?:\/\//i;
     var DANGEROUS_URL_RE = /^(javascript|data|vbscript|file):/i;
 
@@ -129,8 +132,9 @@
       return { changed: true, state: next, value: true };
     }
 
-    function triageInboxItem(state, id, target, cardPatch, deps) {
+    function triageInboxItem(state, id, target, cardPatch, deps, opts) {
       var d = resolveDeps(deps);
+      var options = opts || {};
       var next = cloneState(state);
       var items = next.inbox && Array.isArray(next.inbox.items) ? next.inbox.items : [];
       var index = items.findIndex(function (it) { return it.id === id; });
@@ -140,7 +144,6 @@
       if (!board) return noop(state, 'board-not-found');
       var column = board.columns.find(function (c) { return c.id === target.columnId; });
       if (!column) return noop(state, 'column-not-found');
-      items.splice(index, 1);
       var now = d.now();
       var patch = cardPatch || {};
       var card = {
@@ -167,8 +170,15 @@
       if (item.url) {
         card.description = (card.description ? card.description + '\n\n' : '') + 'Source: ' + item.url;
       }
-      column.cards.push(card);
-      return { changed: true, state: next, value: { item: item, card: card } };
+      var placed = Pipeline.placeCard(next, card, null, board, column, {
+        confirmed: Boolean(options.confirmed),
+        overrideReason: options.overrideReason
+      }, deps);
+      if (!placed.changed) {
+        return { changed: false, state: state, value: null, reason: placed.reason, evaluation: placed.evaluation };
+      }
+      items.splice(index, 1);
+      return { changed: true, state: next, value: { item: item, card: placed.value } };
     }
 
     function mergeIntoCard(state, inboxId, target, deps) {
@@ -206,8 +216,9 @@
 
     function inboxSummary(state, now) {
       var items = state && state.inbox && Array.isArray(state.inbox.items) ? state.inbox.items : [];
+      var open = items.filter(function (item) { return !item.archived; });
       var oldest = null;
-      items.forEach(function (item) {
+      open.forEach(function (item) {
         if (item.capturedAt !== null && typeof item.capturedAt === 'number' && (oldest === null || item.capturedAt < oldest)) {
           oldest = item.capturedAt;
         }
@@ -216,7 +227,7 @@
       if (oldest !== null && typeof now === 'number') {
         oldestDays = Math.max(0, Math.floor((now - oldest) / 86400000));
       }
-      return { count: items.length, oldestAt: oldest, oldestDays: oldestDays };
+      return { count: open.length, oldestAt: oldest, oldestDays: oldestDays };
     }
 
     return {

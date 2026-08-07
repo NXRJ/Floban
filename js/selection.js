@@ -252,8 +252,10 @@
       }
       var result = KB.State.bulkMove(refs(), target, { labelMappings: labelMappings });
       if (result && result.reason === 'policy-violations') {
-        var message = result.violations.length + ' card(s) would violate a column policy.';
-        KB.Modal.moveConfirmModal('Bulk move requires confirmation', { violations: [{ code: 'policy', message: message }] }, '', function (reason) {
+        var message = result.blocking
+          ? result.violations.length + ' card(s) would violate a column policy.'
+          : result.violations.length + ' card(s) would exceed a soft WIP limit.';
+        KB.Modal.moveConfirmModal('Bulk move requires confirmation', { allowed: !result.blocking, violations: [{ code: 'policy', message: message }] }, '', function (reason) {
           KB.State.bulkMove(refs(), target, { confirmed: true, overrideReason: reason, labelMappings: labelMappings });
           KB.Modal.close();
           finishBulk('Card(s) moved');
@@ -328,7 +330,7 @@
         return chip.dataset.id;
       });
       var current = KB.State.data();
-      var newLabels = [];
+      var entries = [];
       refs().forEach(function (ref) {
         var board = KB.State.boardById(ref.boardId);
         var card = KB.Core.Relations.findCard(current, ref.boardId, ref.cardId);
@@ -338,11 +340,9 @@
           if (add) set.add(id);
           else set.delete(id);
         });
-        newLabels.push({ ref: ref, labels: Array.from(set) });
+        entries.push({ ref: ref, labels: Array.from(set) });
       });
-      newLabels.forEach(function (entry) {
-        KB.State.bulkUpdate([entry.ref], { labels: entry.labels });
-      });
+      KB.State.bulkSetLabels(entries);
       KB.Modal.close();
       finishBulk('Labels updated');
     });
@@ -392,9 +392,8 @@
       KB.State.bulkUpdate(refs(), rest);
     }
     if (flowPatch) {
-      var activeBoard = KB.State.activeBoard();
+      var flowEntries = [];
       refs().forEach(function (ref) {
-        if (ref.boardId !== activeBoard.id) return;
         var board = KB.State.boardById(ref.boardId);
         if (!board) return;
         var column = null;
@@ -404,8 +403,9 @@
             break;
           }
         }
-        if (column) KB.State.setFlowState(column.id, ref.cardId, flowPatch, flowReason);
+        if (column) flowEntries.push({ ref: ref, flow: flowPatch, reason: flowReason });
       });
+      KB.State.bulkSetFlow(flowEntries);
     }
     finishBulk('Updated ' + selected.size + ' card(s)');
   }

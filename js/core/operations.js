@@ -2,13 +2,10 @@
   var modelCore = (typeof module === 'object' && module.exports)
     ? require('./model.js')
     : root.KB.Core.Model;
-  var lifecycleCore = (typeof module === 'object' && module.exports)
-    ? require('./lifecycle.js')
-    : root.KB.Core.Lifecycle;
-  var policiesCore = (typeof module === 'object' && module.exports)
-    ? require('./policies.js')
-    : root.KB.Core.Policies;
-  var api = factory(modelCore, lifecycleCore, policiesCore);
+  var pipelineCore = (typeof module === 'object' && module.exports)
+    ? require('./pipeline.js')
+    : root.KB.Core.Pipeline;
+  var api = factory(modelCore, pipelineCore);
 
   if (typeof module === 'object' && module.exports) {
     module.exports = api;
@@ -19,7 +16,7 @@
   }
 })(
   typeof globalThis !== 'undefined' ? globalThis : this,
-  function (Model, Lifecycle, Policies) {
+  function (Model, Pipeline) {
     function resolveDeps(deps) {
       if (!deps || typeof deps.uid !== 'function' || typeof deps.now !== 'function') {
         throw new Error('core operations require { uid, now } dependencies');
@@ -75,17 +72,17 @@
       if (command.columnId === command.targetColumnId && index === fromIndex) {
         return noop(state, 'no-position-change');
       }
-      var card = source.cards.splice(fromIndex, 1)[0];
-      var prevMovedAt = card.movedAt;
-      var lifecycle = Lifecycle.transitionCard(card, source, target, d.now());
-      card = lifecycle.card;
-      card.columnId = command.targetColumnId;
-      if (command.columnId === command.targetColumnId) card.movedAt = prevMovedAt;
-      if (command.columnId !== command.targetColumnId) {
-        card = Policies.applyEntryDefaults(card, target);
+      var card = source.cards[fromIndex];
+      var result = Pipeline.placeCard(next, card, source, board, target, {
+        toIndex: index,
+        sameColumnMode: command.columnId === command.targetColumnId ? 'transition' : 'transition',
+        confirmed: Boolean(command.confirmed),
+        overrideReason: command.overrideReason
+      }, d);
+      if (!result.changed) {
+        return noop(state, result.reason === 'policy' ? 'policy' : result.reason);
       }
-      target.cards.splice(index, 0, card);
-      return { changed: true, state: next, value: card };
+      return { changed: true, state: next, value: result.value };
     }
 
     function duplicateCard(state, command, deps) {
@@ -151,10 +148,14 @@
       delete card.archivedAt;
       delete card.fromColumn;
       card.columnId = column.id;
-      var lifecycle = Lifecycle.transitionCard(card, null, column, d.now());
-      card = lifecycle.card;
-      column.cards.push(card);
-      return { changed: true, state: next, value: card };
+      var result = Pipeline.placeCard(next, card, null, board, column, {
+        confirmed: Boolean(command.confirmed),
+        overrideReason: command.overrideReason
+      }, d);
+      if (!result.changed) {
+        return noop(state, result.reason === 'policy' ? 'policy' : result.reason);
+      }
+      return { changed: true, state: next, value: result.value };
     }
 
     function deleteColumn(state, command, deps) {
