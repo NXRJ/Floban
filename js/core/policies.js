@@ -62,9 +62,10 @@
       var atLimit = !options || options.atLimit !== false;
       var breached = atLimit ? count >= limit : count > limit;
       if (!breached) return null;
+      var wouldHold = options && options.wouldHold;
       return {
         code: 'wip-limit',
-        message: column.title + ' holds ' + count + ' cards against a WIP limit of ' + limit + '.',
+        message: column.title + (wouldHold ? ' would hold ' : ' holds ') + (count + (wouldHold ? 1 : 0)) + ' cards against a WIP limit of ' + limit + '.',
         mode: mode
       };
     }
@@ -104,7 +105,7 @@
         };
       }
 
-      var wip = wipViolation(target, { pendingCount: options.pendingCount });
+      var wip = wipViolation(target, { pendingCount: options.pendingCount, wouldHold: true });
       if (wip) {
         violations.push({ code: 'wip-limit', message: wip.message, mode: wip.mode });
         if (wip.mode === 'hard') {

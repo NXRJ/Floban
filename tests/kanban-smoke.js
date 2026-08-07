@@ -790,6 +790,56 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   await page.evaluate(() => KB.App.refresh());
 
+  // ---- Cancelling the create-confirm dialog keeps the typed card ----
+  await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    const col1 = board.columns[0];
+    KB.State.updateColumn(col1.id, { wipLimit: col1.cards.length, policy: { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' } });
+  });
+  await page.evaluate(() => KB.App.refresh());
+  await page.click('.column:nth-child(1) .column-header [data-action="col-add"]');
+  await waitFor(() => !!document.querySelector('#cf-title'), 3000, 'create editor opens');
+  const cardsBeforeCreate = await page.evaluate(() => KB.State.activeBoard().columns[0].cards.length);
+  await page.type('#cf-title', 'Editor cancel probe');
+  await page.$eval('#cf-desc', (el) => { el.value = 'must survive a cancel'; });
+  await clickByText('.modal-actions .btn', 'Save');
+  await waitFor(() => [...document.querySelectorAll('.modal-actions .btn')].some(b => b.textContent.trim() === 'Confirm move'), 3000, 'create confirm dialog');
+  await clickByText('.modal-actions .btn', 'Cancel');
+  await waitFor(() => !!document.querySelector('#cf-title'), 3000, 'editor reopens after cancel');
+  const cancelKept = await page.evaluate(() => ({
+    title: document.querySelector('#cf-title').value,
+    desc: document.querySelector('#cf-desc').value,
+    cardCount: KB.State.activeBoard().columns[0].cards.length
+  }));
+  check('cancel on create confirm keeps the typed title', cancelKept.title === 'Editor cancel probe');
+  check('cancel on create confirm keeps the typed description', cancelKept.desc === 'must survive a cancel');
+  check('cancel on create confirm creates nothing', cancelKept.cardCount === cardsBeforeCreate);
+
+  await page.type('#cf-title', ' editor 2');
+  await clickByText('.modal-actions .btn', 'Save');
+  await waitFor(() => [...document.querySelectorAll('.modal-actions .btn')].some(b => b.textContent.trim() === 'Confirm move'), 3000, 'create confirm dialog 2');
+  await page.keyboard.press('Escape');
+  await waitFor(() => !!document.querySelector('#cf-title'), 3000, 'editor reopens after escape');
+  const escapeKept = await page.evaluate(() => document.querySelector('#cf-title').value);
+  check('escape on create confirm keeps the typed title', escapeKept === 'Editor cancel probe editor 2');
+  await clickByText('.modal-actions .btn', 'Cancel');
+  await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'editor closes');
+  const editorCancelled = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    return board.columns[0].cards.some(c => c.title.indexOf('Editor cancel probe') === 0) === false;
+  });
+  check('no card from cancelled create', editorCancelled === true);
+  await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    board.columns.forEach(col => { col.wipLimit = 0; });
+    localStorage.setItem('kanban.board.v1', JSON.stringify(b));
+  });
+  await page.evaluate(() => KB.App.refresh());
+  await waitFor(() => !!document.querySelector('.column'), 3000, 'back to board after editor cancel');
+
   // ---- Review workspace ----
   await page.evaluate(() => KB.Workspaces.set('review'));
   await waitFor(() => document.querySelectorAll('.metric-card').length >= 4, 3000, 'review summary');

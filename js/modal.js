@@ -4,15 +4,17 @@
 
   var overlay = null;
   var trigger = null;
+  var closeHook = null;
 
   function onKey(e) {
     if (e.key === 'Escape') close();
   }
 
-  function open(content, opener) {
+  function open(content, opener, onClose) {
     if (KB.UI.clearToasts) KB.UI.clearToasts();
     close();
     trigger = opener || null;
+    closeHook = onClose || null;
     overlay = h('div', { class: 'modal-backdrop' });
     var panel = h('div', { class: 'modal-panel', role: 'dialog', 'aria-modal': 'true' });
     panel.appendChild(content);
@@ -31,7 +33,10 @@
     overlay.remove();
     overlay = null;
     document.removeEventListener('keydown', onKey);
+    var hook = closeHook;
+    closeHook = null;
     if (trigger) trigger.focus();
+    if (hook) hook();
   }
 
   function fieldBlock(labelText, control, required) {
@@ -141,8 +146,9 @@
     return board ? (board.labels || []) : (KB.State.labels() || []);
   }
 
-  function cardEditor(columnId, card, opener, boardId) {
+  function cardEditor(columnId, card, opener, boardId, prefill) {
     var isEdit = Boolean(card);
+    var initial = isEdit ? card : (prefill || {});
     var editorBoardId = typeof boardId === 'string' ? boardId : (KB.State.activeBoard() ? KB.State.activeBoard().id : '');
     var form = h('form', { class: 'card-form' });
 
@@ -151,33 +157,33 @@
     form.appendChild(heading);
 
     var titleInput = h('input', { type: 'text', id: 'cf-title', maxlength: 120, placeholder: 'What needs doing?', 'aria-label': 'Card title' });
-    titleInput.value = card ? card.title : '';
+    titleInput.value = initial.title || '';
     form.appendChild(fieldBlock('Title', titleInput, true));
 
     var assigneeInput = h('input', { type: 'text', id: 'cf-assignee', list: 'assignee-list', placeholder: 'Who is responsible?', 'aria-label': 'Assignee' });
-    assigneeInput.value = card ? (card.assignee || '') : '';
+    assigneeInput.value = initial.assignee || '';
     form.appendChild(fieldBlock('Assignee', assigneeInput));
 
     var dueInput = h('input', { type: 'date', id: 'cf-due', 'aria-label': 'Due date' });
-    dueInput.value = card ? (card.due || '') : '';
+    dueInput.value = initial.due || '';
     form.appendChild(fieldBlock('Due date', dueInput));
 
     var priorityInput = h('select', { id: 'cf-priority', 'aria-label': 'Priority' });
     KB.Filters.PRIORITY_OPTIONS.forEach(function (pair) {
       priorityInput.appendChild(new Option(pair[1], pair[0]));
     });
-    priorityInput.value = card ? (card.priority || 'none') : 'none';
+    priorityInput.value = initial.priority || 'none';
     form.appendChild(fieldBlock('Priority', priorityInput));
 
     var sizeInput = h('select', { id: 'cf-size', 'aria-label': 'Size' });
     KB.Filters.SIZE_OPTIONS.forEach(function (pair) {
       sizeInput.appendChild(new Option(pair[1], pair[0]));
     });
-    sizeInput.value = card ? (card.size || 'none') : 'none';
+    sizeInput.value = initial.size || 'none';
     form.appendChild(fieldBlock('Size', sizeInput));
 
     var descInput = h('textarea', { id: 'cf-desc', rows: 5, placeholder: 'Details, context, notes…  **bold**  *italic*  `code`  [link](url)', 'aria-label': 'Description' });
-    descInput.value = card ? (card.description || '') : '';
+    descInput.value = initial.description || '';
     form.appendChild(fieldBlock('Description', descInput));
 
     var flowState = card && card.flow && card.flow.state ? card.flow.state : 'normal';
@@ -351,7 +357,7 @@
     }
     form.appendChild(fieldBlock('', relSection));
 
-    var checklistState = card && card.checklist ? card.checklist.map(function (item) {
+    var checklistState = initial.checklist ? initial.checklist.map(function (item) {
       return { id: item.id, text: item.text, done: Boolean(item.done) };
     }) : [];
     var checkBox = checklistEditor(checklistState);
@@ -359,7 +365,7 @@
 
     var labelsBox = h('div', { class: 'label-picker' });
     labelsFor(editorBoardId).forEach(function (label) {
-      labelsBox.appendChild(labelToggleChip(label, isEdit && card.labels.indexOf(label.id) !== -1));
+      labelsBox.appendChild(labelToggleChip(label, (initial.labels || []).indexOf(label.id) !== -1));
     });
     form.appendChild(fieldBlock('Labels', labelsBox));
 
@@ -576,20 +582,24 @@
         KB.State.updateCardWithFlow(columnId, card.id, data, flowInput.value, flowReasonInput.value.trim(), editorBoardId);
         KB.UI.toast('Changes saved', 'success');
       } else {
+        var finishCreate = function (created) {
+          if (created) KB.UI.toast('Card added', 'success', 'Undo', KB.UI.undoAction);
+          else KB.UI.toast('Column policy blocks this card', 'error');
+        };
         var createEvaluation = KB.State.createNeedsConfirmation(columnId);
         if (createEvaluation) {
           KB.Modal.moveConfirmModal('Adding this card requires confirmation', createEvaluation, '', function (reason) {
             var created = KB.State.addCard(columnId, data, { confirmed: true, overrideReason: reason });
             close();
-            if (created) KB.UI.toast('Card added', 'success', 'Undo', KB.UI.undoAction);
-            else KB.UI.toast('Column policy blocks this card', 'error');
+            finishCreate(created);
             KB.App.refresh();
+          }, function () {
+            cardEditor(columnId, null, null, editorBoardId, data);
           });
           return;
         }
         var created = KB.State.addCard(columnId, data);
-        if (created) KB.UI.toast('Card added', 'success', 'Undo', KB.UI.undoAction);
-        else KB.UI.toast('Column policy blocks this card', 'error');
+        finishCreate(created);
       }
       close();
       KB.App.refresh();
@@ -979,7 +989,7 @@
     open(panel);
   }
 
-  function moveConfirmModal(title, evaluation, targetColumnTitle, onConfirm) {
+  function moveConfirmModal(title, evaluation, targetColumnTitle, onConfirm, onCancel) {
     var panel = h('div', { class: 'card-form' });
 
     var heading = h('h2');
@@ -1017,6 +1027,7 @@
 
     var actions = h('div', { class: 'modal-actions' });
     actions.appendChild(h('span', { class: 'spacer' }));
+    var confirmed = false;
     var cancelBtn = h('button', { type: 'button', class: 'btn ghost' });
     cancelBtn.textContent = 'Cancel';
     cancelBtn.addEventListener('click', close);
@@ -1036,13 +1047,16 @@
           return;
         }
       }
+      confirmed = true;
       close();
       onConfirm(soft ? '' : (reasonInput ? reasonInput.value.trim() : ''));
     });
     actions.appendChild(confirmBtn);
     panel.appendChild(actions);
 
-    open(panel);
+    open(panel, null, function () {
+      if (!confirmed && onCancel) onCancel();
+    });
   }
 
   function recurrenceEditor(existing, prefill, convertFromInbox) {
