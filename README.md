@@ -133,19 +133,34 @@ No dependencies are required and nothing needs to be installed or compiled.
 
 Plain classic scripts (no ES modules) are used so the app works from
 `file://`. Each file attaches to a shared `window.KB` namespace; load order
-in `index.html` matters.
+in `index.html` matters. Core files are loaded before the browser adapters
+that use them.
 
-| File | Responsibility |
-| --- | --- |
-| `index.html` | Page skeleton: header (board switcher), filter bar, board, archive panel, modal/toast roots. Also an inline script that applies the saved theme before first paint. |
-| `css/styles.css` | All styling. Theming via CSS custom properties on `:root` with `[data-theme="light"]` overrides; components (columns, cards, chips, popups, modal, toasts) are styled there. |
-| `js/state.js` | Data model and persistence: multi-board store, `localStorage` read/write (`kanban.board.v1`, version 2 with v1 migration), undo/redo history, and every mutation (card/column/label/template/board CRUD, move, archive, restore, purge, duplicate, export/import). |
-| `js/filters.js` | Pure filtering and sorting logic: reading the active filter values, `matches(card, filters)` with the AND/OR combination rules, due-date matching, and the sort comparator. |
-| `js/dom.js` | Tiny helpers: `h()` element builder, inline SVG pixel-icon set, date formatting, `KB.el` selector shortcut. |
-| `js/dragdrop.js` | HTML5 drag-and-drop wiring: card drag between/within columns with an insertion-line indicator, column header drag for reordering (card drag is disabled while a non-manual sort is active). |
-| `js/modal.js` | Modal system (backdrop, Esc, focus return) plus the card editor (due date, checklist, templates), column editor (WIP limit), board prompt, label manager and backup/restore dialogs. |
-| `js/render.js` | Rendering: board → columns → cards (due chips, checklist progress, aging chips), filter bar chips and dropdowns, quick-add rows, archive panel, and all empty states. |
-| `js/app.js` | Bootstrapping and wiring: header actions (board menu, theme), filter/sort events, event delegation for board/archive clicks, quick-add, popups, undo/redo shortcuts, toasts, export downloads. |
+| Area | File | Responsibility |
+| --- | --- | --- |
+| Core | `js/core/date.js` | Deterministic date logic: ISO formatting, day offsets, due-date classification, due-filter matching, card aging. No browser access. |
+| Core | `js/core/model.js` | Card/column/label/board/template factories and checklist cloning, with injectable `{ uid, now }` dependencies. |
+| Core | `js/core/migration.js` | Data normalization, v1→v2 migration, board-shape adoption and import-payload classification. Never mutates its input. |
+| Core | `js/core/filtering.js` | Stateless filtering (`matchesCard`, `hasActiveFilters`) and sorting (`compareCards`), including the sort-mode validation table. |
+| Core | `js/core/history.js` | Undo/redo stack mechanics (record, undo, redo, clear, limits). |
+| Core | `js/core/operations.js` | High-risk state mutations (move, duplicate, archive, restore, delete column, board duplicate/delete, label removal) returning `{ changed, state, value }` results. |
+| Core | `js/core/markdown.js` | HTML escaping and the light markdown renderer, with explicit safe-link handling. |
+| Browser | `index.html` | Page skeleton: header (board switcher), filter bar, board, archive panel, modal/toast roots. Also an inline script that applies the saved theme before first paint. |
+| Browser | `css/styles.css` | All styling. Theming via CSS custom properties on `:root` with `[data-theme="light"]` overrides; components (columns, cards, chips, popups, modal, toasts) are styled there. |
+| Browser | `js/state.js` | State service: owns the current state, localStorage read/write (`kanban.board.v1`, version 2 with v1 migration), undo/redo integration, and the `KB.State` API. Mutations delegate to `KB.Core.Operations` and are committed only when the operation reports `changed`. |
+| Browser | `js/filters.js` | Filter controls adapter: reads DOM filter values, owns selected labels and the sort mode, delegates matching/sorting to `KB.Core.Filtering`. |
+| Browser | `js/dom.js` | Tiny helpers: `h()` element builder, inline SVG pixel-icon set, presentation date formatting, `KB.el` selector shortcut. |
+| Browser | `js/dragdrop.js` | HTML5 drag-and-drop wiring: card drag between/within columns with an insertion-line indicator, column header drag for reordering (card drag is disabled while a non-manual sort is active). |
+| Browser | `js/modal.js` | Modal system (backdrop, Esc, focus return) plus the card editor (due date, checklist, templates), column editor (WIP limit), board prompt, label manager and backup/restore dialogs. |
+| Browser | `js/render.js` | Rendering: board → columns → cards (due chips, checklist progress, aging chips), filter bar chips and dropdowns, quick-add rows, archive panel, and all empty states. Delegates markdown, aging and due classification to `KB.Core`. |
+| Browser | `js/app.js` | Bootstrapping and wiring: header actions (board menu, theme), filter/sort events, event delegation for board/archive clicks, quick-add, popups, undo/redo shortcuts, toasts, export downloads. |
+
+`js/core/` contains deterministic application logic shared by the browser
+and the Node test suite. Core files never touch `window`, `document`,
+`localStorage`, `KB.el` or the DOM. Functions that need the current time
+receive an explicit date/timestamp argument, and functions that generate
+identifiers receive an ID factory — this is what makes the unit tests
+deterministic.
 
 ### Data model
 
@@ -184,12 +199,25 @@ is created.
 
 ## Testing
 
-The app itself needs nothing installed, but a headless end-to-end suite
-documents the behaviour of every feature (boards, undo/redo, due dates,
-checklists, quick-add, templates, WIP limits, collapse, backup, filters,
-sorting, migration, corrupt-data resilience, markdown/XSS safety):
+The app itself needs nothing installed, but two test layers document and
+verify it:
 
 ```sh
-npm install   # once — brings in puppeteer for the test runner only
-npm test      # runs tests/kanban-smoke.js against the built-in browser
+npm install        # once — brings in puppeteer (development-only) for the browser suite
+npm run test:unit  # fast Node unit tests for the js/core rules (no browser)
+npm run test:e2e   # headless Chromium end-to-end suite (tests/kanban-smoke.js)
+npm test           # unit tests first, then the end-to-end suite
 ```
+
+- **Unit tests** (`tests/unit/*.test.js`) validate the browser-independent
+  application rules in `js/core/` with Node's built-in test runner: date
+  arithmetic, filtering and sorting, markdown safety, model factories,
+  migration/normalization, undo/redo mechanics and state operations. They
+  launch no browser, use no sleeps and are deterministic.
+- **End-to-end tests** (`tests/kanban-smoke.js`) validate the integrated
+  application in Chromium: boot, rendering, keyboard and button wiring,
+  modal workflows, drag/drop, localStorage persistence, theme, undo/redo,
+  migration, corrupt-data resilience, import/export and markdown/XSS
+  safety in the DOM.
+- The app itself still has no runtime dependencies and no build step.
+  Puppeteer remains a development-only dependency.
