@@ -1,0 +1,199 @@
+{
+  "version": 3,
+  "theme": 42,
+  "activeBoardId": "missing-board",
+  "inbox": {
+    "items": [
+      {
+        "id": "in-1",
+        "title": "Valid inbox item",
+        "note": "",
+        "url": "javascript:alert(1)",
+        "capturedAt": 100,
+        "updatedAt": 100
+      },
+      { "id": 5, "title": 123 },
+      null,
+      "junk",
+      { "title": "No id here" },
+      { "id": "in-1", "title": "Duplicate id" }
+    ]
+  },
+  "lenses": [
+    {
+      "id": "lens-1",
+      "name": "Broken board scope",
+      "scope": "selected-boards",
+      "boardIds": ["missing-board", "board-1"],
+      "query": { "priorities": ["huge"], "due": "wat", "includeCompleted": false },
+      "sort": { "field": "unknown", "direction": "sideways" },
+      "display": { "density": "huge", "groupBy": "moon" }
+    },
+    null,
+    { "scope": "all-boards" }
+  ],
+  "recurrences": [
+    {
+      "id": "rec-1",
+      "enabled": true,
+      "mode": "warp",
+      "schedule": { "frequency": "fortnightly", "interval": -3, "weekdays": ["monday"] },
+      "target": { "boardId": "missing-board", "columnId": "missing-column" },
+      "template": { "title": "", "priority": "critical", "checklist": [null, { "id": "ck-1", "text": "A", "done": 1 }] },
+      "overlapPolicy": "sometimes",
+      "missedPolicy": "always",
+      "activeCardRef": { "boardId": "missing-board", "cardId": "missing-card" }
+    },
+    {
+      "id": "rec-2",
+      "enabled": false,
+      "mode": "after-completion",
+      "schedule": { "frequency": "custom", "delayAfterCompletionDays": 7 },
+      "target": { "boardId": "board-1", "columnId": "col-1" },
+      "template": { "title": "Follow up", "priority": "high", "size": "s" },
+      "overlapPolicy": "allow-overlap",
+      "missedPolicy": "skip",
+      "activeCardRef": { "boardId": "board-1", "cardId": "card-2" }
+    }
+  ],
+  "boards": [
+    {
+      "id": "board-1",
+      "name": "My Board",
+      "flowSettings": { "staleAfterDays": "9", "slePercentile": 1.5, "manualSleDays": "" },
+      "labels": [
+        { "id": "l-1", "name": "Bug", "color": "#c81e14" },
+        { "id": "l-2", "name": "Bad color", "color": "red" },
+        { "name": "No id" }
+      ],
+      "templates": [
+        {
+          "id": "tpl-1",
+          "name": "Legacy template",
+          "labels": ["missing-label", "l-1"],
+          "checklist": [{ "id": "ck", "text": "Step", "done": false }]
+        }
+      ],
+      "columns": [
+        {
+          "id": "col-1",
+          "title": "To Do",
+          "isDone": false,
+          "wipLimit": 2,
+          "collapsed": false,
+          "policy": { "wipMode": "crush", "defaultLabelIds": ["missing-label"] },
+          "cards": [
+            {
+              "id": "card-1",
+              "columnId": "stale",
+              "title": "Task one",
+              "description": "",
+              "labels": ["l-1", 42],
+              "assignee": "Sam",
+              "createdAt": 100,
+              "updatedAt": 100,
+              "movedAt": 100,
+              "due": "",
+              "checklist": [{ "id": "i-1", "text": "X", "done": "yes" }],
+              "priority": "urgent",
+              "size": "huge",
+              "startedAt": "yesterday",
+              "completedAt": null,
+              "flow": {
+                "state": "stuck",
+                "reason": "",
+                "since": 99,
+                "periods": [{ "state": "blocked", "reason": "x", "startedAt": 1, "endedAt": 2 }, null, "junk"]
+              },
+              "dependencies": {
+                "blockers": [
+                  { "boardId": "board-1", "cardId": "card-1" },
+                  { "boardId": "board-1", "cardId": "card-2" },
+                  { "boardId": "missing-board", "cardId": "card-9" },
+                  { "boardId": "board-1", "cardId": "card-2" },
+                  null,
+                  { "cardId": "no-board" }
+                ],
+                "related": [{ "boardId": "board-1", "cardId": "card-3" }]
+              },
+              "recurrenceId": "rec-1",
+              "transitions": [{ "toColumnId": "col-1", "toRole": "backlog", "at": 10 }, "junk"]
+            },
+            {
+              "id": "card-2",
+              "columnId": "col-1",
+              "title": "Task two",
+              "priority": "low",
+              "size": "l",
+              "createdAt": 200,
+              "updatedAt": 200,
+              "movedAt": 200,
+              "labels": [],
+              "checklist": []
+            }
+          ]
+        },
+        {
+          "id": "col-2",
+          "title": "Done",
+          "isDone": true,
+          "cards": [
+            {
+              "id": "card-3",
+              "columnId": "col-2",
+              "title": "Finished",
+              "createdAt": 300,
+              "updatedAt": 300,
+              "movedAt": 300,
+              "labels": [],
+              "checklist": [],
+              "completedAt": 400,
+              "startedAt": 350
+            }
+          ]
+        }
+      ],
+      "archive": {
+        "cards": [
+          {
+            "id": "arch-1",
+            "columnId": "col-1",
+            "title": "Archived",
+            "createdAt": 500,
+            "updatedAt": 500,
+            "movedAt": 500,
+            "labels": [],
+            "checklist": [],
+            "archivedAt": 600,
+            "fromColumn": "To Do",
+            "dependencies": { "blockers": [{ "boardId": "board-1", "cardId": "card-2" }] }
+          }
+        ],
+        "columns": []
+      }
+    },
+    {
+      "id": "board-2",
+      "name": "Second board",
+      "columns": [
+        {
+          "id": "col-b1",
+          "title": "Backlog",
+          "cards": [
+            {
+              "id": "card-b1",
+              "columnId": "col-b1",
+              "title": "Cross-board target",
+              "createdAt": 700,
+              "updatedAt": 700,
+              "movedAt": 700,
+              "labels": [],
+              "checklist": []
+            }
+          ]
+        }
+      ],
+      "archive": { "cards": [], "columns": [] }
+    }
+  ]
+}

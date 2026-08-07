@@ -235,7 +235,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   // ---- Persistence & migration ----
   const v2 = await page.evaluate(() => JSON.parse(localStorage.getItem('kanban.board.v1')));
-  check('saved state is version 2', v2.version === 2 && Array.isArray(v2.boards));
+  check('saved state is version 3', v2.version === 3 && Array.isArray(v2.boards));
 
   await page.evaluate(() => {
     const old = JSON.parse(localStorage.getItem('kanban.board.v1'));
@@ -245,7 +245,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await page.goto(URL, { waitUntil: 'load' });
   await sleep(400);
   const migrated = await page.evaluate(() => JSON.parse(localStorage.getItem('kanban.board.v1')));
-  check('v1 migrates to v2 boards', migrated.version === 2 && migrated.boards.length === 1);
+  check('v1 migrates to v3 boards', migrated.version === 3 && migrated.boards.length === 1);
   check('migrated cards normalized', migrated.boards[0].columns.every(c => c.cards.every(card => typeof card.due === 'string' && Array.isArray(card.checklist))));
   check('migrated board renders', await page.$$eval('.column', els => els.length) === 3);
 
