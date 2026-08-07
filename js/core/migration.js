@@ -310,6 +310,7 @@
             title: typeof item.title === 'string' ? item.title : '',
             note: typeof item.note === 'string' ? item.note : '',
             url: typeof item.url === 'string' ? item.url : '',
+            archived: Boolean(item.archived),
             capturedAt: capturedAt === null ? now : capturedAt,
             updatedAt: toNumberOrNull(item.updatedAt) === null ? (capturedAt === null ? now : capturedAt) : toNumberOrNull(item.updatedAt)
           };

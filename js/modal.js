@@ -1319,6 +1319,228 @@
     open(panel);
   }
 
+  function captureModal() {
+    var form = h('form', { class: 'card-form' });
+    var heading = h('h2');
+    heading.textContent = 'Capture';
+    form.appendChild(heading);
+    var hint = h('p', { class: 'form-hint' });
+    hint.textContent = 'One line per item — paste several lines to capture many. URLs are detected automatically.';
+    form.appendChild(hint);
+
+    var textInput = h('textarea', { id: 'cap-text', rows: 4, placeholder: 'Call the dentist\nhttps://example.com/docs', 'aria-label': 'Capture text' });
+    form.appendChild(fieldBlock('What is on your mind?', textInput, true));
+
+    var noteInput = h('textarea', { id: 'cap-note', rows: 2, placeholder: 'Optional note…', 'aria-label': 'Note' });
+    form.appendChild(fieldBlock('Note', noteInput));
+
+    var actions = h('div', { class: 'modal-actions' });
+    actions.appendChild(h('span', { class: 'spacer' }));
+    var cancelBtn = h('button', { type: 'button', class: 'btn ghost' });
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', close);
+    actions.appendChild(cancelBtn);
+    var saveBtn = h('button', { type: 'submit', class: 'btn primary' });
+    saveBtn.textContent = 'Capture';
+    actions.appendChild(saveBtn);
+    form.appendChild(actions);
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var text = textInput.value;
+      var note = noteInput.value.trim();
+      var lines = text.split('\n').map(function (line) { return line.trim(); }).filter(Boolean);
+      if (lines.length === 0) {
+        KB.UI.toast('Enter something to capture', 'error');
+        textInput.focus();
+        return;
+      }
+      var added = 0;
+      if (lines.length === 1 && note) {
+        var result = KB.State.captureInbox({ title: lines[0], note: note });
+        if (result) added = 1;
+      } else {
+        var multi = KB.State.captureInboxLines(text);
+        if (multi) added = multi.length;
+      }
+      close();
+      KB.UI.toast(KB.Dom.plural(added, 'item') + ' captured', 'success', 'Undo', KB.UI.undoAction);
+      KB.App.refresh();
+    });
+
+    open(form);
+    setTimeout(function () { textInput.focus(); }, 0);
+  }
+
+  function triageModal(item) {
+    var form = h('form', { class: 'card-form' });
+    var heading = h('h2');
+    heading.textContent = 'Triage';
+    form.appendChild(heading);
+    var hint = h('p', { class: 'form-hint' });
+    hint.textContent = item.title + (item.url ? ' \u2014 ' + item.url : '');
+    form.appendChild(hint);
+
+    var boardSelect = h('select', { id: 'tr-board', 'aria-label': 'Destination board' });
+    KB.State.boards().forEach(function (board) {
+      boardSelect.appendChild(new Option(board.name, board.id));
+    });
+    var active = KB.State.activeBoard();
+    if (active) boardSelect.value = active.id;
+    form.appendChild(fieldBlock('Board', boardSelect));
+
+    var columnSelect = h('select', { id: 'tr-column', 'aria-label': 'Destination column' });
+    form.appendChild(fieldBlock('Column', columnSelect));
+
+    var dueInput = h('input', { type: 'date', id: 'tr-due', 'aria-label': 'Due date' });
+    form.appendChild(fieldBlock('Due date', dueInput));
+
+    var priorityInput = h('select', { id: 'tr-priority', 'aria-label': 'Priority' });
+    KB.Filters.PRIORITY_OPTIONS.forEach(function (pair) { priorityInput.appendChild(new Option(pair[1], pair[0])); });
+    form.appendChild(fieldBlock('Priority', priorityInput));
+
+    var sizeInput = h('select', { id: 'tr-size', 'aria-label': 'Size' });
+    KB.Filters.SIZE_OPTIONS.forEach(function (pair) { sizeInput.appendChild(new Option(pair[1], pair[0])); });
+    form.appendChild(fieldBlock('Size', sizeInput));
+
+    var assigneeInput = h('input', { type: 'text', list: 'assignee-list', maxlength: 60, 'aria-label': 'Assignee' });
+    form.appendChild(fieldBlock('Assignee', assigneeInput));
+
+    var labelsBox = h('div', { class: 'label-picker' });
+    form.appendChild(fieldBlock('Labels', labelsBox));
+
+    function refresh() {
+      var board = KB.State.boardById(boardSelect.value);
+      columnSelect.innerHTML = '';
+      if (!board) return;
+      board.columns.forEach(function (column) {
+        columnSelect.appendChild(new Option(column.title, column.id));
+      });
+      labelsBox.innerHTML = '';
+      board.labels.forEach(function (label) {
+        labelsBox.appendChild(labelToggleChip(label, false));
+      });
+    }
+    boardSelect.addEventListener('change', refresh);
+    refresh();
+
+    var actions = h('div', { class: 'modal-actions' });
+    var archiveBtn = h('button', { type: 'button', class: 'btn ghost' });
+    archiveBtn.textContent = 'Archive as reference';
+    archiveBtn.addEventListener('click', function () {
+      KB.State.updateInboxItem(item.id, { archived: true });
+      KB.UI.toast('Item archived', 'info', 'Undo', KB.UI.undoAction);
+      close();
+      KB.App.refresh();
+    });
+    actions.appendChild(archiveBtn);
+    var deleteBtn = h('button', { type: 'button', class: 'btn danger-ghost' });
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.addEventListener('click', function () {
+      KB.State.deleteInboxItem(item.id);
+      KB.UI.toast('Item deleted', 'info', 'Undo', KB.UI.undoAction);
+      close();
+      KB.App.refresh();
+    });
+    actions.appendChild(deleteBtn);
+    actions.appendChild(h('span', { class: 'spacer' }));
+    var cancelBtn = h('button', { type: 'button', class: 'btn ghost' });
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', close);
+    actions.appendChild(cancelBtn);
+    var saveBtn = h('button', { type: 'submit', class: 'btn primary' });
+    saveBtn.textContent = 'Turn into card';
+    actions.appendChild(saveBtn);
+    form.appendChild(actions);
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var result = KB.State.triageInboxItem(item.id, {
+        boardId: boardSelect.value,
+        columnId: columnSelect.value
+      }, {
+        due: dueInput.value || '',
+        priority: priorityInput.value,
+        size: sizeInput.value,
+        assignee: assigneeInput.value.trim(),
+        labels: Array.prototype.map.call(labelsBox.querySelectorAll('.chip.active'), function (chip) {
+          return chip.dataset.id;
+        })
+      });
+      close();
+      if (result) {
+        KB.UI.toast('Card created', 'success', 'Undo', KB.UI.undoAction);
+      } else {
+        KB.UI.toast('Could not triage that item', 'error');
+      }
+      KB.App.refresh();
+    });
+
+    open(form);
+  }
+
+  function mergeModal(item) {
+    var form = h('form', { class: 'card-form' });
+    var heading = h('h2');
+    heading.textContent = 'Merge into card';
+    form.appendChild(heading);
+    var hint = h('p', { class: 'form-hint' });
+    hint.textContent = item.title;
+    form.appendChild(hint);
+
+    var boardSelect = h('select', { id: 'mg-board', 'aria-label': 'Board' });
+    KB.State.boards().forEach(function (board) {
+      boardSelect.appendChild(new Option(board.name, board.id));
+    });
+    var active = KB.State.activeBoard();
+    if (active) boardSelect.value = active.id;
+    form.appendChild(fieldBlock('Board', boardSelect));
+
+    var cardSelect = h('select', { id: 'mg-card', 'aria-label': 'Card' });
+    form.appendChild(fieldBlock('Card', cardSelect));
+
+    function refresh() {
+      cardSelect.innerHTML = '';
+      var board = KB.State.boardById(boardSelect.value);
+      if (!board) return;
+      board.columns.forEach(function (column) {
+        column.cards.forEach(function (card) {
+          cardSelect.appendChild(new Option(column.title + ' \u00B7 ' + card.title, card.id));
+        });
+      });
+    }
+    boardSelect.addEventListener('change', refresh);
+    refresh();
+
+    var actions = h('div', { class: 'modal-actions' });
+    actions.appendChild(h('span', { class: 'spacer' }));
+    var cancelBtn = h('button', { type: 'button', class: 'btn ghost' });
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', close);
+    actions.appendChild(cancelBtn);
+    var saveBtn = h('button', { type: 'submit', class: 'btn primary' });
+    saveBtn.textContent = 'Merge';
+    actions.appendChild(saveBtn);
+    form.appendChild(actions);
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var result = KB.State.mergeInboxItem(item.id, {
+        boardId: boardSelect.value,
+        cardId: cardSelect.value
+      });
+      close();
+      if (result) {
+        KB.UI.toast('Merged into card', 'success', 'Undo', KB.UI.undoAction);
+      } else {
+        KB.UI.toast('Could not merge', 'error');
+      }
+      KB.App.refresh();
+    });
+
+    open(form);
+  }
+
   function isOpen() {
     return overlay !== null;
   }
@@ -1335,6 +1557,9 @@
     moveConfirmModal: moveConfirmModal,
     recurrenceEditor: recurrenceEditor,
     recurrenceManager: recurrenceManager,
+    captureModal: captureModal,
+    triageModal: triageModal,
+    mergeModal: mergeModal,
     isOpen: isOpen
   };
 })(window.KB = window.KB || {});
