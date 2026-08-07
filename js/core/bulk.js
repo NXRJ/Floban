@@ -100,7 +100,7 @@
         var mappings = options.labelMappings || {};
         var mapped = mappings[entry.ref.boardId + ':' + entry.ref.cardId];
         var placed = Pipeline.placeCard(next, card, located.column, targetBoard, targetColumn, {
-          sameColumnMode: sameColumn ? 'preserve' : 'transition',
+          sameColumnMode: 'preserve',
           labelMapping: Array.isArray(mapped) ? mapped : undefined,
           confirmed: Boolean(options.confirmed),
           overrideReason: options.overrideReason

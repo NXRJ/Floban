@@ -195,7 +195,6 @@ test('WIP counts are not exceeded when under the limit', () => {
   assert.ok(!result.violations.some(v => v.code === 'wip-limit'));
 });
 
-
 test('pendingCount models cards beyond the first: exact-fill batches pass', () => {
   const s = state();
   const col = s.boards[0].columns[1];

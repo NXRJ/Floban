@@ -63,9 +63,10 @@
       var breached = atLimit ? count >= limit : count > limit;
       if (!breached) return null;
       var wouldHold = options && options.wouldHold;
+      var reportedCount = count + (wouldHold ? 1 : 0);
       return {
         code: 'wip-limit',
-        message: column.title + (wouldHold ? ' would hold ' : ' holds ') + (count + (wouldHold ? 1 : 0)) + ' cards against a WIP limit of ' + limit + '.',
+        message: column.title + (wouldHold ? ' would hold ' : ' holds ') + reportedCount + ' cards against a WIP limit of ' + limit + '.',
         mode: mode
       };
     }
