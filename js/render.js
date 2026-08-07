@@ -101,6 +101,13 @@
     return chip;
   }
 
+  function recurrenceChip(card) {
+    if (!card.recurrenceId) return null;
+    var chip = h('span', { class: 'chip chip-static rec', title: 'Recurring work' });
+    chip.textContent = '\u21BB';
+    return chip;
+  }
+
   function flowChip(card) {
     var flow = card.flow;
     if (!flow || flow.state === 'normal') return null;
@@ -174,6 +181,8 @@
     if (fl) meta.appendChild(fl);
     var dep = dependencyChip(card, column);
     if (dep) meta.appendChild(dep);
+    var rec = recurrenceChip(card);
+    if (rec) meta.appendChild(rec);
     card.labels.forEach(function (id) {
       var label = KB.State.findLabel(id);
       if (label) meta.appendChild(staticChip(label));
