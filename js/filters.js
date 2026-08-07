@@ -48,7 +48,8 @@
       assignee: KB.el('assignee-filter').value,
       due: KB.el('due-filter').value,
       priority: KB.el('priority-filter').value,
-      size: KB.el('size-filter').value
+      size: KB.el('size-filter').value,
+      flowStates: KB.el('flow-filter').value ? [KB.el('flow-filter').value] : []
     };
   }
 

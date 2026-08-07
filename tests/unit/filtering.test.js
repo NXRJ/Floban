@@ -335,3 +335,53 @@ test('priority and size are valid sort modes', () => {
   assert.equal(Filtering.isValidSortMode('size'), true);
 });
 
+
+test('flowStates filter matches cards in those states', () => {
+  const blocked = makeCard({ flow: { state: 'blocked', reason: 'x', since: 100, periods: [] } });
+  const waiting = makeCard({ flow: { state: 'waiting', reason: '', since: 100, periods: [] } });
+  assert.equal(Filtering.matchesCard(blocked, makeFilters({ flowStates: ['blocked'] }), ctx()), true);
+  assert.equal(Filtering.matchesCard(waiting, makeFilters({ flowStates: ['blocked'] }), ctx()), false);
+  assert.equal(Filtering.matchesCard(waiting, makeFilters({ flowStates: ['blocked', 'waiting'] }), ctx()), true);
+});
+
+test('cards without flow state default to normal for filtering', () => {
+  const card = makeCard();
+  assert.equal(Filtering.matchesCard(card, makeFilters({ flowStates: ['normal'] }), ctx()), true);
+  assert.equal(Filtering.matchesCard(card, makeFilters({ flowStates: ['paused'] }), ctx()), false);
+});
+
+test('hasActiveFilters detects flowStates filters', () => {
+  assert.equal(Filtering.hasActiveFilters(makeFilters({ flowStates: ['blocked'] })), true);
+});
+
+test('sort by age places oldest first', () => {
+  const old = makeCard({ movedAt: 100 });
+  const fresh = makeCard({ movedAt: 900 });
+  const sorted = [fresh, old].sort((a, b) => Filtering.compareCards(a, b, 'age'));
+  assert.deepEqual(sorted.map(c => c.movedAt), [100, 900]);
+});
+
+test('sort by blocked-duration uses lifecycle duration', () => {
+  const now = 10000;
+  const longBlocked = makeCard({
+    id: 'long',
+    flow: {
+      state: 'blocked',
+      reason: '',
+      since: 2000,
+      periods: [{ state: 'blocked', reason: '', startedAt: 0, endedAt: 1000 }]
+    }
+  });
+  const shortBlocked = makeCard({ id: 'short', flow: { state: 'blocked', reason: '', since: 9000, periods: [] } });
+  assert.equal(Filtering.compareCards(longBlocked, shortBlocked, 'blocked-duration', { now }) < 0, true);
+  const sorted = [shortBlocked, longBlocked].sort((a, b) => Filtering.compareCards(a, b, 'blocked-duration', { now }));
+  assert.equal(sorted[0].id, 'long');
+});
+
+test('blocked-duration sort is valid and stable for equal durations', () => {
+  const now = 10000;
+  const a = makeCard({ id: 'a', flow: { state: 'blocked', reason: '', since: 5000, periods: [] } });
+  const b = makeCard({ id: 'b', flow: { state: 'blocked', reason: '', since: 5000, periods: [] } });
+  assert.equal(Filtering.compareCards(a, b, 'blocked-duration', { now }), 0);
+});
+

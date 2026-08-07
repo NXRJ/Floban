@@ -2,7 +2,10 @@
   var dateCore = (typeof module === 'object' && module.exports)
     ? require('./date.js')
     : root.KB.Core.Date;
-  var api = factory(dateCore);
+  var lifecycleCore = (typeof module === 'object' && module.exports)
+    ? require('./lifecycle.js')
+    : root.KB.Core.Lifecycle;
+  var api = factory(dateCore, lifecycleCore);
 
   if (typeof module === 'object' && module.exports) {
     module.exports = api;
@@ -13,9 +16,9 @@
   }
 })(
   typeof globalThis !== 'undefined' ? globalThis : this,
-  function (DateCore) {
+  function (DateCore, Lifecycle) {
     var UNASSIGNED = '__unassigned__';
-    var SORT_MODES = ['manual', 'due', 'created', 'updated', 'priority', 'size'];
+    var SORT_MODES = ['manual', 'due', 'created', 'updated', 'priority', 'size', 'age', 'blocked-duration'];
     var PRIORITY_WEIGHT = { none: 0, low: 1, medium: 2, high: 3, urgent: 4 };
     var SIZE_WEIGHT = { none: 0, xs: 1, s: 2, m: 3, l: 4, xl: 5 };
 
@@ -58,15 +61,21 @@
       if (filter.size) {
         if (String(card.size || 'none') !== filter.size) return false;
       }
+      if (filter.flowStates && filter.flowStates.length > 0) {
+        var cardState = card.flow && card.flow.state ? card.flow.state : 'normal';
+        if (filter.flowStates.indexOf(cardState) === -1) return false;
+      }
       return true;
     }
 
     function hasActiveFilters(filters) {
       var filter = filters || {};
-      return Boolean(filter.search || labelsList(filter).length > 0 || filter.assignee || filter.due || filter.priority || filter.size);
+      return Boolean(filter.search || labelsList(filter).length > 0 || filter.assignee || filter.due ||
+        filter.priority || filter.size || (filter.flowStates && filter.flowStates.length > 0));
     }
 
-    function compareCards(cardA, cardB, sortMode) {
+    function compareCards(cardA, cardB, sortMode, opts) {
+      var now = opts && opts.now || null;
       switch (sortMode) {
         case 'due': {
           var a = cardA.due || '';
@@ -85,6 +94,16 @@
           var sa = SIZE_WEIGHT[cardA.size] || 0;
           var sb = SIZE_WEIGHT[cardB.size] || 0;
           return sb - sa;
+        }
+        case 'age': {
+          var aa = cardA.movedAt || cardA.createdAt || 0;
+          var ab = cardB.movedAt || cardB.createdAt || 0;
+          return aa - ab;
+        }
+        case 'blocked-duration': {
+          var da = now && Lifecycle ? Lifecycle.totalFlowDuration(cardA, 'blocked', now) : 0;
+          var db = now && Lifecycle ? Lifecycle.totalFlowDuration(cardB, 'blocked', now) : 0;
+          return db - da;
         }
         case 'created':
           return (cardA.createdAt || 0) - (cardB.createdAt || 0);
