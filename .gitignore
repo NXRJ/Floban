@@ -35,6 +35,8 @@ src/plugins/impeccable-live.client.ts
 node_modules/
 .opencode/
 .impeccable/
+# handoff documents are not tracked
+docs/
 # universal
 .env
 .env.*

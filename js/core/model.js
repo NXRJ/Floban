@@ -33,7 +33,15 @@
         due: '',
         checklist: [],
         archivedAt: null,
-        fromColumn: ''
+        fromColumn: '',
+        priority: 'none',
+        size: 'none',
+        startedAt: null,
+        completedAt: null,
+        flow: { state: 'normal', reason: '', since: null, periods: [] },
+        dependencies: { blockers: [], related: [] },
+        recurrenceId: null,
+        transitions: []
       }, overrides || {});
     }
 
@@ -43,8 +51,18 @@
         id: d.uid(),
         title: '',
         isDone: false,
+        role: 'queue',
         wipLimit: 0,
         collapsed: false,
+        policy: {
+          wipMode: 'off',
+          overrideRequiresReason: false,
+          entryCriteria: [],
+          exitCriteria: [],
+          defaultLabelIds: [],
+          defaultAssignee: '',
+          countsTowardCycleTime: true
+        },
         cards: []
       }, overrides || {});
     }
@@ -59,11 +77,95 @@
       return {
         id: d.uid(),
         name: name || 'New board',
+        flowSettings: {
+          staleAfterDays: 7,
+          oversizedChecklistThreshold: 10,
+          completedReviewAfterDays: 7,
+          slePercentile: 0.85,
+          manualSleDays: null
+        },
         labels: [],
         templates: [],
         columns: [],
         archive: { cards: [], columns: [] }
       };
+    }
+
+    function createInboxItem(overrides, deps) {
+      var d = resolveDeps(deps);
+      return Object.assign({
+        id: d.uid(),
+        title: '',
+        note: '',
+        url: '',
+        capturedAt: d.now(),
+        updatedAt: d.now()
+      }, overrides || {});
+    }
+
+    function createLens(overrides, deps) {
+      var d = resolveDeps(deps);
+      return Object.assign({
+        id: d.uid(),
+        name: 'New lens',
+        scope: 'active-board',
+        boardIds: [],
+        query: {
+          search: '',
+          labelIds: [],
+          assignees: [],
+          due: 'any',
+          priorities: [],
+          sizes: [],
+          flowStates: [],
+          blockedOnly: false,
+          readyOnly: false,
+          columnRoles: [],
+          includeCompleted: true
+        },
+        sort: { field: 'manual', direction: 'asc' },
+        display: { density: 'comfortable', groupBy: 'board' },
+        createdAt: d.now(),
+        updatedAt: d.now()
+      }, overrides || {});
+    }
+
+    function createRecurrence(overrides, deps) {
+      var d = resolveDeps(deps);
+      return Object.assign({
+        id: d.uid(),
+        enabled: true,
+        mode: 'scheduled',
+        schedule: {
+          frequency: 'weekly',
+          interval: 1,
+          weekdays: [],
+          dayOfMonth: null,
+          delayAfterCompletionDays: null
+        },
+        target: { boardId: '', columnId: '' },
+        template: {
+          title: '',
+          description: '',
+          labelIds: [],
+          assignee: '',
+          priority: 'none',
+          size: 'none',
+          checklist: []
+        },
+        dueOffsetDays: null,
+        overlapPolicy: 'single-active',
+        missedPolicy: 'create-one',
+        activeCardRef: null,
+        nextRunAt: null,
+        lastRunAt: null,
+        lastCompletedAt: null,
+        endAt: null,
+        remainingOccurrences: null,
+        pausedReason: '',
+        createdAt: d.now(),
+        updatedAt: d.now()
+      }, overrides || {});
     }
 
     function createTemplate(overrides, deps) {
@@ -91,7 +193,10 @@
       createLabel: createLabel,
       createBoard: createBoard,
       createTemplate: createTemplate,
-      cloneChecklist: cloneChecklist
+      cloneChecklist: cloneChecklist,
+      createInboxItem: createInboxItem,
+      createLens: createLens,
+      createRecurrence: createRecurrence
     };
   }
 );

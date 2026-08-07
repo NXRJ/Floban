@@ -1,0 +1,156 @@
+{
+  "version": 2,
+  "theme": "light",
+  "activeBoardId": "board-a",
+  "boards": [
+    {
+      "id": "board-a",
+      "name": "Alpha",
+      "labels": [
+        { "id": "l-a1", "name": "Bug", "color": "#c81e14" },
+        { "id": "l-a2", "name": "Feature", "color": "#2a58c4" }
+      ],
+      "templates": [
+        {
+          "id": "tpl-a",
+          "title": "Bug report",
+          "description": "Steps to reproduce.",
+          "labels": ["l-a1"],
+          "assignee": "",
+          "checklist": []
+        }
+      ],
+      "columns": [
+        {
+          "id": "col-a1",
+          "title": "To Do",
+          "isDone": false,
+          "wipLimit": 3,
+          "collapsed": false,
+          "cards": [
+            {
+              "id": "card-a1",
+              "columnId": "col-a1",
+              "title": "Fix login flow",
+              "description": "Session cookie issue.",
+              "labels": ["l-a1"],
+              "assignee": "Alex",
+              "createdAt": 1000,
+              "updatedAt": 1200,
+              "movedAt": 1100,
+              "due": "2026-08-10",
+              "checklist": [
+                { "id": "i-1", "text": "Reproduce", "done": true },
+                { "id": "i-2", "text": "Fix", "done": false }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "col-a2",
+          "title": "In Progress",
+          "isDone": false,
+          "wipLimit": 0,
+          "collapsed": false,
+          "cards": [
+            {
+              "id": "card-a2",
+              "columnId": "col-a2",
+              "title": "Write onboarding copy",
+              "description": "",
+              "labels": ["l-a2"],
+              "assignee": "",
+              "createdAt": 900,
+              "updatedAt": 1300,
+              "movedAt": 1300,
+              "due": "",
+              "checklist": []
+            }
+          ]
+        },
+        {
+          "id": "col-a3",
+          "title": "Done",
+          "isDone": true,
+          "wipLimit": 0,
+          "collapsed": false,
+          "cards": [
+            {
+              "id": "card-a3",
+              "columnId": "col-a3",
+              "title": "Set up CI",
+              "description": "",
+              "labels": ["l-a2"],
+              "assignee": "Alex",
+              "createdAt": 800,
+              "updatedAt": 1000,
+              "movedAt": 900,
+              "due": "",
+              "checklist": []
+            }
+          ]
+        }
+      ],
+      "archive": {
+        "cards": [],
+        "columns": [
+          {
+            "id": "col-arch",
+            "title": "Parked",
+            "isDone": false,
+            "wipLimit": 0,
+            "archivedAt": 1400,
+            "cards": [
+              {
+                "id": "card-arch1",
+                "columnId": "col-arch",
+                "title": "Old idea",
+                "description": "",
+                "labels": [],
+                "assignee": "",
+                "createdAt": 500,
+                "updatedAt": 600,
+                "movedAt": 600,
+                "due": "",
+                "checklist": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "board-b",
+      "name": "Beta",
+      "labels": [
+        { "id": "l-b1", "name": "Chore", "color": "#6d30d6" }
+      ],
+      "templates": [],
+      "columns": [
+        {
+          "id": "col-b1",
+          "title": "To Do",
+          "isDone": false,
+          "wipLimit": 0,
+          "collapsed": false,
+          "cards": [
+            {
+              "id": "card-b1",
+              "columnId": "col-b1",
+              "title": "Renew domain",
+              "description": "",
+              "labels": ["l-b1"],
+              "assignee": "Sam",
+              "createdAt": 1500,
+              "updatedAt": 1600,
+              "movedAt": 1600,
+              "due": "",
+              "checklist": []
+            }
+          ]
+        }
+      ],
+      "archive": { "cards": [], "columns": [] }
+    }
+  ]
+}

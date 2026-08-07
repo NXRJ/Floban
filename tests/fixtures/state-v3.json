@@ -1,0 +1,207 @@
+{
+  "version": 3,
+  "theme": "dark",
+  "activeBoardId": "board-1",
+  "inbox": {
+    "items": [
+      {
+        "id": "in-1",
+        "title": "Look into printer drivers",
+        "note": "Sam mentioned the office printer again",
+        "url": "https://example.com/printer",
+        "capturedAt": 100,
+        "updatedAt": 100
+      }
+    ]
+  },
+  "lenses": [
+    {
+      "id": "lens-1",
+      "name": "My focus",
+      "scope": "all-boards",
+      "boardIds": [],
+      "query": {
+        "search": "api",
+        "labelIds": [],
+        "assignees": [],
+        "due": "any",
+        "priorities": ["high"],
+        "sizes": [],
+        "flowStates": ["blocked"],
+        "blockedOnly": false,
+        "readyOnly": false,
+        "columnRoles": [],
+        "includeCompleted": false
+      },
+      "sort": { "field": "priority", "direction": "desc" },
+      "display": { "density": "compact", "groupBy": "board" },
+      "createdAt": 200,
+      "updatedAt": 200
+    }
+  ],
+  "recurrences": [
+    {
+      "id": "rec-1",
+      "enabled": true,
+      "mode": "scheduled",
+      "schedule": {
+        "frequency": "weekly",
+        "interval": 1,
+        "weekdays": [1],
+        "dayOfMonth": null,
+        "delayAfterCompletionDays": null
+      },
+      "target": { "boardId": "board-1", "columnId": "col-1" },
+      "template": {
+        "title": "Weekly sync",
+        "description": "",
+        "labelIds": ["l-chore"],
+        "assignee": "Sam",
+        "priority": "none",
+        "size": "s",
+        "checklist": []
+      },
+      "dueOffsetDays": 0,
+      "overlapPolicy": "single-active",
+      "missedPolicy": "create-one",
+      "activeCardRef": { "boardId": "board-1", "cardId": "card-1" },
+      "nextRunAt": 100000,
+      "lastRunAt": 50000,
+      "lastCompletedAt": null,
+      "endAt": null,
+      "remainingOccurrences": null,
+      "pausedReason": "",
+      "createdAt": 200,
+      "updatedAt": 200
+    }
+  ],
+  "boards": [
+    {
+      "id": "board-1",
+      "name": "My Board",
+      "flowSettings": {
+        "staleAfterDays": 7,
+        "oversizedChecklistThreshold": 10,
+        "completedReviewAfterDays": 7,
+        "slePercentile": 0.85,
+        "manualSleDays": null
+      },
+      "labels": [
+        { "id": "l-bug", "name": "Bug", "color": "#c81e14" },
+        { "id": "l-feat", "name": "Feature", "color": "#2a58c4" },
+        { "id": "l-chore", "name": "Chore", "color": "#6d30d6" }
+      ],
+      "templates": [],
+      "columns": [
+        {
+          "id": "col-1",
+          "title": "To Do",
+          "isDone": false,
+          "role": "queue",
+          "wipLimit": 0,
+          "collapsed": false,
+          "policy": {
+            "wipMode": "off",
+            "overrideRequiresReason": false,
+            "entryCriteria": [],
+            "exitCriteria": [],
+            "defaultLabelIds": [],
+            "defaultAssignee": "",
+            "countsTowardCycleTime": true
+          },
+          "cards": [
+            {
+              "id": "card-1",
+              "columnId": "col-1",
+              "title": "Plan the weekly sync",
+              "description": "",
+              "labels": ["l-chore"],
+              "assignee": "Sam",
+              "createdAt": 100,
+              "updatedAt": 100,
+              "movedAt": 100,
+              "due": "",
+              "checklist": [],
+              "priority": "high",
+              "size": "m",
+              "startedAt": null,
+              "completedAt": null,
+              "flow": { "state": "normal", "reason": "", "since": null, "periods": [] },
+              "dependencies": {
+                "blockers": [{ "boardId": "board-1", "cardId": "card-2" }],
+                "related": []
+              },
+              "recurrenceId": "rec-1",
+              "transitions": [
+                { "fromColumnId": null, "toColumnId": "col-1", "fromRole": null, "toRole": "queue", "at": 100 }
+              ]
+            },
+            {
+              "id": "card-2",
+              "columnId": "col-1",
+              "title": "Design API surface",
+              "description": "",
+              "labels": ["l-feat"],
+              "assignee": "",
+              "createdAt": 150,
+              "updatedAt": 150,
+              "movedAt": 150,
+              "due": "",
+              "checklist": [],
+              "priority": "none",
+              "size": "xl",
+              "startedAt": null,
+              "completedAt": null,
+              "flow": {
+                "state": "blocked",
+                "reason": "Waiting for decisions",
+                "since": 160,
+                "periods": []
+              },
+              "dependencies": { "blockers": [], "related": [] },
+              "recurrenceId": null,
+              "transitions": []
+            }
+          ]
+        },
+        {
+          "id": "col-2",
+          "title": "In Progress",
+          "isDone": false,
+          "role": "active",
+          "wipLimit": 0,
+          "collapsed": false,
+          "policy": {
+            "wipMode": "off",
+            "overrideRequiresReason": false,
+            "entryCriteria": [],
+            "exitCriteria": [],
+            "defaultLabelIds": [],
+            "defaultAssignee": "",
+            "countsTowardCycleTime": true
+          },
+          "cards": []
+        },
+        {
+          "id": "col-3",
+          "title": "Done",
+          "isDone": true,
+          "role": "done",
+          "wipLimit": 0,
+          "collapsed": false,
+          "policy": {
+            "wipMode": "off",
+            "overrideRequiresReason": false,
+            "entryCriteria": [],
+            "exitCriteria": [],
+            "defaultLabelIds": [],
+            "defaultAssignee": "",
+            "countsTowardCycleTime": true
+          },
+          "cards": []
+        }
+      ],
+      "archive": { "cards": [], "columns": [] }
+    }
+  ]
+}

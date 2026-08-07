@@ -91,9 +91,9 @@ function stateWithChecklist() {
   };
 }
 
-test('a valid version-1 state migrates to version 2', () => {
+test('a valid version-1 state migrates to version 3', () => {
   const result = Migration.migrateV1(v1Fixture, makeDeps());
-  assert.equal(result.version, 2);
+  assert.equal(result.version, 3);
   assert.equal(result.boards.length, 1);
   assert.equal(Array.isArray(result.boards[0].columns), true);
   assert.equal(Array.isArray(result.boards[0].archive.cards), true);
@@ -187,7 +187,7 @@ test('v1 migration does not mutate the input state', () => {
 
 test('normalizeState heals a corrupt version-2 payload', () => {
   const result = Migration.normalizeState(corruptFixture, makeDeps());
-  assert.equal(result.version, 2);
+  assert.equal(result.version, 3);
   assert.equal(result.theme, 'dark');
   assert.equal(result.activeBoardId, 'board-1');
   const board = result.boards[0];
@@ -350,7 +350,7 @@ test('adoptBoardShape does not mutate its input', () => {
 test('parseImportPayload recognizes a full-backup payload', () => {
   const result = Migration.parseImportPayload(JSON.stringify(v2Fixture), null, makeDeps());
   assert.equal(result.kind, 'all');
-  assert.equal(result.state.version, 2);
+  assert.equal(result.state.version, 3);
   assert.equal(result.state.boards[0].id, 'board-1');
 });
 
@@ -575,4 +575,293 @@ test('adoptBoardShape deep-clones checklist items', () => {
   const item = board.columns[0].cards[0].checklist[0];
   assert.deepEqual(item, { id: 'i-1', text: 'Step', done: false });
   assert.notEqual(item, raw.columns[0].cards[0].checklist[0]);
+});
+
+// ---- Version 3 migration coverage ----
+
+const v3Fixture = require('../fixtures/state-v3.json');
+const v3MalformedFixture = require('../fixtures/state-v3-malformed.json');
+const v2RichFixture = require('../fixtures/state-v2-rich.json');
+
+test('a clean version-3 payload survives normalization unchanged', () => {
+  const result = Migration.normalizeState(v3Fixture, makeDeps());
+  assert.equal(result.version, 3);
+  assert.equal(result.boards[0].id, 'board-1');
+  assert.equal(result.boards[0].columns[0].cards[0].id, 'card-1');
+  assert.equal(result.inbox.items[0].id, 'in-1');
+  assert.equal(result.lenses[0].id, 'lens-1');
+  assert.equal(result.recurrences[0].id, 'rec-1');
+});
+
+test('v3 normalization keeps valid identifiers and does not regenerate them', () => {
+  const deps = makeDeps();
+  const result = Migration.normalizeState(v3Fixture, deps);
+  assert.equal(result.boards[0].id, 'board-1');
+  assert.equal(result.boards[0].columns[0].id, 'col-1');
+  assert.equal(result.boards[0].columns[0].cards[0].id, 'card-1');
+  assert.equal(result.inbox.items[0].id, 'in-1');
+});
+
+test('v3 normalization adds empty inbox lenses and recurrences to legacy state', () => {
+  const result = Migration.normalizeState(v2RichFixture, makeDeps());
+  assert.equal(result.version, 3);
+  assert.deepEqual(result.inbox, { items: [] });
+  assert.deepEqual(result.lenses, []);
+  assert.deepEqual(result.recurrences, []);
+});
+
+test('v2 rich state gains flow settings, roles and policies', () => {
+  const result = Migration.normalizeState(v2RichFixture, makeDeps());
+  const board = result.boards[0];
+  assert.deepEqual(board.flowSettings, {
+    staleAfterDays: 7,
+    oversizedChecklistThreshold: 10,
+    completedReviewAfterDays: 7,
+    slePercentile: 0.85,
+    manualSleDays: null
+  });
+  assert.equal(board.columns[0].role, 'queue');
+  assert.equal(board.columns[1].role, 'active');
+  assert.equal(board.columns[2].role, 'done');
+  assert.equal(board.columns[2].isDone, true);
+  assert.equal(board.columns[2].policy.wipMode, 'off');
+  assert.equal(board.columns[0].policy.wipMode, 'soft');
+  assert.deepEqual(board.columns[0].policy.entryCriteria, []);
+  assert.equal(board.columns[0].policy.countsTowardCycleTime, true);
+});
+
+test('legacy isDone columns normalize to the done role', () => {
+  const raw = JSON.parse(JSON.stringify(v2Fixture));
+  const result = Migration.normalizeState(raw, makeDeps());
+  assert.equal(result.boards[0].columns[0].role, 'queue');
+  assert.equal(result.boards[0].columns[1].role, 'active');
+  const rawDone = JSON.parse(JSON.stringify(v2Fixture));
+  rawDone.boards[0].columns[0].isDone = true;
+  const doneResult = Migration.normalizeState(rawDone, makeDeps());
+  assert.equal(doneResult.boards[0].columns[0].role, 'done');
+});
+
+test('column role is inferred from the title when missing', () => {
+  const raw = JSON.parse(JSON.stringify(v2RichFixture));
+  raw.boards[0].columns[0].title = 'Backlog';
+  const result = Migration.normalizeState(raw, makeDeps());
+  assert.equal(result.boards[0].columns[0].role, 'backlog');
+  const rawDone = JSON.parse(JSON.stringify(v2RichFixture));
+  rawDone.boards[0].columns[0].title = 'Shipped';
+  assert.equal(Migration.normalizeState(rawDone, makeDeps()).boards[0].columns[0].role, 'done');
+});
+
+test('v2 cards gain priority size lifecycle flow and dependency defaults', () => {
+  const result = Migration.normalizeState(v2RichFixture, makeDeps());
+  const card = result.boards[0].columns[0].cards[0];
+  assert.equal(card.priority, 'none');
+  assert.equal(card.size, 'none');
+  assert.equal(card.startedAt, null);
+  assert.equal(card.completedAt, null);
+  assert.deepEqual(card.flow, { state: 'normal', reason: '', since: null, periods: [] });
+  assert.deepEqual(card.dependencies, { blockers: [], related: [] });
+  assert.equal(card.recurrenceId, null);
+  assert.deepEqual(card.transitions, []);
+});
+
+test('v1 migration produces a full version-3 state', () => {
+  const result = Migration.migrateV1(v1Fixture, makeDeps());
+  assert.equal(result.version, 3);
+  assert.deepEqual(result.inbox, { items: [] });
+  assert.deepEqual(result.lenses, []);
+  assert.deepEqual(result.recurrences, []);
+});
+
+test('malformed v3 inbox items are normalized and deduplicated', () => {
+  const result = Migration.normalizeState(v3MalformedFixture, makeDeps());
+  const items = result.inbox.items;
+  assert.equal(items.length, 3);
+  assert.equal(items[0].id, 'in-1');
+  assert.equal(items[0].title, 'Valid inbox item');
+  assert.equal(items[0].url, 'javascript:alert(1)');
+  assert.equal(typeof items[1].id, 'string');
+  assert.equal(items[1].title, '');
+  assert.equal(items[2].title, 'No id here');
+});
+
+test('malformed lenses are normalized to safe shapes', () => {
+  const result = Migration.normalizeState(v3MalformedFixture, makeDeps());
+  assert.equal(result.lenses.length, 2);
+  const first = result.lenses[0];
+  assert.equal(first.scope, 'selected-boards');
+  assert.deepEqual(first.boardIds, ['board-1']);
+  assert.deepEqual(first.query.priorities, []);
+  assert.equal(first.query.due, 'any');
+  assert.equal(first.sort.field, 'manual');
+  assert.equal(first.sort.direction, 'desc');
+  assert.equal(first.display.density, 'comfortable');
+  assert.equal(first.display.groupBy, 'board');
+  assert.equal(result.lenses[1].scope, 'all-boards');
+  assert.equal(result.lenses[1].name, 'Lens');
+});
+
+test('malformed recurrences are normalized to safe shapes', () => {
+  const result = Migration.normalizeState(v3MalformedFixture, makeDeps());
+  const rec = result.recurrences.find(r => r.id === 'rec-1');
+  assert.equal(rec.mode, 'scheduled');
+  assert.equal(rec.schedule.frequency, 'weekly');
+  assert.equal(rec.schedule.interval, 1);
+  assert.deepEqual(rec.schedule.weekdays, []);
+  assert.equal(rec.overlapPolicy, 'single-active');
+  assert.equal(rec.missedPolicy, 'create-one');
+  assert.equal(rec.template.priority, 'none');
+  assert.equal(rec.template.checklist.length, 1);
+  assert.equal(rec.template.checklist[0].done, true);
+  const rec2 = result.recurrences.find(r => r.id === 'rec-2');
+  assert.equal(rec2.enabled, false);
+  assert.equal(rec2.mode, 'after-completion');
+  assert.equal(rec2.schedule.delayAfterCompletionDays, 7);
+});
+
+test('broken dependency references are removed during v3 normalization', () => {
+  const result = Migration.normalizeState(v3MalformedFixture, makeDeps());
+  const card = result.boards[0].columns[0].cards[0];
+  assert.deepEqual(card.dependencies.blockers, [
+    { boardId: 'board-1', cardId: 'card-2' }
+  ]);
+  assert.deepEqual(card.dependencies.related, [{ boardId: 'board-1', cardId: 'card-3' }]);
+});
+
+test('self references are removed during v3 normalization', () => {
+  const result = Migration.normalizeState(v3MalformedFixture, makeDeps());
+  const card = result.boards[0].columns[0].cards[0];
+  assert.ok(card.dependencies.blockers.every(b => b.cardId !== 'card-1'));
+});
+
+test('v3 normalization repairs stale columnId ownership', () => {
+  const result = Migration.normalizeState(v3MalformedFixture, makeDeps());
+  assert.equal(result.boards[0].columns[0].cards[0].columnId, 'col-1');
+});
+
+test('malformed priority size and flow values are clamped', () => {
+  const result = Migration.normalizeState(v3MalformedFixture, makeDeps());
+  const card = result.boards[0].columns[0].cards[0];
+  assert.equal(card.priority, 'urgent');
+  assert.equal(card.size, 'none');
+  assert.equal(card.startedAt, null);
+  assert.equal(card.flow.state, 'normal');
+  assert.equal(card.flow.since, 99);
+  assert.equal(card.flow.periods.length, 1);
+  assert.equal(card.flow.periods[0].reason, 'x');
+  assert.equal(card.recurrenceId, 'rec-1');
+  assert.equal(card.transitions.length, 1);
+  assert.equal(card.transitions[0].toRole, 'backlog');
+});
+
+test('invalid flow periods and transitions are dropped', () => {
+  const result = Migration.normalizeState(v3MalformedFixture, makeDeps());
+  const card = result.boards[0].columns[0].cards[0];
+  assert.equal(card.transitions[0].at, 10);
+});
+
+test('v3 normalization keeps archived dependency references', () => {
+  const result = Migration.normalizeState(v3MalformedFixture, makeDeps());
+  const archived = result.boards[0].archive.cards[0];
+  assert.deepEqual(archived.dependencies.blockers, [{ boardId: 'board-1', cardId: 'card-2' }]);
+});
+
+test('v3 normalization is idempotent on malformed payloads', () => {
+  const deps = makeDeps();
+  const once = Migration.normalizeState(v3MalformedFixture, deps);
+  const twice = Migration.normalizeState(once, deps);
+  assert.deepEqual(twice, once);
+});
+
+test('v3 normalization never throws on deeply malformed data', () => {
+  const nasty = {
+    version: 3,
+    boards: [null, 'junk', { id: 5, columns: [{ cards: [null] }] }],
+    inbox: { items: [null, { title: 5 }] },
+    lenses: [null, 5],
+    recurrences: [null, { template: null, schedule: null }]
+  };
+  const result = Migration.normalizeState(nasty, makeDeps());
+  assert.equal(result.version, 3);
+  assert.ok(Array.isArray(result.boards));
+  assert.ok(Array.isArray(result.inbox.items));
+});
+
+test('normalizeState produces a usable default board when recovery is impossible', () => {
+  const result = Migration.normalizeState(null, makeDeps());
+  assert.equal(result.version, 3);
+  assert.deepEqual(result.boards, []);
+  assert.equal(result.activeBoardId, '');
+  const again = Migration.normalizeState(undefined, makeDeps());
+  assert.deepEqual(again, result);
+});
+
+test('v3 normalization supports missing inbox', () => {
+  const raw = JSON.parse(JSON.stringify(v2RichFixture));
+  const result = Migration.normalizeState(raw, makeDeps());
+  assert.deepEqual(result.inbox, { items: [] });
+});
+
+test('recurrence active-card references to deleted cards are cleared', () => {
+  const raw = JSON.parse(JSON.stringify(v3Fixture));
+  raw.boards[0].columns[0].cards = raw.boards[0].columns[0].cards.filter(c => c.id !== 'card-1');
+  const result = Migration.normalizeState(raw, makeDeps());
+  assert.equal(result.recurrences[0].activeCardRef, null);
+});
+
+test('lens scopes referencing deleted boards are cleaned', () => {
+  const raw = JSON.parse(JSON.stringify(v3Fixture));
+  raw.boards = raw.boards.filter(b => b.id !== 'board-1');
+  const result = Migration.normalizeState(raw, makeDeps());
+  assert.equal(result.lenses[0].boardIds.length, 0);
+  assert.equal(result.activeBoardId, '');
+});
+
+test('v3 board-only import rewrites internal dependency references', () => {
+  const boardJson = JSON.stringify({
+    id: 'board-1',
+    name: 'Board',
+    labels: [],
+    templates: [],
+    columns: [{
+      id: 'col-1',
+      title: 'To Do',
+      isDone: false,
+      cards: [
+        { id: 'c-1', title: 'A', columnId: 'col-1', dependencies: { blockers: [{ boardId: 'board-1', cardId: 'c-2' }] } },
+        { id: 'c-2', title: 'B', columnId: 'col-1', dependencies: { blockers: [{ boardId: 'other-board', cardId: 'x' }] } }
+      ]
+    }],
+    archive: { cards: [], columns: [] }
+  });
+  const result = Migration.parseImportPayload(boardJson, null, makeDeps());
+  assert.equal(result.kind, 'board');
+  const board = result.board;
+  const cardA = board.columns[0].cards[0];
+  assert.deepEqual(cardA.dependencies.blockers, [{ boardId: board.id, cardId: 'c-2' }]);
+  assert.deepEqual(board.columns[0].cards[1].dependencies.blockers, []);
+});
+
+test('v3 board import preserves flow settings and policies', () => {
+  const boardJson = JSON.stringify({
+    id: 'b-9',
+    name: 'Board',
+    flowSettings: { staleAfterDays: 3, manualSleDays: 12 },
+    labels: [],
+    templates: [],
+    columns: [{ id: 'col-1', title: 'To Do', isDone: false, role: 'queue', policy: { wipMode: 'hard', entryCriteria: ['Ready'] } }],
+    archive: { cards: [], columns: [] }
+  });
+  const result = Migration.parseImportPayload(boardJson, null, makeDeps());
+  assert.equal(result.board.flowSettings.staleAfterDays, 3);
+  assert.equal(result.board.flowSettings.manualSleDays, 12);
+  assert.equal(result.board.columns[0].policy.wipMode, 'hard');
+  assert.deepEqual(result.board.columns[0].policy.entryCriteria, ['Ready']);
+});
+
+test('v3 full-backup import preserves inbox lenses and recurrences', () => {
+  const result = Migration.parseImportPayload(JSON.stringify(v3Fixture), null, makeDeps());
+  assert.equal(result.kind, 'all');
+  assert.equal(result.state.inbox.items.length, 1);
+  assert.equal(result.state.lenses.length, 1);
+  assert.equal(result.state.recurrences.length, 1);
 });

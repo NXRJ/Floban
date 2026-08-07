@@ -47,9 +47,9 @@
       freshLabel('Chore', '#6d30d6')
     ];
     board.labels = labels;
-    var todo = freshColumn({ title: 'To Do' });
-    var progress = freshColumn({ title: 'In Progress' });
-    var done = freshColumn({ title: 'Done', isDone: true });
+    var todo = freshColumn({ title: 'To Do', role: 'queue' });
+    var progress = freshColumn({ title: 'In Progress', role: 'active' });
+    var done = freshColumn({ title: 'Done', isDone: true, role: 'done' });
 
     function card(columnId, title, description, labelNames, assignee, extra) {
       return freshCard(columnId, Object.assign({
@@ -93,9 +93,12 @@
     ];
 
     return {
-      version: 2,
+      version: 3,
       theme: 'dark',
       activeBoardId: board.id,
+      inbox: { items: [] },
+      lenses: [],
+      recurrences: [],
       boards: [board]
     };
   }
@@ -110,7 +113,7 @@
           save();
           return;
         }
-        if (parsed && parsed.version === 2 && Array.isArray(parsed.boards) && parsed.boards.length > 0) {
+        if (parsed && Array.isArray(parsed.boards) && parsed.boards.length > 0) {
           state = KB.Core.Migration.normalizeState(parsed, deps());
           save();
           return;
