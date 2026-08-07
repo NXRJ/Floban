@@ -216,6 +216,11 @@
       var completedReviewAfterDays = options.completedReviewAfterDays !== undefined ? options.completedReviewAfterDays : (flow.completedReviewAfterDays || 7);
       var sle = calculateSle(board, options.percentile);
       var today = isoToday(now);
+      var resolved = Relations.resolvedIndex(state);
+      var cards = Relations.cardIndex(state);
+      var unresolvedLookup = function (ref) {
+        return Relations.getUnresolvedBlockers(state, ref, resolved, cards);
+      };
 
       var items = [];
       (board.columns || []).forEach(function (column) {
@@ -225,7 +230,8 @@
             oversizedThreshold: oversizedThreshold,
             completedReviewAfterDays: completedReviewAfterDays,
             sleDays: sle.sleDays,
-            today: today
+            today: today,
+            unresolved: unresolvedLookup
           }));
         });
       });
@@ -258,7 +264,7 @@
         score = score === null || score > 1 ? 1 : score;
       }
 
-      var unresolved = Relations.getUnresolvedBlockers(state, ref);
+      var unresolved = options.unresolved ? options.unresolved(ref) : Relations.getUnresolvedBlockers(state, ref);
       if (unresolved.length > 0) {
         var depDays = (now - (card.movedAt || card.createdAt || now)) / MS_PER_DAY;
         reasons.push({
