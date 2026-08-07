@@ -3,8 +3,7 @@
   var HISTORY_LIMIT = 50;
 
   var state = null;
-  var undoStack = [];
-  var redoStack = [];
+  var history = KB.Core.History.createHistory(HISTORY_LIMIT);
 
   function uid() {
     if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
@@ -133,25 +132,37 @@
   }
 
   function pushHistory() {
-    redoStack.length = 0;
-    undoStack.push(JSON.stringify(state));
-    if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+    history.record(state);
   }
 
   function undo() {
-    if (undoStack.length === 0) return false;
-    redoStack.push(JSON.stringify(state));
-    state = JSON.parse(undoStack.pop());
+    var restored = history.undo(state);
+    if (restored === null) return false;
+    state = restored;
     save();
     return true;
   }
 
   function redo() {
-    if (redoStack.length === 0) return false;
-    undoStack.push(JSON.stringify(state));
-    state = JSON.parse(redoStack.pop());
+    var restored = history.redo(state);
+    if (restored === null) return false;
+    state = restored;
     save();
     return true;
+  }
+
+  function commit(operation) {
+    var result = operation(state);
+
+    if (!result.changed) {
+      return result.value;
+    }
+
+    pushHistory();
+    state = result.state;
+    save();
+
+    return result.value;
   }
 
   function activeBoard() {
@@ -178,13 +189,8 @@
 
   function anyCardUsesLabel(labelId) {
     var board = activeBoard();
-    function uses(cards) {
-      return cards.some(function (c) { return c.labels && c.labels.indexOf(labelId) !== -1; });
-    }
-    if (board.columns.some(function (c) { return uses(c.cards); })) return true;
-    if (uses(board.archive.cards)) return true;
-    if (board.templates.some(function (t) { return t.labels && t.labels.indexOf(labelId) !== -1; })) return true;
-    return board.archive.columns.some(function (c) { return uses(c.cards); });
+    if (!board) return false;
+    return KB.Core.Operations.labelInUse(board, labelId);
   }
 
   function addColumn(title, isDone, skipHistory) {
@@ -204,26 +210,9 @@
   }
 
   function deleteColumn(id) {
-    pushHistory();
-    var board = activeBoard();
-    var column = findColumn(id);
-    if (!column) return 0;
-    var archivedAt = Date.now();
-    column.cards.forEach(function (card) {
-      card.archivedAt = archivedAt;
-      card.fromColumn = column.title;
+    return commit(function (current) {
+      return KB.Core.Operations.deleteColumn(current, { columnId: id }, deps());
     });
-    board.archive.columns.push({
-      id: column.id,
-      title: column.title,
-      isDone: column.isDone,
-      wipLimit: column.wipLimit,
-      cards: column.cards,
-      archivedAt: archivedAt
-    });
-    board.columns = board.columns.filter(function (c) { return c.id !== id; });
-    save();
-    return column.cards.length;
   }
 
   function moveColumn(id, toIndex) {
@@ -275,87 +264,38 @@
   }
 
   function moveCard(columnId, cardId, targetColumnId, toIndex) {
-    pushHistory();
-    var source = findColumn(columnId);
-    var target = findColumn(targetColumnId);
-    if (!source || !target) return;
-    var fromIndex = source.cards.findIndex(function (c) { return c.id === cardId; });
-    if (fromIndex === -1) return;
-    var card = source.cards.splice(fromIndex, 1)[0];
-    var index = toIndex;
-    if (columnId === targetColumnId && fromIndex < index) index -= 1;
-    index = Math.max(0, Math.min(index, target.cards.length));
-    card.columnId = targetColumnId;
-    if (targetColumnId !== columnId) card.movedAt = Date.now();
-    target.cards.splice(index, 0, card);
-    save();
+    return commit(function (current) {
+      return KB.Core.Operations.moveCard(current, {
+        columnId: columnId,
+        cardId: cardId,
+        targetColumnId: targetColumnId,
+        toIndex: toIndex
+      }, deps());
+    });
   }
 
   function duplicateCard(columnId, cardId) {
-    pushHistory();
-    var column = findColumn(columnId);
-    var card = findCard(columnId, cardId);
-    if (!column || !card) return null;
-    var copy = freshCard(columnId, Object.assign({}, card, {
-      id: uid(),
-      title: 'Copy of ' + card.title,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      movedAt: Date.now(),
-      checklist: (card.checklist || []).map(function (item) {
-        return Object.assign({}, item, { id: uid() });
-      }),
-      archivedAt: null,
-      fromColumn: ''
-    }));
-    var index = column.cards.findIndex(function (c) { return c.id === cardId; });
-    column.cards.splice(index + 1, 0, copy);
-    save();
-    return copy;
+    return commit(function (current) {
+      return KB.Core.Operations.duplicateCard(current, { columnId: columnId, cardId: cardId }, deps());
+    });
   }
 
   function archiveCard(columnId, cardId) {
-    pushHistory();
-    var board = activeBoard();
-    var column = findColumn(columnId);
-    var card = findCard(columnId, cardId);
-    if (!column || !card) return;
-    column.cards = column.cards.filter(function (c) { return c.id !== cardId; });
-    card.archivedAt = Date.now();
-    card.fromColumn = column.title;
-    board.archive.cards.push(card);
-    save();
+    return commit(function (current) {
+      return KB.Core.Operations.archiveCard(current, { columnId: columnId, cardId: cardId }, deps());
+    });
   }
 
   function restoreCard(cardId) {
-    pushHistory();
-    var board = activeBoard();
-    var index = board.archive.cards.findIndex(function (c) { return c.id === cardId; });
-    if (index === -1) return;
-    var card = board.archive.cards.splice(index, 1)[0];
-    var column = findColumn(card.columnId) || board.columns[0];
-    if (!column) column = addColumn('To Do', false, true);
-    delete card.archivedAt;
-    delete card.fromColumn;
-    card.movedAt = Date.now();
-    column.cards.push(card);
-    save();
+    return commit(function (current) {
+      return KB.Core.Operations.restoreCard(current, { cardId: cardId }, deps());
+    });
   }
 
   function restoreColumn(columnId) {
-    pushHistory();
-    var board = activeBoard();
-    var index = board.archive.columns.findIndex(function (c) { return c.id === columnId; });
-    if (index === -1) return;
-    var entry = board.archive.columns.splice(index, 1)[0];
-    delete entry.archivedAt;
-    entry.cards.forEach(function (card) {
-      delete card.archivedAt;
-      delete card.fromColumn;
-      card.movedAt = Date.now();
+    return commit(function (current) {
+      return KB.Core.Operations.restoreColumn(current, { columnId: columnId }, deps());
     });
-    board.columns.push(entry);
-    save();
   }
 
   function purgeCard(cardId) {
@@ -379,11 +319,9 @@
   }
 
   function removeLabel(labelId) {
-    if (anyCardUsesLabel(labelId)) return false;
-    pushHistory();
-    activeBoard().labels = activeBoard().labels.filter(function (l) { return l.id !== labelId; });
-    save();
-    return true;
+    return commit(function (current) {
+      return KB.Core.Operations.removeLabel(current, { labelId: labelId });
+    });
   }
 
   function labelInUse(labelId) {
@@ -439,29 +377,15 @@
   }
 
   function duplicateBoard(id) {
-    pushHistory();
-    var source = state.boards.find(function (b) { return b.id === id; });
-    if (!source) return null;
-    var copy = JSON.parse(JSON.stringify(source));
-    copy.id = uid();
-    copy.name = source.name + ' copy';
-    state.boards.push(copy);
-    state.activeBoardId = copy.id;
-    save();
-    return copy;
+    return commit(function (current) {
+      return KB.Core.Operations.duplicateBoard(current, { boardId: id }, deps());
+    });
   }
 
   function deleteBoard(id) {
-    if (state.boards.length <= 1) return false;
-    pushHistory();
-    var index = state.boards.findIndex(function (b) { return b.id === id; });
-    if (index === -1) return false;
-    state.boards.splice(index, 1);
-    if (state.activeBoardId === id) {
-      state.activeBoardId = state.boards[Math.min(index, state.boards.length - 1)].id;
-    }
-    save();
-    return true;
+    return commit(function (current) {
+      return KB.Core.Operations.deleteBoard(current, { boardId: id });
+    });
   }
 
   function setActiveBoard(id) {
