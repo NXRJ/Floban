@@ -901,12 +901,15 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const toolbarShown = !document.querySelector('#bulk-toolbar').hidden;
     const bulk = KB.State.bulkUpdate(KB.Select.refs(), { priority: 'urgent' });
     const archived = KB.State.bulkArchive(KB.Select.refs());
-    const archiveSize = archived.state ? archived.state.boards[0].archive.cards.length : archiveBefore;
+    const archiveSize = archived.state ? archived.state.boards.find(b => b.id === board.id).archive.cards.length : archiveBefore;
     return {
       toolbarShown,
       bulkChanged: Boolean(bulk && bulk.changed),
       archivedCount: archived && archived.changed ? archived.value : 0,
-      archiveDelta: archiveSize - archiveBefore
+      archiveDelta: archiveSize - archiveBefore,
+      archiveBefore: archiveBefore,
+      archiveSize: archiveSize,
+      archivedState: archived && archived.changed ? archived.reason : null
     };
   });
   await sleep(150);
