@@ -693,6 +693,54 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const board = b.boards.find(x => x.id === b.activeBoardId);
     return board.columns.find(c => c.id === ids.col1).cards.some(c => c.id === ids.cardId);
   }, 3000, 'soft wip move undone', softWip);
+
+  // Quick-add into a soft-WIP column warns before adding
+  await page.type('.column:nth-child(2) .qa-input', 'Soft quick-add probe');
+  await page.keyboard.press('Enter');
+  await waitFor(() => [...document.querySelectorAll('.modal-actions .btn')].some(b => b.textContent.trim() === 'Move anyway'), 3000, 'soft quick-add warning');
+  check('quick-add into soft WIP warns before adding', (await page.$$eval('.modal-actions .btn', els => els.map(e => e.textContent.trim()))).includes('Move anyway') === true);
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('.modal-actions .btn')].find(b => b.textContent.trim() === 'Move anyway');
+    if (btn) btn.click();
+  });
+  const softQuickCommitted = await waitFor(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    return board.columns[1].cards.some(c => c.title === 'Soft quick-add probe');
+  }, 3000, 'soft quick-add commits');
+  check('quick-add commits after confirmation', softQuickCommitted);
+
+  await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    board.columns.forEach(col => { col.wipLimit = 0; });
+    localStorage.setItem('kanban.board.v1', JSON.stringify(b));
+  });
+  await page.evaluate(() => KB.App.refresh());
+
+  // ---- Multi-line quick-add is atomic: all lines or none ----
+  const atomicSetup = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col1 = board.columns[0];
+    const count = col1.cards.length;
+    KB.State.updateColumn(col1.id, { wipLimit: count + 1, policy: { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' } });
+    KB.App.refresh();
+    return { count: count };
+  });
+  await page.$eval('.column:nth-child(1) .qa-input', (el) => { el.value = 'Atomic A\nAtomic B'; el.focus(); });
+  await page.keyboard.press('Enter');
+  await waitFor(() => [...document.querySelectorAll('.toast')].some(e => e.textContent.includes('policy blocks')), 3000, 'atomic paste toast');
+  const atomicOut = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    const input = document.querySelector('.column:nth-child(1) .qa-input');
+    return {
+      addedCount: board.columns[0].cards.filter(c => c.title.indexOf('Atomic') === 0).length,
+      inputKept: Boolean(input && input.value.indexOf('Atomic A') !== -1)
+    };
+  });
+  check('atomic quick-add adds none of the batch', atomicOut.addedCount === 0);
+  check('blocked quick-add keeps the input text', atomicOut.inputKept === true);
   await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     const board = b.boards.find(x => x.id === b.activeBoardId);
@@ -832,6 +880,23 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   }, lifeCols);
   check('same-column reorder appends no transition', reorderTransitions.before === reorderTransitions.after);
   check('same-column reorder changes the position', reorderTransitions.index === 1);
+
+  // ---- Same-column reorder never reapplies entry defaults ----
+  const reorderDefaults = await page.evaluate((cols) => {
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    const labelId = (board.labels[0] || { id: '' }).id;
+    KB.State.updateColumn(col.id, { policy: { wipMode: 'off', defaultLabelIds: labelId ? [labelId] : [], defaultAssignee: 'Sam', entryCriteria: [], exitCriteria: [] } });
+    KB.State.addCard(cols[0], { title: 'Defaults reorder probe' });
+    KB.State.moveCard(cols[0], 'life-1', cols[0], 0);
+    const after = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const afterBoard = after.boards.find(x => x.id === after.activeBoardId);
+    const afterCol = afterBoard.columns.find(c => c.id === cols[0]);
+    const card = afterCol.cards.find(c => c.id === 'life-1');
+    return { labels: card.labels.length, assignee: card.assignee, index: afterCol.cards.findIndex(c => c.id === 'life-1') };
+  }, lifeCols);
+  check('same-column reorder never reapplies entry defaults', reorderDefaults.labels === 0 && reorderDefaults.assignee === '');
+  check('same-column reorder with defaults still changes position', reorderDefaults.index === 0);
 
   // ---- Recurrence processing ----
   const recResult = await page.evaluate(() => {

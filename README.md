@@ -79,8 +79,7 @@ Your current workspace is remembered across reloads.
   dialog, since there is no user to confirm.
 - **Same-column reordering** changes only the array position — no lifecycle
   transition, no `updatedAt` change, no re-applied defaults. Soft-WIP overage
-  when restoring an archived card asks for confirmation like any other move.
-- **Collapse/expand** a column to a title bar with the chevron on the header.
+  when restoring an archived card asks for confirmation like any other move.- **Collapse/expand** a column to a title bar with the chevron on the header.
 - Reorder columns by dragging a column header (drag from the title/grip area,
   not from the buttons).
 - Delete a column via its `⋯` menu. Deleting a column **never destroys its
@@ -93,9 +92,11 @@ Your current workspace is remembered across reloads.
   add many cards at once), or press `N` to jump to the first quick-add box.
 - New cards are created through the same placement pipeline as moves: entering
   an `active` column records `startedAt`, entering a `done` column records
-  `completedAt`, entry defaults apply, and hard-WIP / entry-criteria columns
-  ask for confirmation (card editor) or refuse with a toast (quick-add,
-  template).
+  `completedAt`, entry defaults apply, and policy columns ask for confirmation
+  before adding (hard WIP, entry criteria, and soft-WIP overage all show the
+  confirm dialog on new-card, template and quick-add creation). Multi-line
+  quick-add is atomic — either every pasted line becomes a card or none do —
+  and a blocked paste keeps the input text and explains why.
 - Every card has a **required title**, a plain-text **description** (with
   light markdown: `**bold**`, `*italic*`, `` `code` ``, `[links](url)`),
   one or more **colour-coded labels**, an optional **assignee** (free text,
