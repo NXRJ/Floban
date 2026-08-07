@@ -245,7 +245,7 @@
 
   function addCards(columnId, titles) {
     var column = findColumn(columnId);
-    var cleanTitles = (titles || []).filter(function (title) {
+    var cleanTitles = (Array.isArray(titles) ? titles : []).filter(function (title) {
       return typeof title === 'string' && title.trim();
     }).map(function (title) {
       return title.trim();
