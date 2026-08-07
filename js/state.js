@@ -716,6 +716,79 @@
     return true;
   }
 
+  function processRecurrences() {
+    return commit(function (current) {
+      var result = KB.Core.Recurrence.processDueRecurrences(current, now(), deps());
+      return result;
+    });
+  }
+
+  function handleCardCompleted(boardId, cardId) {
+    return commit(function (current) {
+      var result = KB.Core.Recurrence.handleRecurringCardCompletion(current, { boardId: boardId, cardId: cardId }, now(), deps());
+      return result;
+    });
+  }
+
+  function addRecurrence(definition) {
+    return commit(function (current) {
+      var next = JSON.parse(JSON.stringify(current));
+      var recurrence = KB.Core.Model.createRecurrence(definition, deps());
+      next.recurrences.push(recurrence);
+      return { changed: true, state: next, value: recurrence };
+    });
+  }
+
+  function updateRecurrence(recurrenceId, patch) {
+    return commit(function (current) {
+      var next = JSON.parse(JSON.stringify(current));
+      var recurrence = next.recurrences.find(function (r) { return r.id === recurrenceId; });
+      if (!recurrence) return { changed: false, state: current, value: null, reason: 'not-found' };
+      var changed = false;
+      Object.keys(patch || {}).forEach(function (key) {
+        if (JSON.stringify(recurrence[key]) !== JSON.stringify(patch[key])) {
+          recurrence[key] = patch[key];
+          changed = true;
+        }
+      });
+      if (!changed) return { changed: false, state: current, value: null, reason: 'no-change' };
+      recurrence.updatedAt = now();
+      return { changed: true, state: next, value: recurrence };
+    });
+  }
+
+  function deleteRecurrence(recurrenceId) {
+    return commit(function (current) {
+      var next = JSON.parse(JSON.stringify(current));
+      var index = next.recurrences.findIndex(function (r) { return r.id === recurrenceId; });
+      if (index === -1) return { changed: false, state: current, value: null, reason: 'not-found' };
+      next.recurrences.splice(index, 1);
+      return { changed: true, state: next, value: true };
+    });
+  }
+
+  function pauseRecurrence(recurrenceId, reason) {
+    return commit(function (current) {
+      return KB.Core.Recurrence.pauseRecurrence(current, recurrenceId, reason, deps());
+    });
+  }
+
+  function resumeRecurrence(recurrenceId) {
+    return commit(function (current) {
+      return KB.Core.Recurrence.resumeRecurrence(current, recurrenceId, deps());
+    });
+  }
+
+  function runRecurrenceNow(recurrenceId) {
+    return commit(function (current) {
+      return KB.Core.Recurrence.runNow(current, recurrenceId, deps());
+    });
+  }
+
+  function recurrences() {
+    return state.recurrences || [];
+  }
+
   function setTheme(theme) {
     pushHistory();
     state.theme = theme;
@@ -796,6 +869,15 @@
     addRelated: addRelated,
     removeRelated: removeRelated,
     setActiveBoard: setActiveBoard,
+    processRecurrences: processRecurrences,
+    handleCardCompleted: handleCardCompleted,
+    addRecurrence: addRecurrence,
+    updateRecurrence: updateRecurrence,
+    deleteRecurrence: deleteRecurrence,
+    pauseRecurrence: pauseRecurrence,
+    resumeRecurrence: resumeRecurrence,
+    runRecurrenceNow: runRecurrenceNow,
+    recurrences: recurrences,
     setTheme: setTheme,
     exportAll: exportAll,
     exportBoard: exportBoard,
