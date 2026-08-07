@@ -717,10 +717,12 @@
   }
 
   function processRecurrences() {
-    return commit(function (current) {
-      var result = KB.Core.Recurrence.processDueRecurrences(current, now(), deps());
+    var result = null;
+    commit(function (current) {
+      result = KB.Core.Recurrence.processDueRecurrences(current, now(), deps());
       return result;
     });
+    return result;
   }
 
   function handleCardCompleted(boardId, cardId) {
@@ -782,6 +784,33 @@
   function runRecurrenceNow(recurrenceId) {
     return commit(function (current) {
       return KB.Core.Recurrence.runNow(current, recurrenceId, deps());
+    });
+  }
+
+  function skipRecurrenceNext(recurrenceId) {
+    return commit(function (current) {
+      var next = JSON.parse(JSON.stringify(current));
+      var recurrence = next.recurrences.find(function (r) { return r.id === recurrenceId; });
+      if (!recurrence) return { changed: false, state: current, value: null, reason: 'not-found' };
+      if (recurrence.nextRunAt === null) {
+        recurrence.nextRunAt = KB.Core.Recurrence.computeNextRun(recurrence, now());
+      } else {
+        recurrence.nextRunAt = KB.Core.Recurrence.computeNextRun(recurrence, recurrence.nextRunAt);
+      }
+      recurrence.updatedAt = now();
+      return { changed: true, state: next, value: recurrence };
+    });
+  }
+
+  function endRecurrence(recurrenceId) {
+    return commit(function (current) {
+      var next = JSON.parse(JSON.stringify(current));
+      var recurrence = next.recurrences.find(function (r) { return r.id === recurrenceId; });
+      if (!recurrence) return { changed: false, state: current, value: null, reason: 'not-found' };
+      if (recurrence.endAt !== null) return { changed: false, state: current, value: null, reason: 'already-ended' };
+      recurrence.endAt = now();
+      recurrence.updatedAt = now();
+      return { changed: true, state: next, value: recurrence };
     });
   }
 
@@ -877,6 +906,8 @@
     pauseRecurrence: pauseRecurrence,
     resumeRecurrence: resumeRecurrence,
     runRecurrenceNow: runRecurrenceNow,
+    skipRecurrenceNext: skipRecurrenceNext,
+    endRecurrence: endRecurrence,
     recurrences: recurrences,
     setTheme: setTheme,
     exportAll: exportAll,
