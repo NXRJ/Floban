@@ -329,3 +329,12 @@ test('purgeArchiveColumn on a missing column is a clean no-op', () => {
   assert.equal(result.changed, false);
   assert.equal(result.reason, 'column-not-found');
 });
+
+test('purgeArchiveColumn returns true even for an empty column', () => {
+  const s = state();
+  s.boards[0].archive.columns = [{ id: 'empty-col', title: 'Empty', cards: [] }];
+  const result = Relations.purgeArchiveColumn(s, 'board-1', 'empty-col');
+  assert.equal(result.changed, true);
+  assert.equal(result.value, true);
+  assert.equal(result.state.boards[0].archive.columns.length, 0);
+});

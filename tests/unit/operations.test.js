@@ -665,12 +665,15 @@ test('moveCard out of a done column clears completedAt', () => {
   assert.equal(moved.transitions[0].toRole, 'queue');
 });
 
-test('moveCard within a column preserves movedAt but records the move', () => {
-  const result = Operations.moveCard(makeState(), { columnId: 'column-1', cardId: 'card-a', targetColumnId: 'column-1', toIndex: 2 }, makeDeps());
+test('moveCard within a column reorders without a lifecycle transition', () => {
+  const state = makeState();
+  const result = Operations.moveCard(state, { columnId: 'column-1', cardId: 'card-a', targetColumnId: 'column-1', toIndex: 2 }, makeDeps());
   const moved = result.state.boards[0].columns[0].cards[1];
   assert.equal(moved.movedAt, 100);
-  assert.equal(moved.transitions.length, 1);
-  assert.equal(moved.transitions[0].toColumnId, 'column-1');
+  assert.equal(moved.updatedAt, 100);
+  assert.equal(moved.transitions, undefined);
+  assert.equal(moved.startedAt, undefined);
+  assert.equal(moved.completedAt, undefined);
 });
 
 test('restoreCard into a done column records completion', () => {
@@ -745,4 +748,38 @@ test('restoreCard accepts a confirmed override', () => {
   const restored = Operations.restoreCard(state, { cardId: 'arch-x', confirmed: true }, makeDeps());
   assert.equal(restored.changed, true);
   assert.equal(restored.state.boards[0].columns[0].cards.length, 3);
+});
+
+test('deleteColumn preserves the full v3 column metadata in the archive', () => {
+  const state = makeState();
+  const column = state.boards[0].columns[0];
+  column.role = 'queue';
+  column.wipLimit = 4;
+  column.collapsed = true;
+  column.policy = { wipMode: 'hard', overrideRequiresReason: true, entryCriteria: ['Ready'], exitCriteria: [], defaultLabelIds: ['label-1'], defaultAssignee: 'Sam', countsTowardCycleTime: true };
+  const result = Operations.deleteColumn(state, { columnId: column.id }, makeDeps());
+  const entry = result.state.boards[0].archive.columns[0];
+  assert.equal(entry.role, 'queue');
+  assert.equal(entry.collapsed, true);
+  assert.equal(entry.policy.wipMode, 'hard');
+  assert.equal(entry.policy.overrideRequiresReason, true);
+  assert.deepEqual(entry.policy.entryCriteria, ['Ready']);
+  assert.deepEqual(entry.policy.defaultLabelIds, ['label-1']);
+  assert.equal(entry.policy.defaultAssignee, 'Sam');
+});
+
+test('restoreColumn returns the archived column with its metadata intact', () => {
+  const state = makeState();
+  const column = state.boards[0].columns[0];
+  column.role = 'queue';
+  column.wipLimit = 4;
+  column.collapsed = true;
+  column.policy = { wipMode: 'hard', overrideRequiresReason: true, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: 'Sam' };
+  const deleted = Operations.deleteColumn(state, { columnId: column.id }, makeDeps());
+  const restored = Operations.restoreColumn(deleted.state, { columnId: column.id }, makeDeps());
+  const entry = restored.state.boards[0].columns[restored.state.boards[0].columns.length - 1];
+  assert.equal(entry.role, 'queue');
+  assert.equal(entry.collapsed, true);
+  assert.equal(entry.policy.wipMode, 'hard');
+  assert.equal(entry.policy.defaultAssignee, 'Sam');
 });

@@ -75,6 +75,7 @@
       var card = source.cards[fromIndex];
       var result = Pipeline.placeCard(next, card, source, board, target, {
         toIndex: index,
+        sameColumnMode: command.columnId === command.targetColumnId ? 'preserve' : 'transition',
         confirmed: Boolean(command.confirmed),
         overrideReason: command.overrideReason
       }, d);
@@ -173,7 +174,10 @@
         id: column.id,
         title: column.title,
         isDone: column.isDone,
+        role: column.role,
         wipLimit: column.wipLimit,
+        collapsed: column.collapsed,
+        policy: column.policy,
         cards: column.cards,
         archivedAt: archivedAt
       });

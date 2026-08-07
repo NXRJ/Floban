@@ -576,6 +576,17 @@
         KB.State.updateCardWithFlow(columnId, card.id, data, flowInput.value, flowReasonInput.value.trim(), editorBoardId);
         KB.UI.toast('Changes saved', 'success');
       } else {
+        var createEvaluation = KB.State.evaluateCreate(columnId);
+        if (createEvaluation && !createEvaluation.allowed) {
+          KB.Modal.moveConfirmModal('Adding this card requires confirmation', createEvaluation, '', function (reason) {
+            var created = KB.State.addCard(columnId, data, { confirmed: true, overrideReason: reason });
+            close();
+            if (created) KB.UI.toast('Card added', 'success', 'Undo', KB.UI.undoAction);
+            else KB.UI.toast('Column policy blocks this card', 'error');
+            KB.App.refresh();
+          });
+          return;
+        }
         KB.State.addCard(columnId, data);
         KB.UI.toast('Card added', 'success');
       }
@@ -1557,7 +1568,7 @@
         KB.Modal.moveConfirmModal('Triage requires confirmation', result.evaluation, '', function (reason) {
           var confirmed = KB.State.triageInboxItem(item.id, target, patch, { confirmed: true, overrideReason: reason });
           close();
-          if (confirmed) {
+          if (confirmed && confirmed.changed) {
             KB.UI.toast('Card created', 'success', 'Undo', KB.UI.undoAction);
           } else {
             KB.UI.toast('Could not triage that item', 'error');
@@ -1567,7 +1578,7 @@
         return;
       }
       close();
-      if (result) {
+      if (result && result.changed) {
         KB.UI.toast('Card created', 'success', 'Undo', KB.UI.undoAction);
       } else {
         KB.UI.toast('Could not triage that item', 'error');
