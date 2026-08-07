@@ -114,21 +114,12 @@
     return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
-  function isoDate(date) {
-    var y = date.getFullYear();
-    var m = String(date.getMonth() + 1).padStart(2, '0');
-    var d = String(date.getDate()).padStart(2, '0');
-    return y + '-' + m + '-' + d;
-  }
-
   function isoToday() {
-    return isoDate(new Date());
+    return KB.Core.Date.isoDate(new Date());
   }
 
   function isoDaysFromNow(offset) {
-    var date = new Date();
-    date.setDate(date.getDate() + offset);
-    return isoDate(date);
+    return KB.Core.Date.addDaysISO(new Date(), offset);
   }
 
   function plural(n, word) {
@@ -161,5 +152,5 @@
     return document.querySelector(normalized);
   };
 
-  KB.Dom = { h: h, icon: icon, fmtDate: fmtDate, inkOn: inkOn, paintChip: paintChip, uid: uid, isoDate: isoDate, isoToday: isoToday, isoDaysFromNow: isoDaysFromNow, plural: plural };
+  KB.Dom = { h: h, icon: icon, fmtDate: fmtDate, inkOn: inkOn, paintChip: paintChip, uid: uid, isoToday: isoToday, isoDaysFromNow: isoDaysFromNow, plural: plural };
 })(window.KB = window.KB || {});
