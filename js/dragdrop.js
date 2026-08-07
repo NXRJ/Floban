@@ -135,7 +135,7 @@
         var index = list
           ? cardInsertIndex(targetList, e.clientY)
           : targetList.querySelectorAll('.card').length;
-        KB.State.moveCard(fromColumnId, cardId, toColumnId, index);
+        KB.App.requestMove(fromColumnId, cardId, toColumnId, index);
         KB.App.refresh();
       }
     } else if (dragType === 'column') {

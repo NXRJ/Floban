@@ -265,6 +265,39 @@
     if (fresh) fresh.focus();
   }
 
+  function requestMove(fromColumnId, cardId, toColumnId, toIndex, onDone) {
+    var evaluation = KB.State.evaluateMove(fromColumnId, cardId, toColumnId);
+    if (!evaluation) {
+      if (onDone) onDone();
+      return;
+    }
+    if (evaluation.allowed) {
+      KB.State.moveCardChecked(fromColumnId, cardId, toColumnId, toIndex);
+      if (onDone) onDone();
+      return;
+    }
+    KB.Modal.moveConfirmModal('Move requires confirmation', evaluation, '', function (reason) {
+      KB.State.moveCardChecked(fromColumnId, cardId, toColumnId, toIndex, { confirmed: true, overrideReason: reason });
+      if (onDone) onDone();
+    });
+  }
+
+  function requestRestore(cardId, onDone) {
+    var result = KB.State.restoreCardChecked(cardId);
+    if (result.ok) {
+      if (onDone) onDone(result);
+      return;
+    }
+    if (result.reason === 'policy') {
+      KB.Modal.moveConfirmModal('Restore requires confirmation', result.evaluation, '', function (reason) {
+        var confirmed = KB.State.restoreCardChecked(cardId, { confirmed: true, overrideReason: reason });
+        if (onDone) onDone(confirmed);
+      });
+      return;
+    }
+    if (onDone) onDone(result);
+  }
+
   function wireHeader() {
     KB.el('toggle-theme').addEventListener('click', function () {
       var next = KB.State.data().theme === 'dark' ? 'light' : 'dark';
@@ -389,9 +422,14 @@
           toggleArchive(false);
           break;
         case 'restore-card':
-          KB.State.restoreCard(id);
-          toast('Card restored', 'success', 'Undo', undoAction);
-          refresh();
+          KB.App.requestRestore(id, function (result) {
+            if (result && result.ok) {
+              KB.UI.toast('Card restored', 'success', 'Undo', KB.UI.undoAction);
+              KB.App.refresh();
+            } else {
+              KB.App.refresh();
+            }
+          });
           break;
         case 'restore-column':
           KB.State.restoreColumn(id);
@@ -576,7 +614,7 @@
     refresh();
   }
 
-  KB.App = { init: init, refresh: refresh };
+  KB.App = { init: init, refresh: refresh, requestMove: requestMove, requestRestore: requestRestore };
   KB.UI = { toast: toast, clearToasts: clearToasts, download: download, undoAction: undoAction };
 
   init();

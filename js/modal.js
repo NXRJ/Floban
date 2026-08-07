@@ -534,6 +534,99 @@
       else if (roleInput.value === 'done') roleInput.value = 'queue';
     });
 
+    var wipModeInput = h('select', { id: 'ce-wip-mode', 'aria-label': 'WIP mode' });
+    [['off', 'Off — no enforcement'], ['soft', 'Soft — warn but allow'], ['hard', 'Hard — require override']].forEach(function (pair) {
+      wipModeInput.appendChild(new Option(pair[1], pair[0]));
+    });
+    wipModeInput.value = isEdit ? (column.policy && column.policy.wipMode ? column.policy.wipMode : 'off') : 'off';
+    form.appendChild(fieldBlock('WIP mode', wipModeInput));
+
+    var reasonCheck = h('input', { type: 'checkbox', id: 'ce-reason', 'aria-label': 'Require override reason' });
+    reasonCheck.checked = isEdit ? Boolean(column.policy && column.policy.overrideRequiresReason) : false;
+    var reasonLabel = h('label', { class: 'field check' });
+    var reasonText = h('span');
+    reasonText.textContent = 'Require a reason for hard overrides';
+    reasonLabel.appendChild(reasonCheck);
+    reasonLabel.appendChild(reasonText);
+    form.appendChild(reasonLabel);
+
+    function criteriaEditor(labelText, values) {
+      var box = h('div', { class: 'criteria-editor' });
+      box.appendChild(h('span', { class: 'check-editor-title', textContent: labelText }));
+      var list = h('div', { class: 'criteria-list' });
+      box.appendChild(list);
+      var addRow = h('div', { class: 'check-add-row' });
+      var input = h('input', { type: 'text', placeholder: 'Add a criterion…', maxlength: 200 });
+      var addBtn = h('button', { type: 'button', class: 'btn ghost sm' });
+      addBtn.textContent = 'Add';
+      addRow.appendChild(input);
+      addRow.appendChild(addBtn);
+      box.appendChild(addRow);
+      function render() {
+        list.innerHTML = '';
+        values.forEach(function (text, index) {
+          var row = h('div', { class: 'criteria-item' });
+          var span = h('span');
+          span.textContent = '\u25A2 ' + text;
+          var remove = h('button', { type: 'button', class: 'btn icon sm danger-ghost', title: 'Remove criterion' });
+          remove.innerHTML = icon('x');
+          remove.addEventListener('click', function () {
+            values.splice(index, 1);
+            render();
+          });
+          row.appendChild(span);
+          row.appendChild(remove);
+          list.appendChild(row);
+        });
+      }
+      addBtn.addEventListener('click', function () {
+        var text = input.value.trim();
+        if (!text) return;
+        values.push(text);
+        input.value = '';
+        render();
+      });
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          addBtn.click();
+        }
+      });
+      render();
+      return box;
+    }
+
+    var entryCriteria = isEdit && Array.isArray(column.policy && column.policy.entryCriteria)
+      ? column.policy.entryCriteria.slice()
+      : [];
+    form.appendChild(criteriaEditor('Entry criteria', entryCriteria));
+
+    var exitCriteria = isEdit && Array.isArray(column.policy && column.policy.exitCriteria)
+      ? column.policy.exitCriteria.slice()
+      : [];
+    form.appendChild(criteriaEditor('Exit criteria', exitCriteria));
+
+    var defaultsBox = h('div', { class: 'label-picker' });
+    KB.State.labels().forEach(function (label) {
+      var active = isEdit && Array.isArray(column.policy && column.policy.defaultLabelIds) &&
+        column.policy.defaultLabelIds.indexOf(label.id) !== -1;
+      defaultsBox.appendChild(labelToggleChip(label, active));
+    });
+    form.appendChild(fieldBlock('Default labels on entry', defaultsBox));
+
+    var defaultAssigneeInput = h('input', { type: 'text', list: 'assignee-list', maxlength: 60, placeholder: 'Assignee set on entry', 'aria-label': 'Default assignee' });
+    defaultAssigneeInput.value = isEdit && column.policy ? (column.policy.defaultAssignee || '') : '';
+    form.appendChild(fieldBlock('Default assignee on entry', defaultAssigneeInput));
+
+    var cycleCheck = h('input', { type: 'checkbox', id: 'ce-cycle', 'aria-label': 'Counts toward cycle time' });
+    cycleCheck.checked = isEdit ? (column.policy && column.policy.countsTowardCycleTime === false ? false : true) : true;
+    var cycleLabel = h('label', { class: 'field check' });
+    var cycleText = h('span');
+    cycleText.textContent = 'Counts toward cycle time';
+    cycleLabel.appendChild(cycleCheck);
+    cycleLabel.appendChild(cycleText);
+    form.appendChild(cycleLabel);
+
     var actions = h('div', { class: 'modal-actions' });
     if (isEdit) {
       var deleteBtn = h('button', { type: 'button', class: 'btn danger' });
@@ -571,11 +664,24 @@
       }
       var wipRaw = parseInt(wipInput.value, 10);
       var wipLimit = isFinite(wipRaw) && wipRaw > 0 ? Math.min(wipRaw, 99) : 0;
+      var policy = {
+        wipMode: wipModeInput.value,
+        overrideRequiresReason: reasonCheck.checked,
+        entryCriteria: entryCriteria,
+        exitCriteria: exitCriteria,
+        defaultLabelIds: Array.prototype.map.call(defaultsBox.querySelectorAll('.chip.active'), function (chip) {
+          return chip.dataset.id;
+        }),
+        defaultAssignee: defaultAssigneeInput.value.trim(),
+        countsTowardCycleTime: cycleCheck.checked
+      };
       if (isEdit) {
-        KB.State.updateColumn(columnId, { title: title, isDone: doneCheck.checked, role: roleInput.value, wipLimit: wipLimit });
+        KB.State.updateColumn(columnId, { title: title, isDone: doneCheck.checked, role: roleInput.value, wipLimit: wipLimit, policy: policy });
         KB.UI.toast('Column updated', 'success');
       } else {
         KB.State.addColumn(title, doneCheck.checked, false, roleInput.value);
+        var fresh = KB.State.activeBoard().columns[KB.State.activeBoard().columns.length - 1];
+        KB.State.updateColumn(fresh.id, { policy: policy });
         KB.UI.toast('Column added', 'success');
       }
       close();
@@ -778,6 +884,52 @@
     open(panel);
   }
 
+  function moveConfirmModal(title, evaluation, targetColumnTitle, onConfirm) {
+    var panel = h('div', { class: 'card-form' });
+
+    var heading = h('h2');
+    heading.textContent = title || 'Move requires confirmation';
+    panel.appendChild(heading);
+
+    var violations = evaluation.violations || [];
+    violations.forEach(function (violation) {
+      var p = h('p', { class: 'policy-violation' });
+      p.textContent = '\u25A2 ' + violation.message;
+      panel.appendChild(p);
+    });
+
+    var reasonInput = null;
+    var reasonWrap = null;
+    if (evaluation.needsReason) {
+      reasonInput = h('input', { type: 'text', id: 'mv-reason', maxlength: 200, placeholder: 'Why is this override justified?', 'aria-label': 'Override reason' });
+      reasonWrap = fieldBlock('Override reason', reasonInput);
+      panel.appendChild(reasonWrap);
+    }
+
+    var actions = h('div', { class: 'modal-actions' });
+    actions.appendChild(h('span', { class: 'spacer' }));
+    var cancelBtn = h('button', { type: 'button', class: 'btn ghost' });
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', close);
+    actions.appendChild(cancelBtn);
+    var confirmBtn = h('button', { type: 'button', class: 'btn primary' });
+    confirmBtn.textContent = 'Confirm move';
+    confirmBtn.addEventListener('click', function () {
+      var reason = reasonInput ? reasonInput.value.trim() : '';
+      if (evaluation.needsReason && !reason) {
+        KB.UI.toast('An override reason is required', 'error');
+        reasonInput.focus();
+        return;
+      }
+      close();
+      onConfirm(reason);
+    });
+    actions.appendChild(confirmBtn);
+    panel.appendChild(actions);
+
+    open(panel);
+  }
+
   function isOpen() {
     return overlay !== null;
   }
@@ -788,6 +940,7 @@
     labelManager: labelManager,
     promptModal: promptModal,
     backupModal: backupModal,
+    moveConfirmModal: moveConfirmModal,
     isOpen: isOpen
   };
 })(window.KB = window.KB || {});

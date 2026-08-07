@@ -482,14 +482,13 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await page.evaluate((ids) => {
     const board = KB.State.activeBoard();
     KB.State.removeBlocker(board.id, ids.targetId, board.id, ids.blockerId);
-  });
+  }, depResult);
   const unlinked = await page.evaluate((ids) => {
     const board = KB.State.activeBoard();
     return KB.Core.Relations.getUnresolvedBlockers(KB.State.data(), { boardId: board.id, cardId: ids.targetId }).length;
   }, depResult);
   check('removeBlocker unlinks', unlinked === 0);
 
-  await page.select('#ready-filter', '');
   await page.$eval('#ready-filter', (el) => { el.checked = true; });
   await page.evaluate(() => KB.App.refresh());
   await sleep(150);
@@ -497,6 +496,80 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await page.$eval('#ready-filter', (el) => { el.checked = false; });
   await page.evaluate(() => KB.App.refresh());
   await sleep(150);
+
+  // ---- Column policies: soft WIP, hard WIP, entry defaults ----
+  const policySetup = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const active = board.columns[1];
+    const done = board.columns[2];
+    KB.State.updateColumn(active.id, {
+      policy: {
+        wipMode: 'soft',
+        overrideRequiresReason: false,
+        entryCriteria: [],
+        exitCriteria: [],
+        defaultLabelIds: [],
+        defaultAssignee: 'Sam',
+        countsTowardCycleTime: true
+      }
+    });
+    KB.State.addCard(done.id, { title: 'Done filler' });
+    KB.State.updateColumn(done.id, {
+      wipLimit: 1,
+      policy: {
+        wipMode: 'hard',
+        overrideRequiresReason: false,
+        entryCriteria: [],
+        exitCriteria: [],
+        defaultLabelIds: [],
+        defaultAssignee: '',
+        countsTowardCycleTime: true
+      }
+    });
+    KB.App.refresh();
+    return { activeId: active.id, doneId: done.id };
+  });
+  await sleep(150);
+  const softResult = await page.evaluate((ids) => {
+    const board = KB.State.activeBoard();
+    const card = board.columns[0].cards[0];
+    const result = KB.State.moveCardChecked(board.columns[0].id, card.id, ids.activeId, 0);
+    return { ok: result.ok, reason: result.reason, assignee: card.assignee };
+  }, policySetup);
+  check('soft WIP move proceeds with defaults', softResult.ok === true && softResult.assignee === 'Sam');
+
+  const hardResult = await page.evaluate((ids) => {
+    const board = KB.State.activeBoard();
+    const card = board.columns[0].cards[0];
+    const result = KB.State.moveCardChecked(board.columns[0].id, card.id, ids.doneId, 0);
+    return { ok: result.ok, reason: result.reason, violations: result.evaluation ? result.evaluation.violations.map(v => v.code) : [] };
+  }, policySetup);
+  check('hard WIP without override is denied', hardResult.ok === false && hardResult.reason === 'policy');
+
+  const beforeUndo = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    return b.boards.find(x => x.id === b.activeBoardId).columns[0].cards.map(c => c.id);
+  });
+  const hardConfirmed = await page.evaluate((ids) => {
+    const board = KB.State.activeBoard();
+    const card = board.columns[0].cards[0];
+    return KB.State.moveCardChecked(board.columns[0].id, card.id, ids.doneId, 0, { confirmed: true });
+  }, policySetup);
+  check('hard WIP confirmed override succeeds', hardConfirmed.ok === true);
+  await blur();
+  await pressUndo();
+  const policyAfterUndo = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    return b.boards.find(x => x.id === b.activeBoardId).columns[0].cards.map(c => c.id);
+  });
+  check('policy move undoes as one entry', JSON.stringify(beforeUndo) === JSON.stringify(policyAfterUndo));
+
+  const wipModeSaved = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const done = board.columns.find(c => c.role === 'done');
+    return done.policy.wipMode;
+  });
+  check('policy settings persist', wipModeSaved === 'hard');
 
   // ---- Lifecycle fields follow role-based moves ----
   await page.evaluate(() => {
@@ -587,3 +660,4 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await browser.close();
   process.exit(failures === 0 ? 0 : 1);
 })().catch((e) => { console.error('TEST CRASH:', e); process.exit(2); });
+

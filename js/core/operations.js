@@ -5,7 +5,10 @@
   var lifecycleCore = (typeof module === 'object' && module.exports)
     ? require('./lifecycle.js')
     : root.KB.Core.Lifecycle;
-  var api = factory(modelCore, lifecycleCore);
+  var policiesCore = (typeof module === 'object' && module.exports)
+    ? require('./policies.js')
+    : root.KB.Core.Policies;
+  var api = factory(modelCore, lifecycleCore, policiesCore);
 
   if (typeof module === 'object' && module.exports) {
     module.exports = api;
@@ -16,7 +19,7 @@
   }
 })(
   typeof globalThis !== 'undefined' ? globalThis : this,
-  function (Model, Lifecycle) {
+  function (Model, Lifecycle, Policies) {
     function resolveDeps(deps) {
       if (!deps || typeof deps.uid !== 'function' || typeof deps.now !== 'function') {
         throw new Error('core operations require { uid, now } dependencies');
@@ -78,6 +81,9 @@
       card = lifecycle.card;
       card.columnId = command.targetColumnId;
       if (command.columnId === command.targetColumnId) card.movedAt = prevMovedAt;
+      if (command.columnId !== command.targetColumnId) {
+        card = Policies.applyEntryDefaults(card, target);
+      }
       target.cards.splice(index, 0, card);
       return { changed: true, state: next, value: card };
     }
