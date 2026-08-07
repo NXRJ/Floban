@@ -789,6 +789,31 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await page.evaluate(() => KB.Workspaces.set('board'));
   await sleep(150);
 
+  // ---- My Desk and saved lenses ----
+  await page.evaluate(() => KB.Workspaces.set('mydesk'));
+  await sleep(250);
+  check('my desk renders default sections', await page.$$eval('.desk-section', els => els.length) === 5);
+  await page.evaluate(() => { document.querySelector('.lens-bar [data-lens="builtin-aging"]').click(); });
+  await sleep(200);
+  check('built-in lens renders grouped results', await page.$$eval('.desk-section', els => els.length) >= 1);
+  const lensSave = await page.evaluate(() => {
+    const lens = KB.State.addLens({
+      name: 'E2E lens',
+      scope: 'active-board',
+      boardIds: [],
+      query: { search: '', labelIds: [], assignees: [], due: 'any', priorities: [], sizes: [], flowStates: ['blocked'], blockedOnly: false, readyOnly: false, columnRoles: [], includeCompleted: false },
+      sort: { field: 'priority', direction: 'desc' },
+      display: { density: 'compact', groupBy: 'board' }
+    });
+    return lens && lens.id;
+  });
+  check('user lens created', typeof lensSave === 'string');
+  await page.evaluate((id) => { document.querySelector('.lens-bar [data-lens="' + id + '"]').click(); }, lensSave);
+  await sleep(200);
+  check('user lens applies', await page.$$eval('.compact-card', els => els.length) >= 1);
+  await page.evaluate(() => { KB.Workspaces.set('board'); });
+  await sleep(150);
+
   check('no unexpected page errors', errors.filter(e => !e.includes('ERR_CONNECTION_REFUSED')).length === 0);
 
   console.log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECKS FAILED');

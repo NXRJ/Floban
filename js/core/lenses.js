@@ -8,7 +8,10 @@
   var lifecycleCore = (typeof module === 'object' && module.exports)
     ? require('./lifecycle.js')
     : root.KB.Core.Lifecycle;
-  var api = factory(filteringCore, relationsCore, lifecycleCore);
+  var migrationCore = (typeof module === 'object' && module.exports)
+    ? require('./migration.js')
+    : root.KB.Core.Migration;
+  var api = factory(filteringCore, relationsCore, lifecycleCore, migrationCore);
 
   if (typeof module === 'object' && module.exports) {
     module.exports = api;
@@ -19,7 +22,7 @@
   }
 })(
   typeof globalThis !== 'undefined' ? globalThis : this,
-  function (Filtering, Relations, Lifecycle) {
+  function (Filtering, Relations, Lifecycle, Migration) {
     var PRIORITY_WEIGHT = { none: 0, low: 1, medium: 2, high: 3, urgent: 4 };
     var SORT_FIELDS = ['manual', 'priority', 'due', 'created', 'updated', 'age', 'blocked-duration'];
     var GROUP_FIELDS = ['board', 'column', 'priority', 'assignee', 'none'];
@@ -115,9 +118,6 @@
     }
 
     function normalizeLens(lens, deps) {
-      var Migration = (typeof module === 'object' && module.exports)
-        ? require('./migration.js')
-        : root.KB.Core.Migration;
       return Migration.normalizeLens(lens, deps);
     }
 
