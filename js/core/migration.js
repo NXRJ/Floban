@@ -556,8 +556,49 @@
           return Object.assign({}, entry, { id: entryId, cards: cards });
         })
       };
-      if (originalId) rewriteBoardInternalRefs(board, originalId);
+      if (originalId) {
+        rewriteBoardInternalRefs(board, originalId);
+        adoptBoardRecurrences(board, source, originalId, deps);
+        adoptBoardLenses(board, source, deps);
+      }
       return board;
+    }
+
+    function adoptBoardRecurrences(board, source, originalId, deps) {
+      var d = resolveDeps(deps);
+      var out = [];
+      (Array.isArray(source.recurrences) ? source.recurrences : []).forEach(function (raw) {
+        var rec = normalizeRecurrence(raw, deps);
+        if (!rec) return;
+        rec.id = d.uid();
+        if (rec.target && rec.target.boardId === originalId) rec.target.boardId = board.id;
+        if (rec.activeCardRef && rec.activeCardRef.boardId === originalId) rec.activeCardRef.boardId = board.id;
+        out.push(rec);
+      });
+      Object.defineProperty(board, 'importedRecurrences', {
+        value: out,
+        enumerable: false,
+        writable: true,
+        configurable: true
+      });
+    }
+
+    function adoptBoardLenses(board, source, deps) {
+      var d = resolveDeps(deps);
+      var out = [];
+      (Array.isArray(source.lenses) ? source.lenses : []).forEach(function (raw) {
+        var lens = normalizeLens(raw, deps);
+        if (!lens) return;
+        if (lens.scope === 'selected-boards' && lens.boardIds.length !== 1) return;
+        lens.id = d.uid();
+        out.push(lens);
+      });
+      Object.defineProperty(board, 'importedLenses', {
+        value: out,
+        enumerable: false,
+        writable: true,
+        configurable: true
+      });
     }
 
     function rewriteBoardInternalRefs(board, originalId) {

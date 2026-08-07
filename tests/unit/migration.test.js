@@ -865,3 +865,51 @@ test('v3 full-backup import preserves inbox lenses and recurrences', () => {
   assert.equal(result.state.lenses.length, 1);
   assert.equal(result.state.recurrences.length, 1);
 });
+
+test('board-only import adopts recurrences with fresh ids', () => {
+  const boardJson = JSON.stringify({
+    id: 'b-9',
+    name: 'Board',
+    labels: [],
+    templates: [],
+    columns: [{ id: 'col-1', title: 'To Do', isDone: false }],
+    archive: { cards: [], columns: [] },
+    recurrences: [{
+      id: 'rec-x',
+      enabled: true,
+      mode: 'scheduled',
+      schedule: { frequency: 'daily', interval: 1 },
+      target: { boardId: 'b-9', columnId: 'col-1' },
+      template: { title: 'Standup', priority: 'none', size: 'none', checklist: [] },
+      overlapPolicy: 'single-active',
+      missedPolicy: 'create-one',
+      activeCardRef: { boardId: 'b-9', cardId: 'card-9' }
+    }]
+  });
+  const result = Migration.parseImportPayload(boardJson, null, makeDeps());
+  const board = result.board;
+  assert.equal(board.importedRecurrences.length, 1);
+  const rec = board.importedRecurrences[0];
+  assert.notEqual(rec.id, 'rec-x');
+  assert.equal(rec.target.boardId, board.id);
+  assert.equal(rec.activeCardRef.boardId, board.id);
+});
+
+test('board-only import adopts scoped lenses and skips others', () => {
+  const boardJson = JSON.stringify({
+    id: 'b-9',
+    name: 'Board',
+    labels: [],
+    templates: [],
+    columns: [{ id: 'col-1', title: 'To Do', isDone: false }],
+    archive: { cards: [], columns: [] },
+    lenses: [
+      { id: 'l-1', name: 'Mine', scope: 'active-board' },
+      { id: 'l-2', name: 'Selected', scope: 'selected-boards', boardIds: ['b-9'] },
+      { id: 'l-3', name: 'Multi', scope: 'selected-boards', boardIds: ['b-9', 'other'] }
+    ]
+  });
+  const result = Migration.parseImportPayload(boardJson, null, makeDeps());
+  assert.equal(result.board.importedLenses.length, 2);
+  assert.ok(result.board.importedLenses.every(l => l.id !== 'l-1' && l.id !== 'l-2'));
+});

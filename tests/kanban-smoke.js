@@ -964,6 +964,44 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await clickByText('.modal-actions .btn', 'Cancel');
   await sleep(150);
 
+  // ---- Version 3 export/import round trip ----
+  const v3RoundTrip = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const rec = KB.State.addRecurrence({
+      mode: 'scheduled',
+      schedule: { frequency: 'daily', interval: 1 },
+      target: { boardId: board.id, columnId: board.columns[0].id },
+      template: { title: 'Round trip rec', priority: 'none', size: 'none', checklist: [] },
+      overlapPolicy: 'single-active',
+      missedPolicy: 'create-one'
+    });
+    const lens = KB.State.addLens({
+      name: 'Round trip lens',
+      scope: 'active-board',
+      boardIds: [],
+      query: {},
+      sort: { field: 'manual', direction: 'asc' },
+      display: { density: 'comfortable', groupBy: 'board' }
+    });
+    const recCountBefore = KB.State.recurrences().length;
+    const boardJson = KB.State.exportBoard();
+    const parsed = JSON.parse(boardJson);
+    const hasRec = Array.isArray(parsed.recurrences) && parsed.recurrences.some(r => r.id === rec.id);
+    const hasLens = Array.isArray(parsed.lenses) && parsed.lenses.some(l => l.id === lens.id);
+    const importResult = KB.State.importAll(boardJson);
+    const recCountAfter = KB.State.recurrences().length;
+    const lensCountAfter = KB.State.lenses().length;
+    return { hasRec, hasLens, importResult, recCountBefore, recCountAfter, lensCountAfter, recId: rec.id, boardCount: KB.State.boards().length };
+  });
+  await sleep(150);
+  check('board export includes recurrences and lenses', v3RoundTrip.hasRec && v3RoundTrip.hasLens);
+  check('board import brings recurrences and lenses', v3RoundTrip.importResult === 'board' && v3RoundTrip.recCountAfter > v3RoundTrip.recCountBefore && v3RoundTrip.lensCountAfter >= 2);
+  const recIdConflict = await page.evaluate((id) => {
+    const others = KB.State.recurrences().filter(r => r.id === id);
+    return others.length;
+  }, v3RoundTrip.recId);
+  check('imported recurrence id does not collide', recIdConflict === 1);
+
   check('no unexpected page errors', errors.filter(e => !e.includes('ERR_CONNECTION_REFUSED')).length === 0);
 
   console.log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECKS FAILED');
@@ -971,5 +1009,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await browser.close();
   process.exit(failures === 0 ? 0 : 1);
 })().catch((e) => { console.error('TEST CRASH:', e); process.exit(2); });
+
+
 
 

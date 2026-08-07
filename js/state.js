@@ -940,7 +940,17 @@
   }
 
   function exportBoard() {
-    return JSON.stringify(activeBoard(), null, 2);
+    var board = activeBoard();
+    var payload = JSON.parse(JSON.stringify(board));
+    payload.recurrences = (state.recurrences || []).filter(function (rec) {
+      return rec.target && rec.target.boardId === board.id;
+    });
+    payload.lenses = (state.lenses || []).filter(function (lens) {
+      return lens.scope === 'selected-boards'
+        ? lens.boardIds.length === 1 && lens.boardIds[0] === board.id
+        : lens.scope === 'active-board';
+    });
+    return JSON.stringify(payload, null, 2);
   }
 
   function importAll(text) {
@@ -953,6 +963,12 @@
     }
     if (result.kind === 'board') {
       pushHistory();
+      if (Array.isArray(result.board.importedRecurrences)) {
+        state.recurrences = (state.recurrences || []).concat(result.board.importedRecurrences);
+      }
+      if (Array.isArray(result.board.importedLenses)) {
+        state.lenses = (state.lenses || []).concat(result.board.importedLenses);
+      }
       state.boards.push(result.board);
       state.activeBoardId = result.board.id;
       save();
