@@ -633,6 +633,8 @@
       normalizeTemplate: normalizeTemplate,
       normalizeBoard: normalizeBoard,
       normalizeState: normalizeState,
+      normalizeLens: normalizeLens,
+      normalizeRecurrence: normalizeRecurrence,
       adoptBoardShape: adoptBoardShape,
       migrateV1: migrateV1,
       parseImportPayload: parseImportPayload
