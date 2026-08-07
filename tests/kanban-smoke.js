@@ -888,6 +888,60 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   }, movedCardId);
   check('move-to menu commits the move', moveToLanded === true);
 
+  // ---- Multi-select and bulk actions ----
+  const bulkResult = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const archiveBefore = board.archive.cards.length;
+    const col = board.columns.find(c => c.cards.length >= 2) || board.columns[0];
+    const two = col.cards.slice(0, 2);
+    KB.Select.clear();
+    KB.Select.toggle(board.id, two[0].id);
+    KB.Select.toggle(board.id, two[1].id);
+    KB.Select.renderToolbar();
+    const toolbarShown = !document.querySelector('#bulk-toolbar').hidden;
+    const bulk = KB.State.bulkUpdate(KB.Select.refs(), { priority: 'urgent' });
+    const archived = KB.State.bulkArchive(KB.Select.refs());
+    const archiveSize = archived.state ? archived.state.boards[0].archive.cards.length : archiveBefore;
+    return {
+      toolbarShown,
+      bulkChanged: Boolean(bulk && bulk.changed),
+      archivedCount: archived && archived.changed ? archived.value : 0,
+      archiveDelta: archiveSize - archiveBefore
+    };
+  });
+  await sleep(150);
+  check('bulk toolbar shows the selection', bulkResult.toolbarShown === true);
+  check('bulk update patches selected cards', bulkResult.bulkChanged === true);
+  check('bulk archive archives the selection', bulkResult.archivedCount === 2 && bulkResult.archiveDelta === 2);
+
+  await blur();
+  await pressUndo();
+  const bulkUndo = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    return { archiveSize: board.archive.cards.length, colCards: board.columns.reduce((n, c) => n + c.cards.length, 0) };
+  });
+  check('bulk archive undoes as one step', bulkUndo.archiveSize === 0);
+
+  const shiftSelect = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns.find(c => c.cards.length >= 2) || board.columns[0];
+    KB.Select.clear();
+    return { first: col.cards[0].id, last: col.cards[1].id };
+  });
+  await page.evaluate(() => KB.App.refresh());
+  await page.evaluate((ids) => {
+    const cards = document.querySelectorAll('.card');
+    const from = [...cards].find(c => c.dataset.id === ids.first);
+    const to = [...cards].find(c => c.dataset.id === ids.last);
+    from.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true, ctrlKey: false }));
+    to.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true, ctrlKey: false }));
+  }, shiftSelect);
+  await sleep(150);
+  check('shift-click selects a range', await page.$$eval('.card.selected', els => els.length) >= 2);
+  await page.keyboard.press('Escape');
+  await sleep(100);
+  check('escape clears the selection', await page.$$eval('.card.selected', els => els.length) === 0);
+
   check('no unexpected page errors', errors.filter(e => !e.includes('ERR_CONNECTION_REFUSED')).length === 0);
 
   console.log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECKS FAILED');

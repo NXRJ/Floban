@@ -66,6 +66,7 @@
     KB.Render.archivePanel();
     refreshHeader();
     updateBoardOverflow();
+    KB.Select.renderToolbar();
   }
 
   function updateBoardOverflow() {
@@ -707,6 +708,7 @@
     mountIcons();
     KB.DnD.init(KB.el('board'));
     KB.MoveTo.wireKeyboardMove();
+    KB.Select.wire();
     wireHeader();
     wireFilters();
     wireBoard();
