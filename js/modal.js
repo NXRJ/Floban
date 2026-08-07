@@ -576,8 +576,8 @@
         KB.State.updateCardWithFlow(columnId, card.id, data, flowInput.value, flowReasonInput.value.trim(), editorBoardId);
         KB.UI.toast('Changes saved', 'success');
       } else {
-        var createEvaluation = KB.State.evaluateCreate(columnId);
-        if (createEvaluation && (!createEvaluation.allowed || createEvaluation.requiresConfirmation)) {
+        var createEvaluation = KB.State.createNeedsConfirmation(columnId);
+        if (createEvaluation) {
           KB.Modal.moveConfirmModal('Adding this card requires confirmation', createEvaluation, '', function (reason) {
             var created = KB.State.addCard(columnId, data, { confirmed: true, overrideReason: reason });
             close();
@@ -587,8 +587,9 @@
           });
           return;
         }
-        KB.State.addCard(columnId, data);
-        KB.UI.toast('Card added', 'success');
+        var created = KB.State.addCard(columnId, data);
+        if (created) KB.UI.toast('Card added', 'success', 'Undo', KB.UI.undoAction);
+        else KB.UI.toast('Column policy blocks this card', 'error');
       }
       close();
       KB.App.refresh();

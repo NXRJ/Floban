@@ -29,6 +29,7 @@
       var options = opts || {};
       var now = deps && typeof deps.now === 'function' ? deps.now() : 0;
       var sameColumn = fromColumn !== null && fromColumn !== undefined && fromColumn.id === targetColumn.id;
+      var preservingPositionOnly = sameColumn && options.sameColumnMode === 'preserve';
 
       if (options.checkPolicy !== false) {
         var evaluation = Policies.evaluateMovePolicy(next, { boardId: targetBoard.id, cardId: card.id }, { boardId: targetBoard.id, columnId: targetColumn.id }, {
@@ -51,7 +52,7 @@
       }
 
       var prevMovedAt = card.movedAt;
-      if (sameColumn && options.sameColumnMode === 'preserve') {
+      if (preservingPositionOnly) {
         card.columnId = targetColumn.id;
       } else {
         var transition = Lifecycle.transitionCard(card, fromColumn, targetColumn, now);
@@ -62,7 +63,6 @@
       if (Array.isArray(options.labelMapping)) {
         card.labels = options.labelMapping.slice();
       }
-      var preservingPositionOnly = sameColumn && options.sameColumnMode === 'preserve';
       if (options.applyDefaults !== false && !preservingPositionOnly) {
         card = Policies.applyEntryDefaults(card, targetColumn);
       }

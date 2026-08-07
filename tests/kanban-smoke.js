@@ -718,7 +718,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   await page.evaluate(() => KB.App.refresh());
 
-  // ---- Multi-line quick-add is atomic: all lines or none ----
+  // ---- Multi-line quick-add pre-flights the whole batch ----
   const atomicSetup = await page.evaluate(() => {
     const board = KB.State.activeBoard();
     const col1 = board.columns[0];
@@ -729,18 +729,38 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   await page.$eval('.column:nth-child(1) .qa-input', (el) => { el.value = 'Atomic A\nAtomic B'; el.focus(); });
   await page.keyboard.press('Enter');
-  await waitFor(() => [...document.querySelectorAll('.toast')].some(e => e.textContent.includes('policy blocks')), 3000, 'atomic paste toast');
-  const atomicOut = await page.evaluate(() => {
+  await waitFor(() => [...document.querySelectorAll('.modal-actions .btn')].some(b => b.textContent.trim() === 'Confirm move'), 3000, 'batch override dialog');
+  check('multi-line quick-add pre-flights the whole batch', (await page.$$eval('.modal-actions .btn', els => els.map(e => e.textContent.trim()))).includes('Confirm move') === true);
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('.modal-actions .btn')].find(b => b.textContent.trim() === 'Confirm move');
+    if (btn) btn.click();
+  });
+  const atomicAdded = await waitFor(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    const col = board.columns[0];
+    return col.cards.some(c => c.title === 'Atomic A') && col.cards.some(c => c.title === 'Atomic B');
+  }, 3000, 'confirmed batch lands');
+  check('confirmed batch adds every line', atomicAdded === true);
+
+  await page.$eval('.column:nth-child(1) .qa-input', (el) => { el.value = 'Cancel A\nCancel B'; el.focus(); });
+  await page.keyboard.press('Enter');
+  await waitFor(() => [...document.querySelectorAll('.modal-actions .btn')].some(b => b.textContent.trim() === 'Confirm move'), 3000, 'cancel batch dialog');
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('.modal-actions .btn')].find(b => b.textContent.trim() === 'Cancel');
+    if (btn) btn.click();
+  });
+  const cancelledOut = await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     const board = b.boards.find(x => x.id === b.activeBoardId);
     const input = document.querySelector('.column:nth-child(1) .qa-input');
     return {
-      addedCount: board.columns[0].cards.filter(c => c.title.indexOf('Atomic') === 0).length,
-      inputKept: Boolean(input && input.value.indexOf('Atomic A') !== -1)
+      addedCount: board.columns[0].cards.filter(c => c.title.indexOf('Cancel') === 0).length,
+      inputKept: Boolean(input && input.value.indexOf('Cancel A') !== -1)
     };
   });
-  check('atomic quick-add adds none of the batch', atomicOut.addedCount === 0);
-  check('blocked quick-add keeps the input text', atomicOut.inputKept === true);
+  check('cancelled batch adds nothing', cancelledOut.addedCount === 0);
+  check('cancelled quick-add keeps the input text', cancelledOut.inputKept === true);
   await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     const board = b.boards.find(x => x.id === b.activeBoardId);
@@ -886,6 +906,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const board = KB.State.activeBoard();
     const col = board.columns[0];
     const labelId = (board.labels[0] || { id: '' }).id;
+    const savedPolicy = JSON.parse(JSON.stringify(col.policy));
     KB.State.updateColumn(col.id, { policy: { wipMode: 'off', defaultLabelIds: labelId ? [labelId] : [], defaultAssignee: 'Sam', entryCriteria: [], exitCriteria: [] } });
     KB.State.addCard(cols[0], { title: 'Defaults reorder probe' });
     KB.State.moveCard(cols[0], 'life-1', cols[0], 0);
@@ -893,7 +914,10 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const afterBoard = after.boards.find(x => x.id === after.activeBoardId);
     const afterCol = afterBoard.columns.find(c => c.id === cols[0]);
     const card = afterCol.cards.find(c => c.id === 'life-1');
-    return { labels: card.labels.length, assignee: card.assignee, index: afterCol.cards.findIndex(c => c.id === 'life-1') };
+    const result = { labels: card.labels.length, assignee: card.assignee, index: afterCol.cards.findIndex(c => c.id === 'life-1') };
+    KB.State.updateColumn(col.id, { policy: savedPolicy });
+    KB.App.refresh();
+    return result;
   }, lifeCols);
   check('same-column reorder never reapplies entry defaults', reorderDefaults.labels === 0 && reorderDefaults.assignee === '');
   check('same-column reorder with defaults still changes position', reorderDefaults.index === 0);
