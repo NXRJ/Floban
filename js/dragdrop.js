@@ -25,6 +25,10 @@
     var card = e.target.closest('.card');
     var column = e.target.closest('.column');
     if (card) {
+      if (KB.Filters.sortActive()) {
+        e.preventDefault();
+        return;
+      }
       dragType = 'card';
       cardId = card.dataset.id;
       var list = card.closest('.card-list');

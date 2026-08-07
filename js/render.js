@@ -11,19 +11,13 @@
     return COLUMN_ACCENTS[sum % COLUMN_ACCENTS.length];
   }
 
-  function paintChip(chip, color) {
-    chip.style.background = color;
-    chip.style.color = KB.Dom.inkOn(color);
-    chip.style.borderColor = 'rgba(0, 0, 0, 0.35)';
-  }
-
   function staticChip(label) {
     var chip = h('span', { class: 'chip chip-static' });
     var dot = h('span', { class: 'dot' });
     dot.style.background = label.color;
     chip.appendChild(dot);
     chip.appendChild(document.createTextNode(label.name));
-    paintChip(chip, label.color);
+    KB.Dom.paintChip(chip, label.color);
     return chip;
   }
 
@@ -32,6 +26,71 @@
     chip.innerHTML = icon('person');
     chip.appendChild(document.createTextNode(name));
     return chip;
+  }
+
+  function escapeHtml(text) {
+    return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function mdLite(text) {
+    var esc = escapeHtml(text);
+    esc = esc.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    esc = esc.replace(/`([^`]+)`/g, '<code>$1</code>');
+    esc = esc.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    esc = esc.replace(/(^|[^*])\*([^*\s][^*]*)\*(?!\*)/g, '$1<em>$2</em>');
+    esc = esc.replace(/\n/g, '<br>');
+    return esc;
+  }
+
+  function fmtShortDate(iso) {
+    var parts = String(iso).split('-');
+    if (parts.length !== 3) return iso;
+    var date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }).toUpperCase();
+  }
+
+  function dueChip(card, isDone) {
+    if (!card.due) return null;
+    var today = KB.Filters.todayISO();
+    var chip = h('span', { class: 'chip chip-static due' });
+    chip.innerHTML = icon('calendar');
+    if (!isDone) {
+      var tomorrow = KB.Dom.isoDaysFromNow(1);
+      if (card.due < today) chip.classList.add('overdue');
+      else if (card.due <= tomorrow) chip.classList.add('soon');
+    }
+    chip.appendChild(document.createTextNode(fmtShortDate(card.due)));
+    chip.title = 'Due ' + fmtShortDate(card.due);
+    return chip;
+  }
+
+  function agingChip(card, isDone) {
+    if (isDone || !card.movedAt) return null;
+    var days = Math.floor((Date.now() - card.movedAt) / 86400000);
+    if (days < 1) return null;
+    var chip = h('span', { class: 'chip chip-static aging' });
+    chip.innerHTML = icon('clock');
+    chip.appendChild(document.createTextNode(days + 'D'));
+    chip.title = 'In this column for ' + days + (days === 1 ? ' day' : ' days');
+    return chip;
+  }
+
+  function checklistProgress(card) {
+    var items = card.checklist || [];
+    if (items.length === 0) return null;
+    var done = items.filter(function (item) { return item.done; }).length;
+    var wrap = h('div', { class: 'card-prog' });
+    var bar = h('div', { class: 'prog' });
+    var fill = h('div', { class: 'prog-fill' + (done === items.length ? ' done' : '') });
+    fill.style.width = Math.round(done / items.length * 100) + '%';
+    bar.appendChild(fill);
+    var label = h('span', { class: 'prog-label' });
+    label.textContent = done + '/' + items.length;
+    wrap.appendChild(bar);
+    wrap.appendChild(label);
+    return wrap;
   }
 
   function cardEl(card, column) {
@@ -50,9 +109,12 @@
 
     if (card.description) {
       var desc = h('p', { class: 'card-desc' });
-      desc.textContent = card.description;
+      desc.innerHTML = mdLite(card.description);
       el.appendChild(desc);
     }
+
+    var progress = checklistProgress(card);
+    if (progress) el.appendChild(progress);
 
     var meta = h('div', { class: 'card-meta' });
     card.labels.forEach(function (id) {
@@ -60,14 +122,21 @@
       if (label) meta.appendChild(staticChip(label));
     });
     if (card.assignee) meta.appendChild(assigneeChip(card.assignee));
+    var due = dueChip(card, column.isDone);
+    if (due) meta.appendChild(due);
+    var aging = agingChip(card, column.isDone);
+    if (aging) meta.appendChild(aging);
     el.appendChild(meta);
 
     var actions = h('div', { class: 'card-actions' });
     var editBtn = h('button', { type: 'button', class: 'btn icon sm', 'data-action': 'edit-card', title: 'Edit card' });
     editBtn.innerHTML = icon('edit');
+    var copyBtn = h('button', { type: 'button', class: 'btn icon sm', 'data-action': 'duplicate-card', title: 'Duplicate card' });
+    copyBtn.innerHTML = icon('copy');
     var archiveBtn = h('button', { type: 'button', class: 'btn icon sm', 'data-action': 'archive-card', title: 'Archive card' });
     archiveBtn.innerHTML = icon('archive');
     actions.appendChild(editBtn);
+    actions.appendChild(copyBtn);
     actions.appendChild(archiveBtn);
     el.appendChild(actions);
 
@@ -87,8 +156,30 @@
     return wrap;
   }
 
+  function quickAddEl(columnId) {
+    var row = h('div', { class: 'qa' });
+    var input = h('textarea', {
+      rows: 1,
+      class: 'qa-input',
+      placeholder: 'ADD CARD — ENTER',
+      maxlength: 2000,
+      'aria-label': 'Add card (paste several lines to add many)'
+    });
+    var tplBtn = h('button', {
+      type: 'button',
+      class: 'btn icon sm qa-tpl',
+      'data-action': 'qa-templates',
+      'data-column-id': columnId,
+      title: 'New card from a template'
+    });
+    tplBtn.innerHTML = icon('doc');
+    row.appendChild(input);
+    row.appendChild(tplBtn);
+    return row;
+  }
+
   function columnEl(column, filters) {
-    var el = h('section', { class: 'column', draggable: 'true', 'data-id': column.id });
+    var el = h('section', { class: 'column' + (column.collapsed ? ' collapsed' : ''), draggable: 'true', 'data-id': column.id });
 
     var header = h('header', { class: 'column-header' });
     var accent = columnAccent(column.id);
@@ -98,39 +189,55 @@
     grip.innerHTML = icon('grip');
     var title = h('h2', { class: 'col-title' });
     title.textContent = column.title;
+    var over = column.wipLimit > 0 && column.cards.length > column.wipLimit;
     var count = h('span', {
-      class: 'col-count',
-      title: column.cards.length + (column.cards.length === 1 ? ' card' : ' cards')
+      class: 'col-count' + (over ? ' over' : ''),
+      title: KB.Dom.plural(column.cards.length, 'card') +
+        (column.wipLimit > 0 ? ' · WIP limit ' + column.wipLimit : '')
     });
-    count.textContent = column.cards.length;
+    count.textContent = column.wipLimit > 0 ? column.cards.length + '/' + column.wipLimit : column.cards.length;
     var addBtn = h('button', { type: 'button', class: 'btn icon sm', 'data-action': 'col-add', title: 'Add card' });
     addBtn.innerHTML = icon('plus');
     var menuBtn = h('button', { type: 'button', class: 'btn icon sm', 'data-action': 'col-menu', title: 'Edit column' });
     menuBtn.innerHTML = icon('more');
+    var collapseBtn = h('button', {
+      type: 'button',
+      class: 'btn icon sm',
+      'data-action': 'col-collapse',
+      title: column.collapsed ? 'Expand column' : 'Collapse column'
+    });
+    collapseBtn.innerHTML = icon(column.collapsed ? 'chevronUp' : 'chevronDown');
     header.appendChild(grip);
     header.appendChild(title);
     header.appendChild(count);
     header.appendChild(addBtn);
     header.appendChild(menuBtn);
+    header.appendChild(collapseBtn);
     el.appendChild(header);
 
     var list = h('div', { class: 'card-list', 'data-column-id': column.id });
     var visible = column.cards.filter(function (card) {
       return KB.Filters.matches(card, filters);
     });
-    if (column.cards.length === 0) {
-      var empty = emptyHint('No cards yet', 'Drop cards here or add one.');
-      var addEmpty = h('button', { type: 'button', class: 'btn ghost sm', 'data-action': 'col-add' });
-      addEmpty.innerHTML = icon('plus');
-      addEmpty.appendChild(document.createTextNode(' Add card'));
-      empty.appendChild(addEmpty);
-      list.appendChild(empty);
-    } else if (visible.length === 0) {
-      list.appendChild(emptyHint('No cards match your filters.'));
-    } else {
-      visible.forEach(function (card) {
-        list.appendChild(cardEl(card, column));
-      });
+    if (KB.Filters.sortActive()) {
+      visible = visible.slice().sort(KB.Filters.compare);
+    }
+    if (!column.collapsed) {
+      if (column.cards.length === 0) {
+        var empty = emptyHint('No cards yet', 'Drop cards here or add one.');
+        var addEmpty = h('button', { type: 'button', class: 'btn ghost sm', 'data-action': 'col-add' });
+        addEmpty.innerHTML = icon('plus');
+        addEmpty.appendChild(document.createTextNode(' Add card'));
+        empty.appendChild(addEmpty);
+        list.appendChild(empty);
+      } else if (visible.length === 0) {
+        list.appendChild(emptyHint('No cards match your filters.'));
+      } else {
+        visible.forEach(function (card) {
+          list.appendChild(cardEl(card, column));
+        });
+      }
+      list.appendChild(quickAddEl(column.id));
     }
     el.appendChild(list);
 
@@ -158,7 +265,8 @@
     var el = KB.el('board');
     el.innerHTML = '';
     var filters = KB.Filters.read();
-    var columns = KB.State.data().columns;
+    var boardData = KB.State.activeBoard();
+    var columns = boardData.columns;
 
     if (columns.length === 0) {
       el.appendChild(emptyBoardEl());
@@ -189,6 +297,7 @@
       if (counts.search) parts.push('search "' + counts.search + '"');
       if (counts.labels.size > 0) parts.push('the selected labels');
       if (counts.assignee) parts.push(counts.assignee === KB.Filters.UNASSIGNED ? 'unassigned' : 'assignee "' + counts.assignee + '"');
+      if (counts.due) parts.push('due: ' + counts.due);
       text.textContent = 'No cards match ' + parts.join(' and ') + '.';
     }
   }
@@ -209,7 +318,7 @@
       dot.style.background = label.color;
       chip.appendChild(dot);
       chip.appendChild(document.createTextNode(label.name));
-      paintChip(chip, label.color);
+      KB.Dom.paintChip(chip, label.color);
       box.appendChild(chip);
     });
 
@@ -229,6 +338,22 @@
     });
     select.value = previous;
 
+    var due = KB.el('due-filter');
+    var prevDue = due.value;
+    due.innerHTML = '';
+    [['', 'Any due date'], ['overdue', 'Overdue'], ['today', 'Due today'], ['week', 'Due this week'], ['none', 'No due date']].forEach(function (pair) {
+      due.appendChild(new Option(pair[1], pair[0]));
+    });
+    due.value = prevDue;
+
+    var sort = KB.el('sort-select');
+    var prevSort = sort.value || KB.Filters.sortModeValue();
+    sort.innerHTML = '';
+    KB.Filters.SORT_OPTIONS.forEach(function (option) {
+      sort.appendChild(new Option(option.label, option.value));
+    });
+    sort.value = prevSort;
+
     KB.el('clear-filters').classList.toggle('show', KB.Filters.active(filters));
   }
 
@@ -246,7 +371,7 @@
 
   function archiveColumnItem(entry) {
     var meta = h('div', { class: 'archive-item-meta' });
-    meta.appendChild(metaText(entry.cards.length + (entry.cards.length === 1 ? ' card' : ' cards')));
+    meta.appendChild(metaText(KB.Dom.plural(entry.cards.length, 'card')));
     meta.appendChild(metaText('archived ' + fmtDate(entry.archivedAt)));
     var actions = h('div', { class: 'archive-item-actions' });
     actions.appendChild(actionButton('restore-column', entry.id, 'Restore', 'ghost sm'));
@@ -270,6 +395,8 @@
       if (label) meta.appendChild(staticChip(label));
     });
     if (card.assignee) meta.appendChild(assigneeChip(card.assignee));
+    var due = dueChip(card, false);
+    if (due) meta.appendChild(due);
     var actions = h('div', { class: 'archive-item-actions' });
     actions.appendChild(actionButton('restore-card', card.id, 'Restore', 'ghost sm'));
     actions.appendChild(actionButton('purge-card', card.id, 'Delete forever', 'danger-ghost sm'));
@@ -292,7 +419,7 @@
   function archivePanel() {
     var panel = KB.el('archive-panel');
     panel.innerHTML = '';
-    var archive = KB.State.data().archive;
+    var archive = KB.State.activeBoard().archive;
 
     var head = h('div', { class: 'archive-head' });
     var title = h('h2', { class: 'archive-title' });
@@ -337,4 +464,3 @@
     archivePanel: archivePanel
   };
 })(window.KB = window.KB || {});
-

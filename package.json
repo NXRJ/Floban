@@ -1,5 +1,12 @@
 {
-  "dependencies": {
+  "name": "kanban",
+  "version": "0.1.0",
+  "description": "A personal Kanban board with the 8-Bit Atelier look: vanilla HTML/CSS/JS, no build step, localStorage persistence.",
+  "license": "MIT",
+  "devDependencies": {
     "puppeteer": "^25.5.0"
+  },
+  "scripts": {
+    "test": "node tests/kanban-smoke.js"
   }
 }
