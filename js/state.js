@@ -278,21 +278,12 @@
 
   function addCard(columnId, data, opts) {
     return commit(function (current) {
-      var board = boardForColumn(columnId);
-      var column = board ? board.columns.find(function (c) { return c.id === columnId; }) : null;
-      if (!column) return { changed: false, state: current, value: null, reason: 'column-not-found' };
-      var next = JSON.parse(JSON.stringify(current));
-      var nextBoard = next.boards.find(function (b) { return b.id === board.id; });
-      var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
-      var card = freshCard(columnId, data);
-      var placed = KB.Core.Pipeline.placeCard(next, card, null, nextBoard, nextColumn, {
+      return KB.Core.Operations.createCard(current, {
+        columnId: columnId,
+        data: data,
         confirmed: opts && opts.confirmed,
         overrideReason: opts && opts.overrideReason
       }, deps());
-      if (!placed.changed) {
-        return { changed: false, state: current, value: null, reason: placed.reason, evaluation: placed.evaluation };
-      }
-      return { changed: true, state: next, value: placed.value };
     });
   }
 
@@ -304,31 +295,12 @@
     });
     if (cleanTitles.length === 0) return 0;
     return commit(function (current) {
-      var board = boardForColumn(columnId);
-      var column = board ? board.columns.find(function (c) { return c.id === columnId; }) : null;
-      if (!column) return { changed: false, state: current, value: 0, reason: 'column-not-found' };
-      var next = JSON.parse(JSON.stringify(current));
-      var nextBoard = next.boards.find(function (b) { return b.id === board.id; });
-      var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
-      var created = [];
-      var failed = false;
-      cleanTitles.forEach(function (title) {
-        if (failed) return;
-        var card = freshCard(columnId, { title: title });
-        var placed = KB.Core.Pipeline.placeCard(next, card, null, nextBoard, nextColumn, {
-          confirmed: opts && opts.confirmed,
-          overrideReason: opts && opts.overrideReason
-        }, deps());
-        if (!placed.changed) {
-          failed = true;
-          return;
-        }
-        created.push(placed.value);
-      });
-      if (failed || created.length === 0) {
-        return { changed: false, state: current, value: 0, reason: 'policy' };
-      }
-      return { changed: true, state: next, value: created.length };
+      return KB.Core.Operations.createCards(current, {
+        columnId: columnId,
+        titles: cleanTitles,
+        confirmed: opts && opts.confirmed,
+        overrideReason: opts && opts.overrideReason
+      }, deps());
     });
   }
 
@@ -522,11 +494,21 @@
     return { changed: true, state: next, value: result.value };
   }
 
-  function evaluateCreate(columnId) {
+  function evaluateCreate(columnId, pendingCount) {
     var board = activeBoard();
     var column = findColumn(columnId);
     if (!board || !column) return null;
-    return KB.Core.Policies.evaluateMovePolicy(data(), { boardId: board.id, cardId: '' }, { boardId: board.id, columnId: columnId }, { sourceColumn: null });
+    return KB.Core.Policies.evaluateMovePolicy(data(), { boardId: board.id, cardId: '' }, { boardId: board.id, columnId: columnId }, {
+      sourceColumn: null,
+      pendingCount: Math.max(0, pendingCount || 0)
+    });
+  }
+
+  function createNeedsConfirmation(columnId, pendingCount) {
+    var evaluation = evaluateCreate(columnId, pendingCount);
+    if (!evaluation) return null;
+    if (!evaluation.allowed || evaluation.requiresConfirmation) return evaluation;
+    return null;
   }
 
   function restoreCardChecked(cardId, opts) {
@@ -1103,6 +1085,7 @@
     evaluateMove: evaluateMove,
     evaluateMoveTo: evaluateMoveTo,
     evaluateCreate: evaluateCreate,
+    createNeedsConfirmation: createNeedsConfirmation,
     moveCardChecked: moveCardChecked,
     moveCardTo: moveCardTo,
     restoreCardChecked: restoreCardChecked,

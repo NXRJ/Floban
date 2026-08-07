@@ -256,8 +256,8 @@
             }
             KB.App.refresh();
           };
-          var evaluation = KB.State.evaluateCreate(columnId);
-          if (evaluation && (!evaluation.allowed || evaluation.requiresConfirmation)) {
+          var evaluation = KB.State.createNeedsConfirmation(columnId);
+          if (evaluation) {
             KB.Modal.moveConfirmModal('Adding this card requires confirmation', evaluation, '', function (reason) {
               createCard({ confirmed: true, overrideReason: reason });
             });
@@ -290,11 +290,11 @@
         fresh.focus();
       }
     };
-    var evaluation = KB.State.evaluateCreate(columnId);
-    if (evaluation && (!evaluation.allowed || evaluation.requiresConfirmation)) {
+    var evaluation = KB.State.createNeedsConfirmation(columnId, lines.length);
+    if (evaluation) {
       KB.Modal.moveConfirmModal('Adding these cards requires confirmation', evaluation, '', function (reason) {
         var added = KB.State.addCards(columnId, lines, { confirmed: true, overrideReason: reason });
-        finish(added, false, lines.join('\n'));
+        finish(added, added === 0, lines.join('\n'));
       });
       return;
     }

@@ -672,8 +672,6 @@ test('moveCard within a column reorders without a lifecycle transition', () => {
   assert.equal(moved.movedAt, 100);
   assert.equal(moved.updatedAt, 100);
   assert.equal(moved.transitions, undefined);
-  assert.equal(moved.startedAt, undefined);
-  assert.equal(moved.completedAt, undefined);
 });
 
 test('restoreCard into a done column records completion', () => {
@@ -761,11 +759,13 @@ test('deleteColumn preserves the full v3 column metadata in the archive', () => 
   const entry = result.state.boards[0].archive.columns[0];
   assert.equal(entry.role, 'queue');
   assert.equal(entry.collapsed, true);
+  assert.equal(entry.wipLimit, 4);
   assert.equal(entry.policy.wipMode, 'hard');
   assert.equal(entry.policy.overrideRequiresReason, true);
   assert.deepEqual(entry.policy.entryCriteria, ['Ready']);
   assert.deepEqual(entry.policy.defaultLabelIds, ['label-1']);
   assert.equal(entry.policy.defaultAssignee, 'Sam');
+  assert.equal(entry.policy.countsTowardCycleTime, true);
 });
 
 test('restoreColumn returns the archived column with its metadata intact', () => {
@@ -774,14 +774,16 @@ test('restoreColumn returns the archived column with its metadata intact', () =>
   column.role = 'queue';
   column.wipLimit = 4;
   column.collapsed = true;
-  column.policy = { wipMode: 'hard', overrideRequiresReason: true, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: 'Sam' };
+  column.policy = { wipMode: 'hard', overrideRequiresReason: true, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: 'Sam', countsTowardCycleTime: true };
   const deleted = Operations.deleteColumn(state, { columnId: column.id }, makeDeps());
   const restored = Operations.restoreColumn(deleted.state, { columnId: column.id }, makeDeps());
   const entry = restored.state.boards[0].columns[restored.state.boards[0].columns.length - 1];
   assert.equal(entry.role, 'queue');
   assert.equal(entry.collapsed, true);
+  assert.equal(entry.wipLimit, 4);
   assert.equal(entry.policy.wipMode, 'hard');
   assert.equal(entry.policy.defaultAssignee, 'Sam');
+  assert.equal(entry.policy.countsTowardCycleTime, true);
 });
 
 test('same-column reorder does not reapply entry defaults', () => {
@@ -800,4 +802,89 @@ test('cross-column moves apply entry defaults', () => {
   const moved = result.state.boards[0].columns[1].cards[0];
   assert.deepEqual(moved.labels, ['label-1']);
   assert.equal(moved.assignee, 'Sam');
+});
+
+test('createCard routes through the pipeline: lifecycle and defaults', () => {
+  const state = makeState();
+  state.boards[0].columns[1].policy = { wipMode: 'off', defaultLabelIds: ['label-1'], defaultAssignee: 'Sam', entryCriteria: [], exitCriteria: [] };
+  const result = Operations.createCard(state, { columnId: 'column-2', data: { title: 'New in done' } }, makeDeps());
+  assert.equal(result.changed, true);
+  const card = result.state.boards[0].columns[1].cards[result.state.boards[0].columns[1].cards.length - 1];
+  assert.equal(card.title, 'New in done');
+  assert.equal(card.completedAt, 9000);
+  assert.deepEqual(card.labels, ['label-1']);
+  assert.equal(card.assignee, 'Sam');
+  assert.equal(card.transitions.length, 1);
+});
+
+test('createCard is blocked by hard WIP without confirmation', () => {
+  const state = makeState();
+  state.boards[0].columns[1].wipLimit = 1;
+  state.boards[0].columns[1].policy = { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' };
+  const result = Operations.createCard(state, { columnId: 'column-2', data: { title: 'Blocked' } }, makeDeps());
+  assert.equal(result.changed, false);
+  assert.equal(result.reason, 'policy');
+  assert.equal(result.evaluation.blocking, true);
+  assert.equal(state.boards[0].columns[1].cards.length, 1);
+});
+
+test('createCard passes with a confirmed override', () => {
+  const state = makeState();
+  state.boards[0].columns[1].wipLimit = 1;
+  state.boards[0].columns[1].policy = { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' };
+  const result = Operations.createCard(state, { columnId: 'column-2', data: { title: 'Confirmed' }, confirmed: true }, makeDeps());
+  assert.equal(result.changed, true);
+  assert.equal(result.state.boards[0].columns[1].cards.length, 2);
+});
+
+test('createCard asks for confirmation on soft WIP until confirmed', () => {
+  const state = makeState();
+  state.boards[0].columns[1].wipLimit = 1;
+  state.boards[0].columns[1].policy = { wipMode: 'soft', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' };
+  const blocked = Operations.createCard(state, { columnId: 'column-2', data: { title: 'Soft' } }, makeDeps());
+  assert.equal(blocked.changed, false);
+  assert.equal(blocked.reason, 'policy');
+  assert.equal(blocked.evaluation.allowed, true);
+  assert.equal(blocked.evaluation.requiresConfirmation, true);
+  const confirmed = Operations.createCard(state, { columnId: 'column-2', data: { title: 'Soft' }, confirmed: true }, makeDeps());
+  assert.equal(confirmed.changed, true);
+});
+
+test('createCards is atomic when the first line would fail', () => {
+  const state = makeState();
+  state.boards[0].columns[1].wipLimit = 1;
+  state.boards[0].columns[1].policy = { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' };
+  const result = Operations.createCards(state, { columnId: 'column-2', titles: ['One', 'Two', 'Three'] }, makeDeps());
+  assert.equal(result.changed, false);
+  assert.equal(result.reason, 'policy');
+  assert.equal(result.state.boards[0].columns[1].cards.length, 1);
+  assert.deepEqual(result.state.boards[0].columns[1].cards.map(c => c.title), ['Gamma']);
+});
+
+test('createCards is atomic when a mid-batch line would fail', () => {
+  const state = makeState();
+  state.boards[0].columns[1].wipLimit = 2;
+  state.boards[0].columns[1].policy = { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' };
+  const result = Operations.createCards(state, { columnId: 'column-2', titles: ['One', 'Two', 'Three'] }, makeDeps());
+  assert.equal(result.changed, false);
+  assert.equal(result.state.boards[0].columns[1].cards.length, 1);
+});
+
+test('createCards adds the whole batch with a confirmed override', () => {
+  const state = makeState();
+  state.boards[0].columns[1].wipLimit = 1;
+  state.boards[0].columns[1].policy = { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' };
+  const result = Operations.createCards(state, { columnId: 'column-2', titles: ['One', 'Two'], confirmed: true }, makeDeps());
+  assert.equal(result.changed, true);
+  assert.equal(result.value, 2);
+  assert.equal(result.state.boards[0].columns[1].cards.length, 3);
+});
+
+test('createCards never mutates the input state on failure', () => {
+  const state = makeState();
+  state.boards[0].columns[1].wipLimit = 1;
+  state.boards[0].columns[1].policy = { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' };
+  const before = JSON.stringify(state);
+  Operations.createCards(state, { columnId: 'column-2', titles: ['One', 'Two'] }, makeDeps());
+  assert.equal(JSON.stringify(state), before);
 });

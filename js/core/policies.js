@@ -58,7 +58,7 @@
       if (limit <= 0) return null;
       var policy = column && column.policy ? column.policy : {};
       var mode = WIP_MODES.indexOf(policy.wipMode) !== -1 ? policy.wipMode : 'off';
-      var count = column.cards ? column.cards.length : 0;
+      var count = (column.cards ? column.cards.length : 0) + (options && options.pendingCount ? options.pendingCount : 0);
       var atLimit = !options || options.atLimit !== false;
       var breached = atLimit ? count >= limit : count > limit;
       if (!breached) return null;
@@ -104,7 +104,7 @@
         };
       }
 
-      var wip = wipViolation(target);
+      var wip = wipViolation(target, { pendingCount: options.pendingCount });
       if (wip) {
         violations.push({ code: 'wip-limit', message: wip.message, mode: wip.mode });
         if (wip.mode === 'hard') {

@@ -272,3 +272,13 @@ test('ready-to-pull built-in matches the My Desk definition (queue role, normal 
   assert.ok(!ids.includes('queue-waiting'));
   assert.ok(!ids.includes('done-ready'));
 });
+
+test('ready-to-pull built-in excludes dependency-blocked queue cards', () => {
+  const s = state();
+  const builtin = Lenses.builtInLenses().find(b => b.id === 'builtin-ready-to-pull');
+  s.boards[0].columns[0].cards.push(card('queue-blocked', 'c1', {
+    dependencies: { blockers: [{ boardId: 'b1', cardId: 'b' }], related: [] }
+  }));
+  const result = Lenses.applyLens(s, builtin, NOW);
+  assert.ok(result.every(r => r.cardId !== 'queue-blocked'));
+});
