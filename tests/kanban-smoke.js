@@ -320,6 +320,39 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const boardsAfterDelete = await page.evaluate(() => KB.State.boards().length);
   check('delete board removes it from state', boardsAfterDelete === 2);
 
+  // ---- Failed mutations must not consume undo history ----
+  const probe = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    const added = KB.State.addCard(col.id, { title: 'History probe' });
+    const updateResult = KB.State.updateCard(col.id, 'ghost-card', { title: 'nope' });
+    const moveResult = KB.State.moveColumn('ghost-column', 1);
+    const purgeResult = KB.State.purgeCard('ghost-archived-card');
+    const purgeColResult = KB.State.purgeColumn('ghost-archived-column');
+    const blankResult = KB.State.addCards(col.id, ['  ', '', '   ']);
+    const renameResult = KB.State.renameBoard('ghost-board', 'Renamed');
+    KB.App.refresh();
+    return {
+      added: Boolean(added),
+      updateResult: Boolean(updateResult),
+      moveResult: Boolean(moveResult),
+      purgeResult: Boolean(purgeResult),
+      purgeColResult: Boolean(purgeColResult),
+      blankResult: blankResult,
+      renameResult: Boolean(renameResult)
+    };
+  });
+  await sleep(200);
+  check('failed mutations return falsey results',
+    probe.added && !probe.updateResult && !probe.moveResult && !probe.purgeResult && !probe.purgeColResult &&
+    probe.blankResult === 0 && !probe.renameResult);
+  const probeTitles = await page.$$eval('.column .card-title', els => els.map(e => e.textContent));
+  check('probe card renders after failed mutations', probeTitles.some(t => t === 'History probe'));
+  await blur();
+  await pressUndo();
+  const afterUndo = await page.$$eval('.column .card-title', els => els.map(e => e.textContent));
+  check('single undo removes only the probe card', !afterUndo.some(t => t === 'History probe'));
+
   check('no unexpected page errors', errors.filter(e => !e.includes('ERR_CONNECTION_REFUSED')).length === 0);
 
   console.log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECKS FAILED');
