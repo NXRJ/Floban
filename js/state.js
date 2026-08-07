@@ -902,6 +902,24 @@
     return state.lenses || [];
   }
 
+  function bulkMove(cardRefs, target, opts) {
+    return commit(function (current) {
+      return KB.Core.Bulk.bulkMove(current, cardRefs, target, deps(), opts);
+    });
+  }
+
+  function bulkUpdate(cardRefs, patch) {
+    return commit(function (current) {
+      return KB.Core.Bulk.bulkUpdate(current, cardRefs, patch, deps());
+    });
+  }
+
+  function bulkArchive(cardRefs) {
+    return commit(function (current) {
+      return KB.Core.Bulk.bulkArchive(current, cardRefs, deps());
+    });
+  }
+
   function setTheme(theme) {
     pushHistory();
     state.theme = theme;
@@ -1006,6 +1024,9 @@
     updateLens: updateLens,
     deleteLens: deleteLens,
     lenses: lenses,
+    bulkMove: bulkMove,
+    bulkUpdate: bulkUpdate,
+    bulkArchive: bulkArchive,
     setTheme: setTheme,
     exportAll: exportAll,
     exportBoard: exportBoard,
