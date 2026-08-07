@@ -888,3 +888,33 @@ test('createCards never mutates the input state on failure', () => {
   Operations.createCards(state, { columnId: 'column-2', titles: ['One', 'Two'] }, makeDeps());
   assert.equal(JSON.stringify(state), before);
 });
+
+test('findBoardForColumn prefers the active board, then any board', () => {
+  const state = makeState();
+  state.boards.push({
+    id: 'board-2',
+    name: 'Board 2',
+    labels: [],
+    templates: [],
+    columns: [{ id: 'column-3', title: 'Elsewhere', isDone: false, role: 'queue', wipLimit: 0, collapsed: false, cards: [], policy: { wipMode: 'off' } }],
+    archive: { cards: [], columns: [] }
+  });
+  assert.equal(Operations.findBoardForColumn(state, 'column-1').id, 'board-1');
+  assert.equal(Operations.findBoardForColumn(state, 'column-3').id, 'board-2');
+  assert.equal(Operations.findBoardForColumn(state, 'ghost'), null);
+});
+
+test('createCard targets a column on a non-active board', () => {
+  const state = makeState();
+  state.boards.push({
+    id: 'board-2',
+    name: 'Board 2',
+    labels: [],
+    templates: [],
+    columns: [{ id: 'column-3', title: 'Elsewhere', isDone: false, role: 'queue', wipLimit: 0, collapsed: false, cards: [], policy: { wipMode: 'off' } }],
+    archive: { cards: [], columns: [] }
+  });
+  const result = Operations.createCard(state, { columnId: 'column-3', data: { title: 'Cross-board' } }, makeDeps());
+  assert.equal(result.changed, true);
+  assert.equal(result.state.boards[1].columns[0].cards[0].title, 'Cross-board');
+});

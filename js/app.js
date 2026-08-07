@@ -284,7 +284,7 @@
         toast('Column policy blocks these cards', 'error');
       }
       KB.App.refresh();
-      var fresh = KB.el('board').querySelector('.card-list[data-column-id="' + columnId + '"] .qa-input');
+      var fresh = KB.el('board').querySelector('.card-list[data-column-id="' + CSS.escape(columnId) + '"] .qa-input');
       if (fresh) {
         if (keepInput && text) fresh.value = text;
         fresh.focus();

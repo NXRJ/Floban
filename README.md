@@ -66,10 +66,10 @@ Your current workspace is remembered across reloads.
   the confirmation dialog offers "Move anyway". Hard mode requires an explicit
   confirmation (and optionally a reason) before a card can move in. Every
   movement and creation path — drag, move-to menu, keyboard move, bulk move,
-  restore, quick-add and new-card creation, inbox triage, recurrence creation
-  and ordinary movement — runs the same policy evaluator through one shared
-  placement pipeline, so entry criteria, entry defaults, lifecycle timestamps
-  and after-completion scheduling behave identically everywhere.
+  restore, quick-add and new-card creation, inbox triage, recurrence creation —
+  runs the same policy evaluator through one shared placement pipeline, so
+  entry criteria, entry defaults, lifecycle timestamps and after-completion
+  scheduling behave identically everywhere.
 - A **single placement pipeline** (`js/core/pipeline.js`) applies policy
   checks, lifecycle transitions, entry defaults and the recurrence
   after-completion side effect on every path that inserts a card into a column.
@@ -139,9 +139,8 @@ Your current workspace is remembered across reloads.
   (newest 100) with role snapshots, so later role changes never rewrite
   history. The card editor's **Activity** section renders this history.
   Same-column reordering records nothing.
-- All movement and creation paths share this lifecycle core (drag, move-to,
-  keyboard, bulk, restore, recurrence, triage, quick-add and new-card
-  creation).
+- All movement and creation paths share this lifecycle core through the single
+  placement pipeline described above.
 
 ### Undo & redo
 - Every mutation is tracked in memory: press **Ctrl/Cmd+Z** to undo and

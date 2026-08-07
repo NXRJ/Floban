@@ -67,18 +67,22 @@
       return null;
     }
 
+    function placeCreated(next, board, column, command, cardData, d) {
+      var card = Model.createCard(command.columnId, cardData, d);
+      return Pipeline.placeCard(next, card, null, board, column, {
+        rejectOnConfirmation: true,
+        confirmed: Boolean(command.confirmed),
+        overrideReason: command.overrideReason
+      }, d);
+    }
+
     function createCard(state, command, deps) {
       var d = resolveDeps(deps);
       var next = cloneState(state);
       var board = findBoardForColumn(next, command.columnId);
       if (!board) return noop(state, 'column-not-found');
-      var column = board.columns.find(function (c) { return c.id === command.columnId; });
-      var card = Model.createCard(command.columnId, command.data || {}, d);
-      var placed = Pipeline.placeCard(next, card, null, board, column, {
-        rejectOnConfirmation: true,
-        confirmed: Boolean(command.confirmed),
-        overrideReason: command.overrideReason
-      }, d);
+      var column = findColumn(board, command.columnId);
+      var placed = placeCreated(next, board, column, command, command.data || {}, d);
       if (!placed.changed) {
         return { changed: false, state: state, value: null, reason: placed.reason, evaluation: placed.evaluation };
       }
@@ -90,26 +94,24 @@
       var next = cloneState(state);
       var board = findBoardForColumn(next, command.columnId);
       if (!board) return { changed: false, state: state, value: 0, reason: 'column-not-found' };
-      var column = board.columns.find(function (c) { return c.id === command.columnId; });
+      var column = findColumn(board, command.columnId);
       var titles = Array.isArray(command.titles) ? command.titles : [];
       var created = [];
       var failed = null;
       titles.forEach(function (title) {
         if (failed) return;
-        var card = Model.createCard(command.columnId, { title: title }, d);
-        var placed = Pipeline.placeCard(next, card, null, board, column, {
-          rejectOnConfirmation: true,
-          confirmed: Boolean(command.confirmed),
-          overrideReason: command.overrideReason
-        }, d);
+        var placed = placeCreated(next, board, column, command, { title: title }, d);
         if (!placed.changed) {
           failed = placed;
           return;
         }
         created.push(placed.value);
       });
-      if (failed || created.length === 0) {
-        return { changed: false, state: state, value: 0, reason: 'policy', evaluation: failed && failed.evaluation };
+      if (failed) {
+        return { changed: false, state: state, value: 0, reason: failed.reason, evaluation: failed.evaluation };
+      }
+      if (created.length === 0) {
+        return { changed: false, state: state, value: 0, reason: 'policy', evaluation: null };
       }
       return { changed: true, state: next, value: created.length };
     }
@@ -132,7 +134,7 @@
       var card = source.cards[fromIndex];
       var result = Pipeline.placeCard(next, card, source, board, target, {
         toIndex: index,
-        sameColumnMode: command.columnId === command.targetColumnId ? 'preserve' : 'transition',
+        sameColumnMode: 'preserve',
         confirmed: Boolean(command.confirmed),
         overrideReason: command.overrideReason
       }, d);
@@ -301,6 +303,7 @@
       activeBoard: activeBoard,
       findColumn: findColumn,
       findCard: findCard,
+      findBoardForColumn: findBoardForColumn,
       labelInUse: labelInUse,
       createCard: createCard,
       createCards: createCards,

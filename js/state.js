@@ -184,15 +184,7 @@
   }
 
   function boardForColumn(columnId) {
-    var active = activeBoard();
-    if (active && active.columns.some(function (c) { return c.id === columnId; })) return active;
-    for (var i = 0; i < state.boards.length; i++) {
-      var board = state.boards[i];
-      for (var j = 0; j < board.columns.length; j++) {
-        if (board.columns[j].id === columnId) return board;
-      }
-    }
-    return null;
+    return KB.Core.Operations.findBoardForColumn(state, columnId);
   }
 
   function boardById(boardId) {
@@ -495,8 +487,8 @@
   }
 
   function evaluateCreate(columnId, incomingCount) {
-    var board = activeBoard();
-    var column = findColumn(columnId);
+    var board = boardForColumn(columnId);
+    var column = board ? board.columns.find(function (c) { return c.id === columnId; }) : null;
     if (!board || !column) return null;
     // The evaluator counts the incoming card implicitly (breach when
     // count >= limit), so pass only the cards BEYOND the first one:
@@ -511,8 +503,7 @@
 
   function createNeedsConfirmation(columnId, incomingCount) {
     var evaluation = evaluateCreate(columnId, incomingCount);
-    if (!evaluation) return null;
-    if (!evaluation.allowed || evaluation.requiresConfirmation) return evaluation;
+    if (evaluation && (!evaluation.allowed || evaluation.requiresConfirmation)) return evaluation;
     return null;
   }
 
@@ -527,8 +518,7 @@
         confirmed: opts && opts.confirmed,
         overrideReason: opts && opts.overrideReason
       });
-      if (!evaluation.allowed) return { ok: false, reason: 'policy', evaluation: evaluation };
-      if (evaluation.requiresConfirmation && !(opts && opts.confirmed)) {
+      if (!evaluation.allowed || (evaluation.requiresConfirmation && !(opts && opts.confirmed))) {
         return { ok: false, reason: 'policy', evaluation: evaluation };
       }
     }
@@ -1089,7 +1079,6 @@
     moveCard: moveCard,
     evaluateMove: evaluateMove,
     evaluateMoveTo: evaluateMoveTo,
-    evaluateCreate: evaluateCreate,
     createNeedsConfirmation: createNeedsConfirmation,
     moveCardChecked: moveCardChecked,
     moveCardTo: moveCardTo,
