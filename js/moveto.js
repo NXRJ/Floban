@@ -225,29 +225,7 @@
   }
 
   function mapLabelsAcrossBoards(sourceBoardId, card, targetBoard) {
-    var dropped = [];
-    var kept = [];
-    var targetLabels = targetBoard.labels || [];
-    var byNameColor = {};
-    targetLabels.forEach(function (label) {
-      byNameColor[label.name.toLowerCase() + '|' + label.color.toLowerCase()] = label.id;
-    });
-    var sourceBoard = KB.State.boardById(sourceBoardId);
-    var sourceLabels = sourceBoard ? sourceBoard.labels : [];
-    var cardLabelIds = card.labels || [];
-    cardLabelIds.forEach(function (id) {
-      var source = sourceLabels.find(function (l) { return l.id === id; });
-      if (!source) return;
-      var match = targetLabels.find(function (l) { return l.id === id; });
-      if (match) {
-        kept.push(match.id);
-        return;
-      }
-      var mapped = byNameColor[source.name.toLowerCase() + '|' + source.color.toLowerCase()];
-      if (mapped) kept.push(mapped);
-      else dropped.push(source.name);
-    });
-    return { kept: kept, dropped: dropped };
+    return KB.State.mapLabelsAcrossBoards(sourceBoardId, card, targetBoard);
   }
 
   function moveToMenu(boardId, columnId, cardId, opts) {

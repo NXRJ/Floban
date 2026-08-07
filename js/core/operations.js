@@ -75,12 +75,11 @@
       var card = source.cards[fromIndex];
       var result = Pipeline.placeCard(next, card, source, board, target, {
         toIndex: index,
-        sameColumnMode: command.columnId === command.targetColumnId ? 'transition' : 'transition',
         confirmed: Boolean(command.confirmed),
         overrideReason: command.overrideReason
       }, d);
       if (!result.changed) {
-        return noop(state, result.reason === 'policy' ? 'policy' : result.reason);
+        return noop(state, result.reason);
       }
       return { changed: true, state: next, value: result.value };
     }
@@ -153,7 +152,7 @@
         overrideReason: command.overrideReason
       }, d);
       if (!result.changed) {
-        return noop(state, result.reason === 'policy' ? 'policy' : result.reason);
+        return noop(state, result.reason);
       }
       return { changed: true, state: next, value: result.value };
     }

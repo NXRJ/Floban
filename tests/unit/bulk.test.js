@@ -266,3 +266,31 @@ test('bulk move into a done column schedules the next after-completion occurrenc
   assert.equal(rec.activeCardRef, null);
   assert.ok(rec.nextRunAt !== null);
 });
+
+test('mixed batch with same-column and cross-column cards keeps same-column positions', () => {
+  const s = state();
+  s.boards[0].columns[0].cards = [card('a', 'col-a'), card('b', 'col-a'), card('c', 'col-a'), card('d', 'col-a')];
+  s.boards[0].columns[1].cards = [card('x', 'col-b'), card('y', 'col-b')];
+  const result = Bulk.bulkMove(s, [ref('board-1', 'x'), ref('board-1', 'b')], { boardId: 'board-1', columnId: 'col-b' }, deps);
+  assert.equal(result.changed, true);
+  const target = result.state.boards[0].columns[1].cards.map(c => c.id);
+  assert.deepEqual(target, ['x', 'b', 'y']);
+  assert.deepEqual(result.state.boards[0].columns[0].cards.map(c => c.id), ['a', 'c', 'd']);
+});
+
+test('bulkUpdate ignores prototype-polluting patch keys', () => {
+  const s = state();
+  const patch = JSON.parse('{"__proto__": {"polluted": true}, "priority": "urgent"}');
+  const result = Bulk.bulkUpdate(s, [ref('board-1', 'c1')], patch, deps);
+  assert.equal(result.changed, true);
+  const card = result.state.boards[0].columns[0].cards[0];
+  assert.equal(card.polluted, undefined);
+  assert.equal(card.priority, 'urgent');
+  assert.equal({}.polluted, undefined);
+});
+
+test('bulkSetLabels rejects prototype-polluting keys', () => {
+  const s = state();
+  const result = Bulk.bulkSetLabels(s, [{ ref: ref('board-1', 'c1'), labels: [] }], deps);
+  assert.equal(result.changed, false);
+});

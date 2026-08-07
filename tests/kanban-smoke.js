@@ -624,7 +624,6 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const col2 = board.columns[1];
     KB.State.updateColumn(col2.id, { wipLimit: 1, policy: { wipMode: 'soft', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' } });
     const card = board.columns[0].cards[0];
-    const ev = KB.State.evaluateMove(board.columns[0].id, card.id, col2.id);
     KB.App.requestMove(board.columns[0].id, card.id, col2.id, 0);
     return { cardId: card.id, col1: board.columns[0].id, col2: col2.id };
   });
@@ -634,14 +633,19 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const btn = [...document.querySelectorAll('.modal-actions .btn')].find(b => b.textContent.trim() === 'Move anyway');
     if (btn) btn.click();
   });
-  await waitFor((ids) => {
+  const softCommitted = await waitFor((ids) => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     const board = b.boards.find(x => x.id === b.activeBoardId);
     return board.columns.find(c => c.id === ids.col2).cards.some(c => c.id === ids.cardId);
   }, 3000, 'soft wip move commits', softWip);
-  check('Move-anyway commits the soft move', true);
+  check('Move-anyway commits the soft move', softCommitted);
   await blur();
   await pressUndo();
+  await waitFor((ids) => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    return board.columns.find(c => c.id === ids.col1).cards.some(c => c.id === ids.cardId);
+  }, 3000, 'soft wip move undone', softWip);
   await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     const board = b.boards.find(x => x.id === b.activeBoardId);
@@ -807,7 +811,6 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const card = KB.State.addCard(col.id, { title: 'Quarterly review', recurrenceId: rec.id });
     const doneCol = board.columns.find(c => c.role === 'done');
     KB.State.moveCard(col.id, card.id, doneCol.id, 0, { confirmed: true });
-    KB.State.handleCardCompleted(board.id, card.id);
     const recAfter = KB.State.recurrences().find(r => r.id === rec.id);
     const startOfDay = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
     return {
@@ -951,8 +954,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   // ---- Triage respects column policies and initializes lifecycle ----
   const triageLifecycle = await page.evaluate(() => {
     const board = KB.State.activeBoard();
-    const captured = KB.State.captureInbox({ title: 'Triage into active' });
     const doneCol = board.columns.find(c => c.role === 'done');
+    KB.State.updateColumn(doneCol.id, {
+      wipLimit: 1,
+      policy: { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' }
+    });
+    const captured = KB.State.captureInbox({ title: 'Triage into active' });
     const triaged = KB.State.triageInboxItem(captured.id, { boardId: board.id, columnId: doneCol.id }, { priority: 'low' });
     const blocked = triaged && triaged.reason === 'policy';
     const confirmed = blocked
@@ -1137,6 +1144,39 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     return done.cards.some(c => c.id === id);
   }, movedCardId);
   check('move-to menu commits the move', moveToLanded === true);
+
+  // ---- Move-to across boards commits and reports success ----
+  const crossMove = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const sourceCol = board.columns.find(c => c.cards.length > 0) || board.columns[0];
+    const card = sourceCol.cards[0];
+    const other = KB.State.addBoard('Cross target');
+    other.columns = [{ id: 'cb-done', title: 'Done', role: 'done', isDone: true, wipLimit: 0, policy: { wipMode: 'off' }, cards: [] }];
+    KB.App.refresh();
+    KB.MoveTo.moveToMenu(board.id, sourceCol.id, card.id);
+    return { boardId: board.id, cardId: card.id, otherId: other.id };
+  });
+  await waitFor(() => !!document.querySelector('#mt-board'), 3000, 'cross move menu');
+  await page.evaluate((ids) => {
+    const boardSel = document.querySelector('#mt-board');
+    boardSel.value = ids.otherId;
+    boardSel.dispatchEvent(new Event('change', { bubbles: true }));
+    const colSel = document.querySelector('#mt-column');
+    colSel.value = colSel.options[colSel.options.length - 1].value;
+    document.querySelector('.modal-panel .btn.primary').click();
+  }, crossMove);
+  const crossMoved = await waitFor((ids) => {
+    const board = KB.State.boardById(ids.otherId);
+    return board.columns.some(c => c.cards.some(card => card.id === ids.cardId));
+  }, 3000, 'cross move commits', crossMove);
+  check('move-to cross-board commits the card', crossMoved === true);
+  check('move-to cross-board reports success', await page.$$eval('.toast', els => els.some(e => e.textContent.includes('Card moved'))));
+  await page.evaluate(() => {
+    const myBoard = KB.State.boards().find(b => b.name === 'My Board');
+    KB.State.setActiveBoard(myBoard.id);
+    KB.App.refresh();
+  });
+  await waitFor(() => document.querySelector('#board-name') && document.querySelector('#board-name').textContent === 'My Board', 3000, 'back to my board');
 
   // ---- Policy criteria confirmation in the move dialog ----
   const criteriaMove = await page.evaluate(() => {

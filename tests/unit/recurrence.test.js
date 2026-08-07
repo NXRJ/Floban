@@ -459,3 +459,29 @@ test('runNow surfaces a policy block', () => {
   assert.equal(result.changed, false);
   assert.equal(result.reason, 'policy');
 });
+
+test('after-completion targeting a done column schedules from the completion instead of stalling', () => {
+  const rec = recurrence({
+    mode: 'after-completion',
+    schedule: { frequency: 'custom', delayAfterCompletionDays: 3 },
+    target: { boardId: 'board-1', columnId: 'col-d' },
+    nextRunAt: null
+  });
+  const boards = [board()];
+  boards[0].columns[1].role = 'done';
+  boards[0].columns[1].isDone = true;
+  let result = Recurrence.processDueRecurrences(state([rec], boards), 1000000, makeDeps());
+  assert.equal(result.created, 1);
+  assert.equal(result.state.boards[0].columns[1].cards.length, 1);
+  const created = result.state.boards[0].columns[1].cards[0];
+  assert.equal(typeof created.completedAt, 'number');
+  const after = result.state.recurrences[0];
+  assert.ok(after.nextRunAt !== null);
+  assert.ok(after.nextRunAt > 1000000);
+  const startOfDay = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  assert.equal(after.nextRunAt, startOfDay(created.completedAt) + 3 * DAY);
+  for (let i = 0; i < 10; i++) {
+    result = Recurrence.processDueRecurrences(result.state, 1000000 + i * 1000, makeDeps());
+    assert.equal(result.state.boards[0].columns[1].cards.length, 1);
+  }
+});

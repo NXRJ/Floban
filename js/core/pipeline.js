@@ -18,6 +18,9 @@
   typeof globalThis !== 'undefined' ? globalThis : this,
   function (Lifecycle, Policies, root) {
     function recurrenceCore() {
+      // Resolved lazily (not factory-injected) to break the load-time cycle:
+      // pipeline.js is loaded before recurrence.js in index.html, and Node
+      // require() at call time returns the fully-initialized module.
       if (typeof module === 'object' && module.exports) return require('./recurrence.js');
       return (root.KB.Core && root.KB.Core.Recurrence) || null;
     }
@@ -34,6 +37,9 @@
           overrideReason: options.overrideReason
         });
         if (!evaluation.allowed) {
+          return { changed: false, state: next, value: null, reason: 'policy', evaluation: evaluation };
+        }
+        if (options.rejectOnConfirmation && evaluation.requiresConfirmation && !options.confirmed) {
           return { changed: false, state: next, value: null, reason: 'policy', evaluation: evaluation };
         }
       }
@@ -72,7 +78,14 @@
         if (recurCore) {
           var side = recurCore.handleRecurringCardCompletion(next, { boardId: targetBoard.id, cardId: card.id }, now, deps);
           if (side && side.changed) {
-            next.recurrences = side.state.recurrences;
+            // Copy the changed recurrence fields back in place so references
+            // the caller already holds stay attached to the same objects.
+            side.state.recurrences.forEach(function (rec) {
+              var existing = next.recurrences.find(function (r) { return r.id === rec.id; });
+              if (existing) {
+                Object.keys(rec).forEach(function (key) { existing[key] = rec[key]; });
+              }
+            });
           }
         }
       }

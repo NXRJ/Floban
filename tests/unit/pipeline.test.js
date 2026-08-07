@@ -1,7 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const Pipeline = require('../../js/core/pipeline.js');
-const Recurrence = require('../../js/core/recurrence.js');
 
 const DAY = 86400000;
 
@@ -90,7 +89,6 @@ test('placeCard initializes lifecycle when inserting into a done column', () => 
   const target = board.columns.find(c => c.id === 'col-d');
   const fresh = card('new-1', target.id);
   const result = Pipeline.placeCard(s, fresh, null, board, target, {}, deps);
-  assert.equal(result.value.completedAt, 5000);
   assert.equal(result.value.completedAt, 5000);
 });
 
@@ -227,6 +225,77 @@ test('placeCard schedules the next after-completion occurrence for a completed r
   assert.ok(after.nextRunAt !== null);
   const startOfDay = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
   assert.equal(after.nextRunAt, startOfDay(5000) + 2 * DAY);
+});
+
+test('placeCard reports a missing card in the source column', () => {
+  const s = state();
+  const board = s.boards[0];
+  const source = board.columns.find(c => c.id === 'col-q');
+  const target = board.columns.find(c => c.id === 'col-a');
+  const ghost = card('ghost', source.id);
+  const result = Pipeline.placeCard(s, ghost, source, board, target, {}, deps);
+  assert.equal(result.changed, false);
+  assert.equal(result.reason, 'card-not-found');
+});
+
+test('placeCard clamps toIndex at both ends', () => {
+  const s = state();
+  const board = s.boards[0];
+  const target = board.columns.find(c => c.id === 'col-a');
+  target.cards = [card('a', target.id), card('b', target.id)];
+  const top = Pipeline.placeCard(s, card('new-1', target.id), null, board, target, { toIndex: -5 }, deps);
+  assert.equal(target.cards[0].id, 'new-1');
+  const bottom = Pipeline.placeCard(s, card('new-2', target.id), null, board, target, { toIndex: 999 }, deps);
+  assert.equal(target.cards[target.cards.length - 1].id, 'new-2');
+});
+
+test('placeCard recurrenceSideEffect false leaves the recurrence untouched', () => {
+  const s = state();
+  const board = s.boards[0];
+  const source = board.columns.find(c => c.id === 'col-q');
+  const target = board.columns.find(c => c.id === 'col-d');
+  s.recurrences.push({
+    id: 'rec-1',
+    enabled: true,
+    mode: 'after-completion',
+    schedule: { frequency: 'custom', interval: 1, delayAfterCompletionDays: 2 },
+    target: { boardId: 'board-1', columnId: 'col-q' },
+    template: { title: 'Recurring', priority: 'none', size: 'none', checklist: [] },
+    dueOffsetDays: null,
+    overlapPolicy: 'single-active',
+    missedPolicy: 'create-one',
+    activeCardRef: { boardId: 'board-1', cardId: 'c1' },
+    nextRunAt: null,
+    lastRunAt: null,
+    lastCompletedAt: null,
+    endAt: null,
+    remainingOccurrences: null,
+    pausedReason: ''
+  });
+  source.cards[0].recurrenceId = 'rec-1';
+  const result = Pipeline.placeCard(s, source.cards[0], source, board, target, { recurrenceSideEffect: false }, deps);
+  assert.equal(result.changed, true);
+  const after = s.recurrences.find(r => r.id === 'rec-1');
+  assert.equal(after.activeCardRef.cardId, 'c1');
+  assert.equal(after.nextRunAt, null);
+});
+
+test('placeCard rejectOnConfirmation returns the evaluation for soft WIP until confirmed', () => {
+  const s = state();
+  const board = s.boards[0];
+  const target = board.columns.find(c => c.id === 'col-a');
+  target.wipLimit = 1;
+  target.policy = { wipMode: 'soft' };
+  target.cards = [card('existing', target.id)];
+  const fresh = card('new-1', target.id);
+  const blocked = Pipeline.placeCard(s, fresh, null, board, target, { rejectOnConfirmation: true }, deps);
+  assert.equal(blocked.changed, false);
+  assert.equal(blocked.reason, 'policy');
+  assert.equal(blocked.evaluation.allowed, true);
+  assert.equal(target.cards.length, 1);
+  const passed = Pipeline.placeCard(s, card('new-2', target.id), null, board, target, { rejectOnConfirmation: true, confirmed: true }, deps);
+  assert.equal(passed.changed, true);
+  assert.equal(target.cards.length, 2);
 });
 
 test('placeCard does not mutate the caller state when policy blocks', () => {
