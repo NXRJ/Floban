@@ -389,10 +389,29 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   check('editor saves priority and size', editedMeta.priority === 'high' && editedMeta.size === 'm');
 
+  // ---- Column roles ----
+  check('role badge renders on columns', await page.$$eval('.col-role', els => els.length) === 3);
+  await page.click('.column:nth-child(2) .column-header [data-action="col-menu"]');
+  await sleep(150);
+  await page.select('#ce-role', 'backlog');
+  await page.click('.modal-actions .btn.primary');
+  await sleep(200);
+  const roleSaved = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    const col = board.columns[1];
+    return { role: col.role, isDone: col.isDone };
+  });
+  check('column role editor saves role', roleSaved.role === 'backlog' && roleSaved.isDone === false);
+  check('role badge updates', await page.$eval('.column:nth-child(2) .col-role', el => el.textContent.trim()) === 'BACKLOG');
+
   // ---- Lifecycle fields follow role-based moves ----
   await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     const board = b.boards.find(x => x.id === b.activeBoardId);
+    board.columns[0].role = 'queue';
+    board.columns[1].role = 'active';
+    board.columns[2].role = 'done';
     const col = board.columns[0];
     col.cards = [{
       id: 'life-1',

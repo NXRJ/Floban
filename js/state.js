@@ -196,9 +196,9 @@
     return KB.Core.Operations.labelInUse(board, labelId);
   }
 
-  function addColumn(title, isDone, skipHistory) {
+  function addColumn(title, isDone, skipHistory, role) {
     if (!skipHistory) pushHistory();
-    var column = freshColumn({ title: title, isDone: Boolean(isDone) });
+    var column = freshColumn({ title: title, isDone: Boolean(isDone), role: role || (isDone ? 'done' : 'queue') });
     activeBoard().columns.push(column);
     save();
     return column;
@@ -208,8 +208,15 @@
     var column = findColumn(id);
     if (!column) return false;
 
+    var normalized = Object.assign({}, patch);
+    if (patch.role && patch.role !== column.role) {
+      normalized.isDone = patch.role === 'done';
+    } else if (typeof patch.isDone === 'boolean' && patch.isDone !== column.isDone) {
+      normalized.role = patch.isDone ? 'done' : (column.role === 'done' ? 'queue' : column.role);
+    }
+
     pushHistory();
-    Object.assign(column, patch);
+    Object.assign(column, normalized);
     save();
     return true;
   }

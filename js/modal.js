@@ -337,6 +337,21 @@
     doneLabel.appendChild(doneText);
     form.appendChild(doneLabel);
 
+    var roleInput = h('select', { id: 'ce-role', 'aria-label': 'Column role' });
+    [['queue', 'Queue — ready or awaiting pull'], ['active', 'Active — currently being worked'], ['done', 'Done — completed'], ['backlog', 'Backlog — not committed']].forEach(function (pair) {
+      roleInput.appendChild(new Option(pair[1], pair[0]));
+    });
+    roleInput.value = isEdit ? (column.role || 'queue') : 'queue';
+    form.appendChild(fieldBlock('Workflow role', roleInput));
+
+    roleInput.addEventListener('change', function () {
+      doneCheck.checked = roleInput.value === 'done';
+    });
+    doneCheck.addEventListener('change', function () {
+      if (doneCheck.checked) roleInput.value = 'done';
+      else if (roleInput.value === 'done') roleInput.value = 'queue';
+    });
+
     var actions = h('div', { class: 'modal-actions' });
     if (isEdit) {
       var deleteBtn = h('button', { type: 'button', class: 'btn danger' });
@@ -375,10 +390,10 @@
       var wipRaw = parseInt(wipInput.value, 10);
       var wipLimit = isFinite(wipRaw) && wipRaw > 0 ? Math.min(wipRaw, 99) : 0;
       if (isEdit) {
-        KB.State.updateColumn(columnId, { title: title, isDone: doneCheck.checked, wipLimit: wipLimit });
+        KB.State.updateColumn(columnId, { title: title, isDone: doneCheck.checked, role: roleInput.value, wipLimit: wipLimit });
         KB.UI.toast('Column updated', 'success');
       } else {
-        KB.State.addColumn(title, doneCheck.checked);
+        KB.State.addColumn(title, doneCheck.checked, false, roleInput.value);
         KB.UI.toast('Column added', 'success');
       }
       close();

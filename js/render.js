@@ -207,6 +207,12 @@
     grip.innerHTML = icon('grip');
     var title = h('h2', { class: 'col-title' });
     title.textContent = column.title;
+    var role = column.role || 'queue';
+    var roleBadge = h('span', {
+      class: 'col-role role-' + role,
+      title: 'Column role: ' + role
+    });
+    roleBadge.textContent = role.toUpperCase();
     var over = column.wipLimit > 0 && column.cards.length > column.wipLimit;
     var count = h('span', {
       class: 'col-count' + (over ? ' over' : ''),
@@ -227,6 +233,7 @@
     collapseBtn.innerHTML = icon(column.collapsed ? 'chevronUp' : 'chevronDown');
     header.appendChild(grip);
     header.appendChild(title);
+    header.appendChild(roleBadge);
     header.appendChild(count);
     header.appendChild(addBtn);
     header.appendChild(menuBtn);
