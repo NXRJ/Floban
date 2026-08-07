@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "A personal Kanban board with the 8-Bit Atelier look: vanilla HTML/CSS/JS, no build step, localStorage persistence.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NXRJ/kanban.git"
+  },
   "engines": {
     "node": ">=22.12.0"
   },

@@ -591,8 +591,13 @@
           KB.Modal.moveConfirmModal('Adding this card requires confirmation', createEvaluation, '', function (reason) {
             var created = KB.State.addCard(columnId, data, { confirmed: true, overrideReason: reason });
             close();
-            finishCreate(created);
-            KB.App.refresh();
+            if (created) {
+              finishCreate(created);
+              KB.App.refresh();
+              return;
+            }
+            cardEditor(columnId, null, null, editorBoardId, data);
+            KB.UI.toast('Column policy blocks this card', 'error');
           }, function () {
             cardEditor(columnId, null, null, editorBoardId, data);
           });
