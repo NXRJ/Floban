@@ -818,6 +818,46 @@
     return state.recurrences || [];
   }
 
+  function captureInbox(input) {
+    return commit(function (current) {
+      return KB.Core.Inbox.captureItem(current, input, deps());
+    });
+  }
+
+  function captureInboxLines(text) {
+    return commit(function (current) {
+      return KB.Core.Inbox.captureLines(current, text, deps());
+    });
+  }
+
+  function updateInboxItem(id, patch) {
+    return commit(function (current) {
+      return KB.Core.Inbox.updateInboxItem(current, id, patch, deps());
+    });
+  }
+
+  function deleteInboxItem(id) {
+    return commit(function (current) {
+      return KB.Core.Inbox.deleteInboxItem(current, id);
+    });
+  }
+
+  function triageInboxItem(id, target, cardPatch) {
+    return commit(function (current) {
+      return KB.Core.Inbox.triageInboxItem(current, id, target, cardPatch, deps());
+    });
+  }
+
+  function mergeInboxItem(inboxId, target) {
+    return commit(function (current) {
+      return KB.Core.Inbox.mergeIntoCard(current, inboxId, target, deps());
+    });
+  }
+
+  function inboxItems() {
+    return state.inbox && state.inbox.items ? state.inbox.items : [];
+  }
+
   function setTheme(theme) {
     pushHistory();
     state.theme = theme;
@@ -909,6 +949,13 @@
     skipRecurrenceNext: skipRecurrenceNext,
     endRecurrence: endRecurrence,
     recurrences: recurrences,
+    captureInbox: captureInbox,
+    captureInboxLines: captureInboxLines,
+    updateInboxItem: updateInboxItem,
+    deleteInboxItem: deleteInboxItem,
+    triageInboxItem: triageInboxItem,
+    mergeInboxItem: mergeInboxItem,
+    inboxItems: inboxItems,
     setTheme: setTheme,
     exportAll: exportAll,
     exportBoard: exportBoard,
