@@ -903,21 +903,30 @@
   }
 
   function bulkMove(cardRefs, target, opts) {
-    return commit(function (current) {
-      return KB.Core.Bulk.bulkMove(current, cardRefs, target, deps(), opts);
+    var result = null;
+    commit(function (current) {
+      result = KB.Core.Bulk.bulkMove(current, cardRefs, target, deps(), opts);
+      return result;
     });
+    return result;
   }
 
   function bulkUpdate(cardRefs, patch) {
-    return commit(function (current) {
-      return KB.Core.Bulk.bulkUpdate(current, cardRefs, patch, deps());
+    var result = null;
+    commit(function (current) {
+      result = KB.Core.Bulk.bulkUpdate(current, cardRefs, patch, deps());
+      return result;
     });
+    return result;
   }
 
   function bulkArchive(cardRefs) {
-    return commit(function (current) {
-      return KB.Core.Bulk.bulkArchive(current, cardRefs, deps());
+    var result = null;
+    commit(function (current) {
+      result = KB.Core.Bulk.bulkArchive(current, cardRefs, deps());
+      return result;
     });
+    return result;
   }
 
   function setTheme(theme) {

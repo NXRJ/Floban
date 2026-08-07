@@ -42,6 +42,7 @@
       }
       return;
     }
+    if (workspace === 'board' && KB.Select) KB.Select.clearAndRender();
     workspace = name;
     savePrefs();
     KB.App.refresh();
