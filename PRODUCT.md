@@ -12,7 +12,7 @@ Solo developers and freelancers tracking their own work — between meetings, co
 
 ## Product Purpose
 
-A personal Kanban board for task management: create, rename, reorder and delete columns; cards with titles, descriptions, colour-coded labels and assignees; drag-and-drop between and within columns; archive with restore; search and combined filtering; dark/light theme. Everything persists to localStorage in the browser — no backend, no accounts.
+A personal Kanban board for task management: multiple boards with a switcher; create, rename, reorder, collapse and delete columns; cards with titles, descriptions (light markdown), colour-coded labels, assignees, due dates and checklists; templates and duplication; WIP limits; drag-and-drop between and within columns; archive with restore; undo/redo; search, due-date filters and sorting; JSON backup/export; dark/light theme. Everything persists to localStorage in the browser — no backend, no accounts.
 
 ## Positioning
 
@@ -24,7 +24,7 @@ Opened as a local file or served statically; works offline and without a build s
 
 ## Capabilities and Constraints
 
-- Capabilities: columns (add, rename, reorder by header drag, delete with card archiving), cards (title, plain-text description, one or more labels, optional assignee), completion indicator on Done columns, archive + restore + permanent delete, search plus label and assignee filters (AND across categories, OR within labels), dark/light theme, toast feedback, empty states.
+- Capabilities: boards (create, rename, duplicate, delete, switch), columns (add, rename, reorder by header drag, collapse, delete with card archiving, WIP limits), cards (title, markdown-lite description, one or more labels, optional assignee, due date, checklist with progress, aging indicator), templates, card duplication, completion indicator on Done columns, undo/redo, archive + restore + permanent delete, search plus label/assignee/due filters and sorting, JSON backup/export/import, dark/light theme, toast feedback with undo, empty states.
 - Current implementation: vanilla HTML/CSS/JS, no dependencies, no build step, works from `file://`. These are facts, not commitments: future design work is free to change architecture or add libraries.
 - Terminology: board, column, card, label, assignee, archive, Done/completion column.
 
@@ -34,7 +34,7 @@ None binding. The working name is "Kanban" and the agreed direction is fun and p
 
 ## Evidence on Hand
 
-No fabricated testimonials, benchmarks, user data or press. The seed cards in the default board are placeholder demo content, not product evidence. A headless e2e suite (49 checks) documents behavior locally; screenshots exist as verification, not as user-facing evidence.
+No fabricated testimonials, benchmarks, user data or press. The seed cards in the default board are placeholder demo content, not product evidence. A headless e2e suite under `tests/kanban-smoke.js` (run with `npm test`) documents behavior locally; screenshots exist as verification, not as user-facing evidence.
 
 ## Product Principles
 

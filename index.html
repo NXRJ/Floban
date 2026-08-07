@@ -64,12 +64,13 @@
       <span class="hs-prompt-text">CLICK TO START</span>
       <span class="hs-hint">OR PRESS ANY KEY</span>
     </div>
-        <div id="hs-mascot" class="hs-mascot m-scene" aria-hidden="true"><div class="m"></div></div>
-</div>
-    </div>
+    <div id="hs-mascot" class="hs-mascot m-scene" aria-hidden="true"><div class="m"></div></div>
   </div>
   <header class="app-header">
     <div class="logo"><span class="logo-dot" aria-hidden="true"></span><span class="logo-name">KANBAN</span></div>
+    <button id="board-switch" class="btn" type="button" title="Switch board">
+      <span class="btn-icon"></span><span id="board-name" class="board-name"></span><span class="btn-caret"></span>
+    </button>
     <span class="header-spacer"></span>
     <button id="add-column" class="btn" type="button">
       <span class="btn-icon"></span><span class="btn-label">New column</span>
@@ -92,6 +93,8 @@
       <input id="search-input" type="search" placeholder="SEARCH CARDS…  ( / )" aria-label="Search cards">
     </div>
     <select id="assignee-filter" aria-label="Filter by assignee" title="Filter by assignee"></select>
+    <select id="due-filter" aria-label="Filter by due date" title="Filter by due date"></select>
+    <select id="sort-select" aria-label="Sort cards" title="Sort cards"></select>
     <div id="label-filters" class="label-filters" aria-label="Filter by label"></div>
     <button id="clear-filters" class="btn" type="button">Clear filters</button>
     <datalist id="assignee-list"></datalist>
@@ -118,8 +121,5 @@
   <script src="js/modal.js"></script>
   <script src="js/render.js"></script>
   <script src="js/app.js"></script>
-<!-- impeccable-live-start -->
-<script src="http://localhost:8400/live.js?token=2288cb3f-4ed7-42c9-a93b-2b72fc77b472"></script>
-<!-- impeccable-live-end -->
 </body>
 </html>

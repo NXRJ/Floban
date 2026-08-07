@@ -235,7 +235,7 @@ Square, everywhere: the system's radius is zero and there is no rounding anywher
 - **Disabled / Error:** disabled is 45% opacity; errors are toast-level red, never inline glow.
 
 ### Navigation
-- **Menu bar:** Window Face with a 2px chrome floor and a 4px shadow; KANBAN wordmark with the four-square pixel logo; New column (cyan), Labels (violet icon), Archive (red trash + badge), the clock, and the sun/moon theme toggle. At 640px labels hide, clock hides.
+- **Menu bar:** Window Face with a 2px chrome floor and a 4px shadow; KANBAN wordmark with the four-square pixel logo; the board switcher (board icon, board name, caret — opens the board/backup menu); New column (cyan), Labels (violet icon), Archive (red trash + badge), the clock, and the sun/moon theme toggle. At 640px labels hide, clock hides.
 - **Column window header:** the title bar is the column's accent (one of the nine), carrying its own ink-or-white text and a 2px rule; the count badge inverts bar text onto bar fill; grip, add and menu live on the bar.
 
 ### Signature Component: The Column Window

@@ -42,7 +42,43 @@
     ]),
     more: pixelIcon([[2, 7, 2, 2], [7, 7, 2, 2], [12, 7, 2, 2]]),
     person: pixelIcon([[6, 3, 4, 4], [4, 9, 8, 4]]),
-    board: pixelIcon([[1, 3, 4, 10], [6, 3, 4, 8], [11, 3, 3, 6]])
+    board: pixelIcon([[1, 3, 4, 10], [6, 3, 4, 8], [11, 3, 3, 6]]),
+    calendar: pixelIcon([
+      [4, 1, 2, 2], [10, 1, 2, 2],
+      [2, 3, 12, 2],
+      [2, 5, 12, 9],
+      [4, 8, 2, 2], [8, 8, 2, 2], [12, 8, 2, 2],
+      [4, 11, 2, 2], [8, 11, 2, 2]
+    ]),
+    checklist: pixelIcon([
+      [2, 1, 12, 2], [1, 3, 2, 10], [13, 3, 2, 10], [2, 12, 12, 2],
+      [4, 7, 2, 2], [6, 8, 2, 2], [8, 9, 2, 2], [10, 10, 2, 2]
+    ]),
+    copy: pixelIcon([
+      [1, 6, 8, 2], [1, 6, 2, 8], [1, 12, 8, 2], [7, 6, 2, 8],
+      [6, 2, 10, 2], [6, 2, 2, 8], [6, 8, 10, 2], [14, 2, 2, 8]
+    ]),
+    undo: pixelIcon([
+      [2, 5, 2, 6], [2, 5, 3, 2], [2, 9, 3, 2],
+      [5, 7, 7, 2],
+      [12, 7, 2, 4], [12, 9, 4, 2]
+    ]),
+    download: pixelIcon([
+      [3, 1, 10, 2], [7, 4, 2, 4], [5, 8, 6, 2], [6, 10, 4, 2], [2, 12, 12, 2]
+    ]),
+    upload: pixelIcon([
+      [2, 2, 12, 2], [7, 5, 2, 4], [5, 5, 6, 2], [6, 2, 4, 2], [2, 12, 12, 2]
+    ]),
+    clock: pixelIcon([
+      [4, 1, 8, 2], [2, 3, 2, 4], [2, 9, 2, 4], [4, 13, 8, 2], [12, 3, 2, 4], [12, 9, 2, 4],
+      [7, 5, 2, 4], [9, 6, 3, 2]
+    ]),
+    chevronDown: pixelIcon([[3, 6, 2, 2], [5, 8, 2, 2], [7, 10, 2, 2], [9, 8, 2, 2], [11, 6, 2, 2]]),
+    chevronUp: pixelIcon([[3, 10, 2, 2], [5, 8, 2, 2], [7, 6, 2, 2], [9, 8, 2, 2], [11, 10, 2, 2]]),
+    doc: pixelIcon([
+      [4, 1, 8, 2], [3, 3, 10, 2], [2, 5, 12, 10],
+      [5, 8, 2, 2], [9, 8, 2, 2], [5, 11, 2, 2], [9, 11, 2, 2]
+    ])
   };
 
   function h(tag, attrs, children) {
@@ -78,6 +114,27 @@
     return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
+  function isoDate(date) {
+    var y = date.getFullYear();
+    var m = String(date.getMonth() + 1).padStart(2, '0');
+    var d = String(date.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
+  }
+
+  function isoToday() {
+    return isoDate(new Date());
+  }
+
+  function isoDaysFromNow(offset) {
+    var date = new Date();
+    date.setDate(date.getDate() + offset);
+    return isoDate(date);
+  }
+
+  function plural(n, word) {
+    return n + ' ' + word + (n === 1 ? '' : 's');
+  }
+
   function inkOn(hex) {
     var h = (hex || '').replace('#', '');
     if (h.length !== 6) return '#111113';
@@ -88,11 +145,21 @@
     return lum > 0.52 ? '#111113' : '#f5f5f2';
   }
 
+  function paintChip(chip, color) {
+    chip.style.background = color;
+    chip.style.color = inkOn(color);
+    chip.style.borderColor = 'rgba(0, 0, 0, 0.35)';
+  }
+
+  function uid(prefix) {
+    return (prefix || 'id') + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+  }
+
   KB.el = function (selector) {
     var first = selector.charAt(0);
     var normalized = first === '#' || first === '.' ? selector : '#' + selector;
     return document.querySelector(normalized);
   };
 
-  KB.Dom = { h: h, icon: icon, fmtDate: fmtDate, inkOn: inkOn };
+  KB.Dom = { h: h, icon: icon, fmtDate: fmtDate, inkOn: inkOn, paintChip: paintChip, uid: uid, isoDate: isoDate, isoToday: isoToday, isoDaysFromNow: isoDaysFromNow, plural: plural };
 })(window.KB = window.KB || {});

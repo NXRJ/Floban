@@ -10,6 +10,7 @@
   }
 
   function open(content, opener) {
+    if (KB.UI.clearToasts) KB.UI.clearToasts();
     close();
     trigger = opener || null;
     overlay = h('div', { class: 'modal-backdrop' });
@@ -35,9 +36,11 @@
 
   function fieldBlock(labelText, control, required) {
     var wrap = h('label', { class: 'field' });
-    var label = h('span');
-    label.textContent = labelText;
-    wrap.appendChild(label);
+    if (labelText) {
+      var label = h('span');
+      label.textContent = labelText;
+      wrap.appendChild(label);
+    }
     if (required) control.setAttribute('required', '');
     wrap.appendChild(control);
     return wrap;
@@ -54,13 +57,83 @@
     dot.style.background = label.color;
     chip.appendChild(dot);
     chip.appendChild(document.createTextNode(label.name));
-    chip.style.background = label.color;
-    chip.style.color = KB.Dom.inkOn(label.color);
-    chip.style.borderColor = 'rgba(0, 0, 0, 0.35)';
+    KB.Dom.paintChip(chip, label.color);
     chip.addEventListener('click', function () {
       chip.classList.toggle('active');
     });
     return chip;
+  }
+
+  function checklistItem(item) {
+    var row = h('div', { class: 'check-item', 'data-id': item.id });
+    var check = h('input', { type: 'checkbox', 'aria-label': 'Checklist item done' });
+    check.checked = Boolean(item.done);
+    var text = h('input', { type: 'text', class: 'check-item-text', maxlength: 200, 'aria-label': 'Checklist item text' });
+    text.value = item.text;
+    var remove = h('button', { type: 'button', class: 'btn icon sm danger-ghost', 'data-action': 'remove-check', title: 'Remove item' });
+    remove.innerHTML = icon('x');
+    row.appendChild(check);
+    row.appendChild(text);
+    row.appendChild(remove);
+    return row;
+  }
+
+  function checklistEditor(items) {
+    var box = h('div', { class: 'check-editor' });
+    box.appendChild(h('span', { class: 'check-editor-title', textContent: 'Checklist' }));
+
+    var list = h('div', { class: 'check-list' });
+    box.appendChild(list);
+
+    function render(items) {
+      list.innerHTML = '';
+      (items || []).forEach(function (item) {
+        list.appendChild(checklistItem(item));
+      });
+    }
+
+    var addRow = h('div', { class: 'check-add-row' });
+    var input = h('input', { type: 'text', placeholder: 'Add a checklist item…', maxlength: 200, 'aria-label': 'New checklist item' });
+    var addBtn = h('button', { type: 'button', class: 'btn ghost sm' });
+    addBtn.textContent = 'Add';
+    addRow.appendChild(input);
+    addRow.appendChild(addBtn);
+    box.appendChild(addRow);
+
+    addBtn.addEventListener('click', function () {
+      var text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      items.push({ id: KB.Dom.uid('ck'), text: text, done: false });
+      render(items);
+      input.focus();
+    });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addBtn.click();
+      }
+    });
+
+    list.addEventListener('click', function (e) {
+      if (e.target.closest('[data-action="remove-check"]')) {
+        var row = e.target.closest('.check-item');
+        if (row) row.remove();
+      }
+    });
+
+    render(items);
+    return box;
+  }
+
+  function readChecklist(box) {
+    return Array.prototype.map.call(box.querySelectorAll('.check-item'), function (row) {
+      return {
+        id: row.dataset.id,
+        text: row.querySelector('.check-item-text').value.trim(),
+        done: row.querySelector('input[type="checkbox"]').checked
+      };
+    }).filter(function (item) { return item.text; });
   }
 
   function cardEditor(columnId, card, opener) {
@@ -79,9 +152,19 @@
     assigneeInput.value = card ? (card.assignee || '') : '';
     form.appendChild(fieldBlock('Assignee', assigneeInput));
 
-    var descInput = h('textarea', { id: 'cf-desc', rows: 5, placeholder: 'Details, context, notes…', 'aria-label': 'Description' });
+    var dueInput = h('input', { type: 'date', id: 'cf-due', 'aria-label': 'Due date' });
+    dueInput.value = card ? (card.due || '') : '';
+    form.appendChild(fieldBlock('Due date', dueInput));
+
+    var descInput = h('textarea', { id: 'cf-desc', rows: 5, placeholder: 'Details, context, notes…  **bold**  *italic*  `code`  [link](url)', 'aria-label': 'Description' });
     descInput.value = card ? (card.description || '') : '';
     form.appendChild(fieldBlock('Description', descInput));
+
+    var checklistState = card && card.checklist ? card.checklist.map(function (item) {
+      return { id: item.id, text: item.text, done: Boolean(item.done) };
+    }) : [];
+    var checkBox = checklistEditor(checklistState);
+    form.appendChild(fieldBlock('', checkBox));
 
     var labelsBox = h('div', { class: 'label-picker' });
     KB.State.labels().forEach(function (label) {
@@ -119,17 +202,63 @@
       KB.UI.toast('Label added', 'success');
     });
 
+    function collect() {
+      return {
+        title: titleInput.value.trim(),
+        assignee: assigneeInput.value.trim(),
+        due: dueInput.value || '',
+        description: descInput.value.trim(),
+        checklist: readChecklist(checkBox),
+        labels: Array.prototype.map.call(labelsBox.querySelectorAll('.chip.active'), function (chip) {
+          return chip.dataset.id;
+        })
+      };
+    }
+
     var actions = h('div', { class: 'modal-actions' });
     if (isEdit) {
       var archiveBtn = h('button', { type: 'button', class: 'btn danger-ghost' });
-      archiveBtn.textContent = 'Archive card';
+      archiveBtn.textContent = 'Archive';
       archiveBtn.addEventListener('click', function () {
         KB.State.archiveCard(columnId, card.id);
-        KB.UI.toast('Card archived', 'info');
+        KB.UI.toast('Card archived', 'info', 'Undo', KB.UI.undoAction);
         close();
         KB.App.refresh();
       });
       actions.appendChild(archiveBtn);
+
+      var duplicateBtn = h('button', { type: 'button', class: 'btn ghost' });
+      duplicateBtn.textContent = 'Duplicate';
+      duplicateBtn.title = 'Create a copy of this card';
+      duplicateBtn.addEventListener('click', function () {
+        var copy = KB.State.duplicateCard(columnId, card.id);
+        if (copy) {
+          KB.UI.toast('Card duplicated', 'success', 'Undo', KB.UI.undoAction);
+          close();
+          KB.App.refresh();
+        }
+      });
+      actions.appendChild(duplicateBtn);
+
+      var templateBtn = h('button', { type: 'button', class: 'btn ghost' });
+      templateBtn.textContent = 'Save as template';
+      templateBtn.title = 'Reuse this card later from a column quick-add';
+      templateBtn.addEventListener('click', function () {
+        var data = collect();
+        if (!data.title) {
+          KB.UI.toast('Give the card a title first', 'error');
+          return;
+        }
+        KB.State.addTemplate({
+          title: data.title,
+          description: data.description,
+          labels: data.labels,
+          assignee: data.assignee,
+          checklist: data.checklist
+        });
+        KB.UI.toast('Template saved', 'success');
+      });
+      actions.appendChild(templateBtn);
     }
     var spacer = h('span', { class: 'spacer' });
     actions.appendChild(spacer);
@@ -144,20 +273,12 @@
 
     form.addEventListener('submit', function (e) {
       e.preventDefault();
-      var title = titleInput.value.trim();
-      if (!title) {
+      var data = collect();
+      if (!data.title) {
         KB.UI.toast('Title is required', 'error');
         titleInput.focus();
         return;
       }
-      var data = {
-        title: title,
-        assignee: assigneeInput.value.trim(),
-        description: descInput.value.trim(),
-        labels: Array.prototype.map.call(labelsBox.querySelectorAll('.chip.active'), function (chip) {
-          return chip.dataset.id;
-        })
-      };
       if (isEdit) {
         KB.State.updateCard(columnId, card.id, data);
         KB.UI.toast('Changes saved', 'success');
@@ -185,6 +306,10 @@
     titleInput.value = column ? column.title : '';
     form.appendChild(fieldBlock('Name', titleInput, true));
 
+    var wipInput = h('input', { type: 'number', id: 'ce-wip', min: 0, max: 99, placeholder: '0 = no limit', 'aria-label': 'WIP limit' });
+    wipInput.value = column && column.wipLimit ? column.wipLimit : '';
+    form.appendChild(fieldBlock('WIP limit — warn when more cards are here', wipInput));
+
     var doneCheck = h('input', { type: 'checkbox', id: 'ce-done', 'aria-label': 'Completion column' });
     doneCheck.checked = isEdit ? Boolean(column.isDone) : false;
     var doneLabel = h('label', { class: 'field check' });
@@ -201,11 +326,11 @@
       deleteBtn.addEventListener('click', function () {
         var cardCount = column.cards.length;
         var message = cardCount > 0
-          ? 'Delete "' + column.title + '"? Its ' + cardCount + ' card(s) will be moved to the archive.'
+          ? 'Delete "' + column.title + '"? Its ' + KB.Dom.plural(cardCount, 'card') + ' will move to the archive.'
           : 'Delete "' + column.title + '"?';
         if (!confirm(message)) return;
         KB.State.deleteColumn(columnId);
-        KB.UI.toast(cardCount > 0 ? 'Column deleted — ' + cardCount + ' card(s) archived' : 'Column deleted', 'info');
+        KB.UI.toast(cardCount > 0 ? 'Column deleted — ' + KB.Dom.plural(cardCount, 'card') + ' archived' : 'Column deleted', 'info', 'Undo', KB.UI.undoAction);
         close();
         KB.App.refresh();
       });
@@ -229,8 +354,10 @@
         titleInput.focus();
         return;
       }
+      var wipRaw = parseInt(wipInput.value, 10);
+      var wipLimit = isFinite(wipRaw) && wipRaw > 0 ? Math.min(wipRaw, 99) : 0;
       if (isEdit) {
-        KB.State.updateColumn(columnId, { title: title, isDone: doneCheck.checked });
+        KB.State.updateColumn(columnId, { title: title, isDone: doneCheck.checked, wipLimit: wipLimit });
         KB.UI.toast('Column updated', 'success');
       } else {
         KB.State.addColumn(title, doneCheck.checked);
@@ -241,6 +368,42 @@
     });
 
     open(form, opener);
+  }
+
+  function promptModal(title, labelText, initial, onSave) {
+    var form = h('form', { class: 'card-form' });
+    var heading = h('h2');
+    heading.textContent = title;
+    form.appendChild(heading);
+
+    var input = h('input', { type: 'text', maxlength: 60, 'aria-label': labelText });
+    input.value = initial || '';
+    form.appendChild(fieldBlock(labelText, input, true));
+
+    var actions = h('div', { class: 'modal-actions' });
+    actions.appendChild(h('span', { class: 'spacer' }));
+    var cancelBtn = h('button', { type: 'button', class: 'btn ghost' });
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', close);
+    actions.appendChild(cancelBtn);
+    var saveBtn = h('button', { type: 'submit', class: 'btn primary' });
+    saveBtn.textContent = 'Save';
+    actions.appendChild(saveBtn);
+    form.appendChild(actions);
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var value = input.value.trim();
+      if (!value) {
+        KB.UI.toast('A name is required', 'error');
+        input.focus();
+        return;
+      }
+      close();
+      onSave(value);
+    });
+
+    open(form);
   }
 
   function labelManager(opener) {
@@ -267,9 +430,7 @@
         dot.style.background = label.color;
         chip.appendChild(dot);
         chip.appendChild(document.createTextNode(label.name));
-        chip.style.background = label.color;
-        chip.style.color = KB.Dom.inkOn(label.color);
-        chip.style.borderColor = 'rgba(0, 0, 0, 0.35)';
+        KB.Dom.paintChip(chip, label.color);
         row.appendChild(chip);
 
         row.appendChild(h('span', { class: 'spacer' }));
@@ -332,6 +493,86 @@
     open(panel, opener);
   }
 
-  KB.Modal = { cardEditor: cardEditor, columnEditor: columnEditor, labelManager: labelManager };
-})(window.KB = window.KB || {});
+  function backupModal() {
+    var panel = h('div', { class: 'card-form' });
 
+    var heading = h('h2');
+    heading.textContent = 'Backup / restore';
+    panel.appendChild(heading);
+
+    var hint = h('p', { class: 'form-hint' });
+    hint.textContent = 'Your board lives only in this browser. Export a backup file to keep it safe, and import it again to restore — on this machine or another.';
+    panel.appendChild(hint);
+
+    var fileInput = h('input', { type: 'file', accept: '.json,application/json', style: 'display:none', 'aria-label': 'Backup file' });
+    panel.appendChild(fileInput);
+
+    var actions = h('div', { class: 'modal-actions column-actions' });
+    var exportAllBtn = h('button', { type: 'button', class: 'btn' });
+    exportAllBtn.textContent = 'Export all boards';
+    exportAllBtn.addEventListener('click', function () {
+      KB.UI.download('kanban-backup-' + KB.Filters.todayISO() + '.json', KB.State.exportAll());
+      KB.UI.toast('Backup downloaded', 'success');
+    });
+    actions.appendChild(exportAllBtn);
+
+    var exportBoardBtn = h('button', { type: 'button', class: 'btn ghost' });
+    exportBoardBtn.textContent = 'Export this board';
+    exportBoardBtn.addEventListener('click', function () {
+      var name = KB.State.activeBoard().name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      KB.UI.download('kanban-' + name + '-' + KB.Filters.todayISO() + '.json', KB.State.exportBoard());
+      KB.UI.toast('Board exported', 'success');
+    });
+    actions.appendChild(exportBoardBtn);
+
+    var importBtn = h('button', { type: 'button', class: 'btn danger-ghost' });
+    importBtn.textContent = 'Import backup…';
+    importBtn.addEventListener('click', function () { fileInput.click(); });
+    actions.appendChild(importBtn);
+
+    actions.appendChild(h('span', { class: 'spacer' }));
+    var doneBtn = h('button', { type: 'button', class: 'btn primary' });
+    doneBtn.textContent = 'Done';
+    doneBtn.addEventListener('click', close);
+    actions.appendChild(doneBtn);
+    panel.appendChild(actions);
+
+    fileInput.addEventListener('change', function () {
+      var file = fileInput.files && fileInput.files[0];
+      fileInput.value = '';
+      if (!file) return;
+      if (!confirm('Importing a full backup replaces ALL boards; a single-board export is added as a new board. Continue?')) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        var result = KB.State.importAll(String(reader.result));
+        if (result === 'all') {
+          KB.UI.toast('Backup imported', 'success');
+          close();
+          KB.App.refresh();
+        } else if (result === 'board') {
+          KB.UI.toast('Board imported', 'success');
+          close();
+          KB.App.refresh();
+        } else {
+          KB.UI.toast('That file is not a valid kanban backup', 'error');
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    open(panel);
+  }
+
+  function isOpen() {
+    return overlay !== null;
+  }
+
+  KB.Modal = {
+    cardEditor: cardEditor,
+    columnEditor: columnEditor,
+    labelManager: labelManager,
+    promptModal: promptModal,
+    backupModal: backupModal,
+    isOpen: isOpen
+  };
+})(window.KB = window.KB || {});
