@@ -353,6 +353,85 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const afterUndo = await page.$$eval('.column .card-title', els => els.map(e => e.textContent));
   check('single undo removes only the probe card', !afterUndo.some(t => t === 'History probe'));
 
+  // ---- Lifecycle fields follow role-based moves ----
+  await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    const col = board.columns[0];
+    col.cards = [{
+      id: 'life-1',
+      columnId: col.id,
+      title: 'Lifecycle probe',
+      description: '',
+      labels: [],
+      assignee: '',
+      createdAt: 1000,
+      updatedAt: 1000,
+      movedAt: 1000,
+      due: '',
+      checklist: [],
+      priority: 'none',
+      size: 'none',
+      startedAt: null,
+      completedAt: null,
+      flow: { state: 'normal', reason: '', since: null, periods: [] },
+      dependencies: { blockers: [], related: [] },
+      recurrenceId: null,
+      transitions: []
+    }];
+    localStorage.setItem('kanban.board.v1', JSON.stringify(b));
+  });
+  await page.goto(URL, { waitUntil: 'load' });
+  await sleep(400);
+  const colCount = await page.$$eval('.column', els => els.length);
+  check('lifecycle board renders', colCount === 3);
+  const lifeCols = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    return b.boards.find(x => x.id === b.activeBoardId).columns.map(c => c.id);
+  });
+  await page.evaluate((cols) => KB.State.moveCard(cols[0], 'life-1', cols[1], 0), lifeCols);
+  const mid = await page.evaluate((cols) => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    const card = board.columns.find(c => c.id === cols[1]).cards.find(c => c.id === 'life-1');
+    return { startedAt: card.startedAt, completedAt: card.completedAt, transitions: card.transitions.length };
+  }, lifeCols);
+  check('entering active sets startedAt', typeof mid.startedAt === 'number' && mid.startedAt > 0);
+  check('entering active keeps completedAt null', mid.completedAt === null);
+  check('active move records a transition', mid.transitions === 1);
+
+  await page.evaluate((cols) => KB.State.moveCard(cols[1], 'life-1', cols[2], 0), lifeCols);
+  const done = await page.evaluate((cols) => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    const card = board.columns.find(c => c.id === cols[2]).cards.find(c => c.id === 'life-1');
+    return { startedAt: card.startedAt, completedAt: card.completedAt, transitions: card.transitions.length };
+  }, lifeCols);
+  check('entering done sets completedAt', typeof done.completedAt === 'number' && done.completedAt > 0);
+  check('startedAt survives into done', done.startedAt === mid.startedAt);
+  check('done move records a second transition', done.transitions === 2);
+
+  await page.evaluate((cols) => KB.State.moveCard(cols[2], 'life-1', cols[0], 0), lifeCols);
+  const reopened = await page.evaluate((cols) => {
+    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    const card = board.columns.find(c => c.id === cols[0]).cards.find(c => c.id === 'life-1');
+    return { completedAt: card.completedAt };
+  }, lifeCols);
+  check('reopening a done card clears completedAt', reopened.completedAt === null);
+
+  const noopTransitions = await page.evaluate((cols) => {
+    const before = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = before.boards.find(x => x.id === before.activeBoardId);
+    const card = board.columns.find(c => c.id === cols[0]).cards.find(c => c.id === 'life-1');
+    const count = card.transitions.length;
+    const result = KB.State.moveCard(cols[0], 'life-1', cols[0], 0);
+    const after = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const afterCard = after.boards.find(x => x.id === after.activeBoardId).columns.find(c => c.id === cols[0]).cards.find(c => c.id === 'life-1');
+    return { result, before: count, after: afterCard.transitions.length };
+  }, lifeCols);
+  check('no-op move creates no transition', noopTransitions.before === noopTransitions.after);
+
   check('no unexpected page errors', errors.filter(e => !e.includes('ERR_CONNECTION_REFUSED')).length === 0);
 
   console.log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECKS FAILED');
