@@ -324,7 +324,7 @@
       var nextBoard = next.boards.find(function (b) { return b.id === boardId; });
       var nextIndex = nextBoard.archive.columns.findIndex(function (c) { return c.id === columnId; });
       nextBoard.archive.columns.splice(nextIndex, 1);
-      return { changed: true, state: next, value: entry.cards.length };
+      return { changed: true, state: next, value: true };
     }
 
     function cleanupBoardReferences(state, deletedBoardId) {

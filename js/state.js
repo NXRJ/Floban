@@ -276,37 +276,51 @@
     return true;
   }
 
-  function addCard(columnId, data) {
-    var board = boardForColumn(columnId);
-    var column = board ? board.columns.find(function (c) { return c.id === columnId; }) : null;
-    if (!column) return null;
-    pushHistory();
-    var card = freshCard(columnId, data);
-    card.movedAt = card.createdAt;
-    column.cards.push(card);
-    save();
-    return card;
+  function addCard(columnId, data, opts) {
+    return commit(function (current) {
+      var board = boardForColumn(columnId);
+      var column = board ? board.columns.find(function (c) { return c.id === columnId; }) : null;
+      if (!column) return { changed: false, state: current, value: null, reason: 'column-not-found' };
+      var next = JSON.parse(JSON.stringify(current));
+      var nextBoard = next.boards.find(function (b) { return b.id === board.id; });
+      var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
+      var card = freshCard(columnId, data);
+      var placed = KB.Core.Pipeline.placeCard(next, card, null, nextBoard, nextColumn, {
+        confirmed: opts && opts.confirmed,
+        overrideReason: opts && opts.overrideReason
+      }, deps());
+      if (!placed.changed) {
+        return { changed: false, state: current, value: null, reason: placed.reason, evaluation: placed.evaluation };
+      }
+      return { changed: true, state: next, value: placed.value };
+    });
   }
 
   function addCards(columnId, titles) {
-    var board = boardForColumn(columnId);
-    var column = board ? board.columns.find(function (c) { return c.id === columnId; }) : null;
     var cleanTitles = (Array.isArray(titles) ? titles : []).filter(function (title) {
       return typeof title === 'string' && title.trim();
     }).map(function (title) {
       return title.trim();
     });
-    if (!column || cleanTitles.length === 0) return 0;
-    pushHistory();
-    var added = 0;
-    cleanTitles.forEach(function (title) {
-      var card = freshCard(columnId, { title: title });
-      card.movedAt = card.createdAt;
-      column.cards.push(card);
-      added += 1;
+    if (cleanTitles.length === 0) return 0;
+    return commit(function (current) {
+      var board = boardForColumn(columnId);
+      var column = board ? board.columns.find(function (c) { return c.id === columnId; }) : null;
+      if (!column) return { changed: false, state: current, value: 0, reason: 'column-not-found' };
+      var next = JSON.parse(JSON.stringify(current));
+      var nextBoard = next.boards.find(function (b) { return b.id === board.id; });
+      var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
+      var added = 0;
+      cleanTitles.forEach(function (title) {
+        var card = freshCard(columnId, { title: title });
+        var placed = KB.Core.Pipeline.placeCard(next, card, null, nextBoard, nextColumn, {
+          confirmed: false
+        }, deps());
+        if (placed.changed) added += 1;
+      });
+      if (added === 0) return { changed: false, state: current, value: 0, reason: 'policy' };
+      return { changed: true, state: next, value: added };
     });
-    save();
-    return added;
   }
 
   function updateCard(columnId, cardId, patch) {
@@ -499,6 +513,13 @@
     return { changed: true, state: next, value: result.value };
   }
 
+  function evaluateCreate(columnId) {
+    var board = activeBoard();
+    var column = findColumn(columnId);
+    if (!board || !column) return null;
+    return KB.Core.Policies.evaluateMovePolicy(data(), { boardId: board.id, cardId: '' }, { boardId: board.id, columnId: columnId }, { sourceColumn: null });
+  }
+
   function restoreCardChecked(cardId, opts) {
     var board = activeBoard();
     var index = board.archive.cards.findIndex(function (c) { return c.id === cardId; });
@@ -511,6 +532,9 @@
         overrideReason: opts && opts.overrideReason
       });
       if (!evaluation.allowed) return { ok: false, reason: 'policy', evaluation: evaluation };
+      if (evaluation.requiresConfirmation && !(opts && opts.confirmed)) {
+        return { ok: false, reason: 'policy', evaluation: evaluation };
+      }
     }
     return { ok: true, value: restoreCard(cardId, opts) };
   }
@@ -1069,6 +1093,7 @@
     moveCard: moveCard,
     evaluateMove: evaluateMove,
     evaluateMoveTo: evaluateMoveTo,
+    evaluateCreate: evaluateCreate,
     moveCardChecked: moveCardChecked,
     moveCardTo: moveCardTo,
     restoreCardChecked: restoreCardChecked,

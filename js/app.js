@@ -236,7 +236,7 @@
         item.textContent = template.title;
         item.addEventListener('click', function () {
           closePop();
-          KB.State.addCard(columnId, {
+          var created = KB.State.addCard(columnId, {
             title: template.title,
             description: template.description,
             labels: (template.labels || []).slice(),
@@ -247,7 +247,11 @@
               return { id: KB.Dom.uid('ck'), text: item.text, done: false };
             })
           });
-          toast('Card created from template', 'success', 'Undo', undoAction);
+          if (created) {
+            toast('Card created from template', 'success', 'Undo', undoAction);
+          } else {
+            toast('Column policy blocks this card', 'error');
+          }
           KB.App.refresh();
         });
         popEl.appendChild(item);
@@ -263,7 +267,11 @@
     if (lines.length === 0) return;
     var added = KB.State.addCards(columnId, lines);
     input.value = '';
-    toast(KB.Dom.plural(added, 'card') + ' added', 'success', 'Undo', undoAction);
+    if (added > 0) {
+      toast(KB.Dom.plural(added, 'card') + ' added', 'success', 'Undo', undoAction);
+    } else {
+      toast('Column policy blocks these cards', 'error');
+    }
     KB.App.refresh();
     var fresh = KB.el('board').querySelector('.card-list[data-column-id="' + columnId + '"] .qa-input');
     if (fresh) fresh.focus();

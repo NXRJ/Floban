@@ -255,3 +255,20 @@ test('aging built-in only matches cards beyond the aging window', () => {
   assert.ok(ids.includes('old'));
   assert.ok(!ids.includes('young'));
 });
+
+test('ready-to-pull built-in matches the My Desk definition (queue role, normal flow, no blockers)', () => {
+  const s = state();
+  const builtin = Lenses.builtInLenses().find(b => b.id === 'builtin-ready-to-pull');
+  assert.deepEqual(builtin.query.columnRoles, ['queue']);
+  assert.deepEqual(builtin.query.flowStates, ['normal']);
+  s.boards[0].columns[0].cards.push(
+    card('queue-ready', 'c1'),
+    card('queue-waiting', 'c1', { flow: { state: 'waiting', reason: 'x', since: 100, periods: [] } })
+  );
+  s.boards[0].columns[1].cards.push(card('done-ready', 'c2', { completedAt: 500 }));
+  const result = Lenses.applyLens(s, builtin, NOW);
+  const ids = result.map(r => r.cardId);
+  assert.ok(ids.includes('queue-ready'));
+  assert.ok(!ids.includes('queue-waiting'));
+  assert.ok(!ids.includes('done-ready'));
+});

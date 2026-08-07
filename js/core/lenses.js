@@ -34,7 +34,7 @@
           name: 'Ready to Pull',
           scope: 'all-boards',
           boardIds: [],
-          query: { readyOnly: true, includeCompleted: false },
+          query: { readyOnly: true, includeCompleted: false, columnRoles: ['queue'], flowStates: ['normal'] },
           sort: { field: 'priority', direction: 'desc' },
           display: { density: 'compact', groupBy: 'board' }
         },

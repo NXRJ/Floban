@@ -618,6 +618,53 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   check('policy settings persist', wipModeSaved === 'hard');
 
+  // ---- Soft WIP asks before restoring ----
+  const restoreSoft = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col1 = board.columns[1];
+    const card = KB.State.addCard(col1.id, { title: 'Soft restore probe' });
+    KB.State.archiveCard(col1.id, card.id, board.id);
+    KB.State.updateColumn(col1.id, { wipLimit: 1, policy: { wipMode: 'soft', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' } });
+    const first = KB.State.restoreCardChecked(card.id);
+    const confirmed = KB.State.restoreCardChecked(card.id, { confirmed: true });
+    return {
+      blocked: first && first.reason === 'policy' && first.evaluation.requiresConfirmation === true,
+      restored: Boolean(confirmed && confirmed.ok)
+    };
+  });
+  check('soft WIP asks for confirmation before restoring', restoreSoft.blocked === true);
+  check('confirmed restore proceeds', restoreSoft.restored === true);
+
+  // ---- Archived columns keep the full v3 metadata ----
+  const colMeta = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns[2];
+    const savedRole = col.role;
+    const savedPolicy = JSON.parse(JSON.stringify(col.policy));
+    col.policy = { wipMode: 'soft', overrideRequiresReason: false, entryCriteria: ['E1'], exitCriteria: [], defaultLabelIds: [], defaultAssignee: 'Sam', countsTowardCycleTime: true };
+    KB.State.updateColumn(col.id, { role: 'queue', policy: col.policy });
+    KB.State.deleteColumn(col.id);
+    const archived = KB.State.activeBoard().archive.columns.find(c => c.id === col.id);
+    const archivedRole = archived.role;
+    const archivedPolicy = archived.policy && archived.policy.wipMode;
+    const archivedCriteria = archived.policy ? archived.policy.entryCriteria.length : -1;
+    KB.State.restoreColumn(col.id);
+    const restored = KB.State.activeBoard().columns.find(c => c.id === col.id);
+    const restoredRole = restored.role;
+    const restoredWip = restored.policy && restored.policy.wipMode;
+    KB.State.updateColumn(col.id, { role: savedRole, policy: savedPolicy });
+    KB.App.refresh();
+    return {
+      archivedRole,
+      archivedPolicy,
+      archivedCriteria,
+      restoredRole,
+      restoredWip
+    };
+  });
+  check('archived column keeps role and policy metadata', colMeta.archivedRole === 'queue' && colMeta.archivedPolicy === 'soft' && colMeta.archivedCriteria === 1);
+  check('restored column keeps its policy', colMeta.restoredRole === 'queue' && colMeta.restoredWip === 'soft');
+
   // ---- Soft WIP asks before proceeding (Move anyway) ----
   const softWip = await page.evaluate(() => {
     const board = KB.State.activeBoard();
@@ -747,6 +794,44 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     return { result, before: count, after: afterCard.transitions.length };
   }, lifeCols);
   check('no-op move creates no transition', noopTransitions.before === noopTransitions.after);
+
+  // ---- Creation routes through the placement pipeline ----
+  const createdIntoActive = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const active = board.columns[1];
+    const created = KB.State.addCard(active.id, { title: 'Created into active' });
+    return created
+      ? { startedAt: created.startedAt, completedAt: created.completedAt, transitions: (created.transitions || []).length }
+      : null;
+  });
+  check('creation into an active column sets startedAt', createdIntoActive !== null && typeof createdIntoActive.startedAt === 'number');
+  check('creation into an active column leaves completedAt null', createdIntoActive !== null && createdIntoActive.completedAt === null);
+  check('creation records an initial lifecycle transition', createdIntoActive !== null && createdIntoActive.transitions === 1);
+
+  const createdIntoDone = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const done = board.columns[2];
+    const created = KB.State.addCard(done.id, { title: 'Created into done' });
+    return created ? { completedAt: created.completedAt } : null;
+  });
+  check('creation into a done column records completedAt', createdIntoDone !== null && typeof createdIntoDone.completedAt === 'number');
+
+  // ---- Same-column reorder changes position without a lifecycle transition ----
+  const reorderTransitions = await page.evaluate((cols) => {
+    KB.State.addCard(cols[0], { title: 'Reorder probe' });
+    const before = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const board = before.boards.find(x => x.id === before.activeBoardId);
+    const card = board.columns.find(c => c.id === cols[0]).cards.find(c => c.id === 'life-1');
+    const count = card.transitions.length;
+    KB.State.moveCard(cols[0], 'life-1', cols[0], 2);
+    const after = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const afterBoard = after.boards.find(x => x.id === after.activeBoardId);
+    const afterCol = afterBoard.columns.find(c => c.id === cols[0]);
+    const afterCard = afterCol.cards.find(c => c.id === 'life-1');
+    return { before: count, after: afterCard.transitions.length, index: afterCol.cards.findIndex(c => c.id === 'life-1') };
+  }, lifeCols);
+  check('same-column reorder appends no transition', reorderTransitions.before === reorderTransitions.after);
+  check('same-column reorder changes the position', reorderTransitions.index === 1);
 
   // ---- Recurrence processing ----
   const recResult = await page.evaluate(() => {
@@ -926,7 +1011,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     return {
       captured: captured && captured.title === 'Order new laptop',
       multi: urlItem && urlItem.length === 2 && urlItem[0].url === 'https://example.com/specs',
-      triaged: Boolean(triaged),
+      triaged: Boolean(triaged && triaged.changed),
       beforeTriage,
       afterTriage,
       cardPriority: created && created.priority,

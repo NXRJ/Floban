@@ -66,16 +66,20 @@ Your current workspace is remembered across reloads.
   the confirmation dialog offers "Move anyway". Hard mode requires an explicit
   confirmation (and optionally a reason) before a card can move in. Every
   movement and creation path — drag, move-to menu, keyboard move, bulk move,
-  restore, recurrence creation and inbox triage — runs the same policy
-  evaluator through one shared placement pipeline, so entry criteria, entry
-  defaults, lifecycle timestamps and after-completion scheduling behave
-  identically everywhere.
+  restore, quick-add and new-card creation, inbox triage, recurrence creation
+  and ordinary movement — runs the same policy evaluator through one shared
+  placement pipeline, so entry criteria, entry defaults, lifecycle timestamps
+  and after-completion scheduling behave identically everywhere.
 - A **single placement pipeline** (`js/core/pipeline.js`) applies policy
   checks, lifecycle transitions, entry defaults and the recurrence
   after-completion side effect on every path that inserts a card into a column.
   A recurrence created into a hard-WIP column is paused-but-retrying (surfaced
   in the recurrence manager) rather than silently creating cards past the
-  limit.
+  limit; soft-WIP overage on a background occurrence is allowed without a
+  dialog, since there is no user to confirm.
+- **Same-column reordering** changes only the array position — no lifecycle
+  transition, no `updatedAt` change, no re-applied defaults. Soft-WIP overage
+  when restoring an archived card asks for confirmation like any other move.
 - **Collapse/expand** a column to a title bar with the chevron on the header.
 - Reorder columns by dragging a column header (drag from the title/grip area,
   not from the buttons).
@@ -87,6 +91,11 @@ Your current workspace is remembered across reloads.
 - Create with the `+` in a column header, the inline **quick-add** box at the
   bottom of every column (type a title, press Enter — paste several lines to
   add many cards at once), or press `N` to jump to the first quick-add box.
+- New cards are created through the same placement pipeline as moves: entering
+  an `active` column records `startedAt`, entering a `done` column records
+  `completedAt`, entry defaults apply, and hard-WIP / entry-criteria columns
+  ask for confirmation (card editor) or refuse with a toast (quick-add,
+  template).
 - Every card has a **required title**, a plain-text **description** (with
   light markdown: `**bold**`, `*italic*`, `` `code` ``, `[links](url)`),
   one or more **colour-coded labels**, an optional **assignee** (free text,
@@ -125,8 +134,10 @@ Your current workspace is remembered across reloads.
 - Every meaningful cross-column move appends to a capped transition log
   (newest 100) with role snapshots, so later role changes never rewrite
   history. The card editor's **Activity** section renders this history.
-- All movement paths share this lifecycle core (drag, move-to, keyboard, bulk,
-  restore, recurrence, triage).
+  Same-column reordering records nothing.
+- All movement and creation paths share this lifecycle core (drag, move-to,
+  keyboard, bulk, restore, recurrence, triage, quick-add and new-card
+  creation).
 
 ### Undo & redo
 - Every mutation is tracked in memory: press **Ctrl/Cmd+Z** to undo and
@@ -138,7 +149,9 @@ Your current workspace is remembered across reloads.
 
 ### Archiving
 - Cards can be soft-deleted to the **Archive** panel (button in the header).
-- Deleting a column archives the column together with its cards.
+- Deleting a column archives the column together with its cards, keeping the
+  full v3 column metadata (role, WIP limit and mode, criteria, default labels
+  and assignee, collapse state) so restoring brings the column back as it was.
 - In the archive you can **Restore** items or **Delete forever** (both
   undoable via toast or Ctrl+Z). Deleting forever cleans up dependency
   references to that card across all boards; deleting an archived column
@@ -224,7 +237,8 @@ Your current workspace is remembered across reloads.
   **Needs Triage** matches open cards that carry none of priority, size,
   assignee or labels — i.e. cards that have never been through triage. The
   **Blocked** lens includes both dependency-blocked and manually blocked
-  cards; **Ready to Pull** excludes both.
+  cards. **Ready to Pull** uses the same definition as My Desk — queue-role
+  column, normal flow state, no unresolved blockers.
 - Save the current board view as a **lens** (search, labels, assignees, due,
   priority, size, flow state, ready-only, sort, grouping, density, scope).
 - Lens results are references to the original cards — editing a card from a
