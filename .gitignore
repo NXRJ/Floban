@@ -1,4 +1,5 @@
-# impeccable-live-ignore-start.impeccable/hook.cache.json
+# impeccable-live-ignore-start
+.impeccable/hook.cache.json
 .impeccable/hook.pending.json
 .impeccable/config.local.json
 .impeccable/live/server.json
@@ -33,6 +34,7 @@ src/plugins/impeccable-live.client.ts
 # tooling and vendored deps
 node_modules/
 .opencode/
+.impeccable/
 # universal
 .env
 .env.*
