@@ -1,0 +1,407 @@
+(function (KB) {
+  var internal = KB.State.internal;
+  var state = internal.state;
+  var replaceState = internal.replaceState;
+  var deps = internal.deps;
+  var now = internal.now;
+  var uid = internal.uid;
+  var data = internal.data;
+  var commit = internal.commit;
+  var pushHistory = internal.pushHistory;
+  var save = internal.save;
+  var activeBoard = internal.activeBoard;
+  var boardForColumn = internal.boardForColumn;
+  var findColumn = internal.findColumn;
+  var findCard = internal.findCard;
+  var findCardInBoard = internal.findCardInBoard;
+  function addCard(columnId, data, opts) {
+    return commit(function (current) {
+      return KB.Core.Operations.createCard(current, {
+        columnId: columnId,
+        data: data,
+        confirmed: opts && opts.confirmed,
+        overrideReason: opts && opts.overrideReason
+      }, deps());
+    });
+  }
+
+  function addCards(columnId, titles, opts) {
+    var cleanTitles = (Array.isArray(titles) ? titles : []).filter(function (title) {
+      return typeof title === 'string' && title.trim();
+    }).map(function (title) {
+      return title.trim();
+    });
+    if (cleanTitles.length === 0) return 0;
+    return commit(function (current) {
+      return KB.Core.Operations.createCards(current, {
+        columnId: columnId,
+        titles: cleanTitles,
+        confirmed: opts && opts.confirmed,
+        overrideReason: opts && opts.overrideReason
+      }, deps());
+    });
+  }
+
+  function updateCard(columnId, cardId, patch) {
+    var board = boardForColumn(columnId);
+    var card = findCardInBoard(board, columnId, cardId);
+    if (!card) return false;
+    pushHistory();
+    var safePatch = {};
+    Object.keys(patch || {}).forEach(function (key) {
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') return;
+      safePatch[key] = patch[key];
+    });
+    Object.assign(card, safePatch, { updatedAt: now() });
+    save();
+    return true;
+  }
+
+  function locateCard(current, columnId, cardId, boardId) {
+    var board = null;
+    var preferred = null;
+    for (var i = 0; i < current.boards.length; i++) {
+      var b = current.boards[i];
+      if (b.id === boardId) preferred = b;
+      if (!board && b.columns.some(function (c) { return c.id === columnId; })) board = b;
+    }
+    if (boardId && preferred && preferred.columns.some(function (c) { return c.id === columnId; })) board = preferred;
+    if (!board && preferred) board = preferred;
+    if (!board) return null;
+    var column = board.columns.find(function (c) { return c.id === columnId; });
+    var card = column ? column.cards.find(function (c) { return c.id === cardId; }) : null;
+    if (!column || !card) return null;
+    return { board: board, column: column, card: card };
+  }
+
+  function setFlowState(columnId, cardId, nextState, reason, boardId) {
+    return commit(function (current) {
+      var located = locateCard(current, columnId, cardId, boardId);
+      if (!located) return { changed: false, state: current, value: null, reason: 'card-not-found' };
+      var result = KB.Core.Lifecycle.setFlowState(located.card, nextState, reason || '', now());
+      if (!result.changed) return { changed: false, state: current, value: null, reason: result.reason };
+      var next = JSON.parse(JSON.stringify(current));
+      var nextBoard = next.boards.find(function (b) { return b.id === located.board.id; });
+      var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
+      var nextCard = nextColumn.cards.find(function (c) { return c.id === cardId; });
+      var updated = result.card;
+      nextCard.flow = updated.flow;
+      nextCard.updatedAt = updated.updatedAt;
+      return { changed: true, state: next, value: nextCard.flow };
+    });
+  }
+
+  function updateCardWithFlow(columnId, cardId, patch, flowState, flowReason, boardId) {
+    return commit(function (current) {
+      var located = locateCard(current, columnId, cardId, boardId);
+      if (!located) return { changed: false, state: current, value: null, reason: 'card-not-found' };
+      var next = JSON.parse(JSON.stringify(current));
+      var nextBoard = next.boards.find(function (b) { return b.id === located.board.id; });
+      var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
+      var nextCard = nextColumn.cards.find(function (c) { return c.id === cardId; });
+      var changed = false;
+      var flowResult = null;
+      if (flowState) {
+        var prevState = located.card.flow && located.card.flow.state ? located.card.flow.state : 'normal';
+        var prevReason = located.card.flow && located.card.flow.reason ? located.card.flow.reason : '';
+        if (flowState !== prevState || (flowState !== 'normal' && flowReason !== prevReason)) {
+          flowResult = KB.Core.Lifecycle.setFlowState(located.card, flowState, flowReason || '', now());
+          if (flowResult.changed) {
+            nextCard.flow = flowResult.card.flow;
+            changed = true;
+          }
+        }
+      }
+      Object.keys(patch || {}).forEach(function (key) {
+        if (nextCard[key] !== patch[key]) {
+          nextCard[key] = patch[key];
+          changed = true;
+        }
+      });
+      if (!changed) return { changed: false, state: current, value: null, reason: 'no-change' };
+      nextCard.updatedAt = now();
+      return { changed: true, state: next, value: nextCard };
+    });
+  }
+
+  function moveCard(columnId, cardId, targetColumnId, toIndex, opts) {
+    return commit(function (current) {
+      return KB.Core.Operations.moveCard(current, {
+        columnId: columnId,
+        cardId: cardId,
+        targetColumnId: targetColumnId,
+        toIndex: toIndex,
+        confirmed: opts && opts.confirmed,
+        overrideReason: opts && opts.overrideReason
+      }, deps());
+    });
+  }
+
+  function evaluateMove(columnId, cardId, targetColumnId, opts) {
+    var board = activeBoard();
+    var source = findColumn(columnId);
+    var target = findColumn(targetColumnId);
+    var card = findCard(columnId, cardId);
+    if (!source || !target || !card) return null;
+    return KB.Core.Policies.evaluateMovePolicy(data(), { boardId: board.id, cardId: cardId }, { boardId: board.id, columnId: targetColumnId }, {
+      sourceColumn: source,
+      confirmed: opts && opts.confirmed,
+      overrideReason: opts && opts.overrideReason
+    });
+  }
+
+  function moveCardChecked(columnId, cardId, targetColumnId, toIndex, opts) {
+    var evaluation = evaluateMove(columnId, cardId, targetColumnId, opts);
+    if (!evaluation) return { ok: false, reason: 'move-unavailable' };
+    if (!evaluation.allowed) return { ok: false, reason: 'policy', evaluation: evaluation };
+    var value = moveCard(columnId, cardId, targetColumnId, toIndex, opts);
+    if (value === null) return { ok: false, reason: 'move-failed' };
+    return { ok: true, value: value };
+  }
+
+  function evaluateMoveTo(boardId, cardId, targetBoardId, targetColumnId, opts) {
+    var current = data();
+    var board = null;
+    var targetBoard = null;
+    var source = null;
+    for (var i = 0; i < current.boards.length; i++) {
+      if (current.boards[i].id === boardId) {
+        board = current.boards[i];
+        source = board.columns.find(function (c) {
+          return c.cards.some(function (card) { return card.id === cardId; });
+        });
+      }
+      if (current.boards[i].id === targetBoardId) targetBoard = current.boards[i];
+    }
+    if (!board || !targetBoard || !source) return null;
+    var target = targetBoard.columns.find(function (c) { return c.id === targetColumnId; });
+    if (!target) return null;
+    return KB.Core.Policies.evaluateMovePolicy(current, { boardId: boardId, cardId: cardId }, { boardId: targetBoardId, columnId: targetColumnId }, {
+      sourceColumn: source,
+      confirmed: opts && opts.confirmed,
+      overrideReason: opts && opts.overrideReason
+    });
+  }
+
+  function moveCardTo(boardId, cardId, targetBoardId, targetColumnId, toIndex, opts) {
+    var result = null;
+    commit(function (current) {
+      result = moveCardToCommit(current, boardId, cardId, targetBoardId, targetColumnId, toIndex, opts);
+      return result;
+    });
+    if (!result || !result.changed) {
+      return { ok: false, reason: (result && result.reason) || 'move-failed', evaluation: result && result.evaluation };
+    }
+    return { ok: true, value: result.value };
+  }
+
+  function moveCardToCommit(current, boardId, cardId, targetBoardId, targetColumnId, toIndex, opts) {
+    var board = null;
+    for (var i = 0; i < current.boards.length; i++) {
+      if (current.boards[i].id === boardId) { board = current.boards[i]; break; }
+    }
+    var targetBoard = null;
+    for (var j = 0; j < current.boards.length; j++) {
+      if (current.boards[j].id === targetBoardId) { targetBoard = current.boards[j]; break; }
+    }
+    if (!board || !targetBoard) return { changed: false, state: current, value: null, reason: 'board-not-found' };
+    var source = board.columns.find(function (c) {
+      return c.cards.some(function (card) { return card.id === cardId; });
+    });
+    if (!source) return { changed: false, state: current, value: null, reason: 'card-not-found' };
+    var target = targetBoard.columns.find(function (c) { return c.id === targetColumnId; });
+    if (!target) return { changed: false, state: current, value: null, reason: 'column-not-found' };
+    var next = JSON.parse(JSON.stringify(current));
+    var nextBoard = next.boards.find(function (b) { return b.id === boardId; });
+    var nextTargetBoard = next.boards.find(function (b) { return b.id === targetBoardId; });
+    var nextSource = nextBoard.columns.find(function (c) {
+      return c.cards.some(function (card) { return card.id === cardId; });
+    });
+    var nextTarget = nextTargetBoard.columns.find(function (c) { return c.id === targetColumnId; });
+    var index = nextSource.cards.findIndex(function (c) { return c.id === cardId; });
+    var card = nextSource.cards[index];
+    var result = KB.Core.Pipeline.placeCard(next, card, nextSource, nextTargetBoard, nextTarget, {
+      toIndex: typeof toIndex === 'number' ? toIndex : undefined,
+      labelMapping: opts && opts.labelMapping,
+      confirmed: opts && opts.confirmed,
+      overrideReason: opts && opts.overrideReason
+    }, deps());
+    if (!result.changed) {
+      return { changed: false, state: current, value: null, reason: result.reason, evaluation: result.evaluation };
+    }
+    return { changed: true, state: next, value: result.value };
+  }
+
+  function evaluateCreate(columnId, incomingCount) {
+    var board = boardForColumn(columnId);
+    var column = board ? board.columns.find(function (c) { return c.id === columnId; }) : null;
+    if (!board || !column) return null;
+    // The evaluator counts the incoming card implicitly (breach when
+    // count >= limit), so pass only the cards BEYOND the first one:
+    // a batch of N cards over a column with c cards breaches exactly
+    // when c + N > limit.
+    var extraCards = Math.max(0, (incomingCount || 0) - 1);
+    return KB.Core.Policies.evaluateMovePolicy(data(), { boardId: board.id, cardId: '' }, { boardId: board.id, columnId: columnId }, {
+      sourceColumn: null,
+      pendingCount: extraCards
+    });
+  }
+
+  function createNeedsConfirmation(columnId, incomingCount) {
+    var evaluation = evaluateCreate(columnId, incomingCount);
+    if (evaluation && (!evaluation.allowed || evaluation.requiresConfirmation)) return evaluation;
+    return null;
+  }
+
+  function restoreCardChecked(cardId, opts) {
+    var board = activeBoard();
+    var index = board.archive.cards.findIndex(function (c) { return c.id === cardId; });
+    if (index === -1) return { ok: false, reason: 'card-not-found' };
+    var card = board.archive.cards[index];
+    var column = findColumn(card.columnId) || board.columns[0] || null;
+    if (column) {
+      var evaluation = KB.Core.Policies.evaluateMovePolicy(data(), { boardId: board.id, cardId: cardId }, { boardId: board.id, columnId: column.id }, {
+        confirmed: opts && opts.confirmed,
+        overrideReason: opts && opts.overrideReason
+      });
+      if (!evaluation.allowed || (evaluation.requiresConfirmation && !(opts && opts.confirmed))) {
+        return { ok: false, reason: 'policy', evaluation: evaluation };
+      }
+    }
+    return { ok: true, value: restoreCard(cardId, opts) };
+  }
+
+  function archiveCard(columnId, cardId, boardId) {
+    return commit(function (current) {
+      var board = null;
+      if (boardId) {
+        var candidate = current.boards.find(function (b) { return b.id === boardId; });
+        if (candidate && candidate.columns.some(function (c) { return c.id === columnId; })) board = candidate;
+      }
+      if (!board) {
+        for (var i = 0; i < current.boards.length; i++) {
+          if (current.boards[i].columns.some(function (c) { return c.id === columnId; })) {
+            board = current.boards[i];
+            break;
+          }
+        }
+      }
+      if (!board) return { changed: false, state: current, value: null, reason: 'column-not-found' };
+      var column = board.columns.find(function (c) { return c.id === columnId; });
+      var index = column.cards.findIndex(function (c) { return c.id === cardId; });
+      if (index === -1) return { changed: false, state: current, value: null, reason: 'card-not-found' };
+      var next = JSON.parse(JSON.stringify(current));
+      var nextBoard = next.boards.find(function (b) { return b.id === board.id; });
+      var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
+      var nextCard = nextColumn.cards.splice(index, 1)[0];
+      nextCard.archivedAt = now();
+      nextCard.fromColumn = column.title;
+      nextBoard.archive.cards.push(nextCard);
+      return { changed: true, state: next, value: nextCard };
+    });
+  }
+
+  function duplicateCard(columnId, cardId, boardId) {
+    return commit(function (current) {
+      var board = null;
+      if (boardId) {
+        var candidate = current.boards.find(function (b) { return b.id === boardId; });
+        if (candidate && candidate.columns.some(function (c) { return c.id === columnId; })) board = candidate;
+      }
+      if (!board) {
+        for (var i = 0; i < current.boards.length; i++) {
+          if (current.boards[i].columns.some(function (c) { return c.id === columnId; })) {
+            board = current.boards[i];
+            break;
+          }
+        }
+      }
+      if (!board) return { changed: false, state: current, value: null, reason: 'column-not-found' };
+      var column = board.columns.find(function (c) { return c.id === columnId; });
+      var index = column.cards.findIndex(function (c) { return c.id === cardId; });
+      if (index === -1) return { changed: false, state: current, value: null, reason: 'card-not-found' };
+      var next = JSON.parse(JSON.stringify(current));
+      var nextBoard = next.boards.find(function (b) { return b.id === board.id; });
+      var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
+      var card = nextColumn.cards[index];
+      var copy = KB.Core.Model.createCard(columnId, Object.assign({}, card, {
+        id: uid(),
+        title: 'Copy of ' + card.title,
+        createdAt: now(),
+        updatedAt: now(),
+        movedAt: now(),
+        labels: (card.labels || []).slice(),
+        checklist: KB.Core.Model.cloneChecklist(card.checklist, deps()),
+        archivedAt: null,
+        fromColumn: '',
+        priority: card.priority || 'none',
+        size: card.size || 'none',
+        startedAt: null,
+        completedAt: null,
+        flow: { state: 'normal', reason: '', since: null, periods: [] },
+        dependencies: { blockers: [], related: [] },
+        recurrenceId: null,
+        transitions: []
+      }), deps());
+      nextColumn.cards.splice(index + 1, 0, copy);
+      return { changed: true, state: next, value: copy };
+    });
+  }
+
+  function restoreCard(cardId, opts) {
+    return commit(function (current) {
+      return KB.Core.Operations.restoreCard(current, {
+        cardId: cardId,
+        confirmed: opts && opts.confirmed,
+        overrideReason: opts && opts.overrideReason
+      }, deps());
+    });
+  }
+
+  function restoreColumn(columnId) {
+    return commit(function (current) {
+      return KB.Core.Operations.restoreColumn(current, { columnId: columnId }, deps());
+    });
+  }
+
+  function purgeCard(cardId) {
+    var board = activeBoard();
+    var index = board.archive.cards.findIndex(function (c) { return c.id === cardId; });
+    if (index === -1) return false;
+    var purgedRef = { boardId: board.id, cardId: cardId };
+    pushHistory();
+    replaceState(KB.Core.Relations.cleanupCardReferences(state(), purgedRef));
+    board = activeBoard();
+    board.archive.cards.splice(index, 1);
+    save();
+    return true;
+  }
+
+  function purgeColumn(columnId) {
+    var result = commit(function (current) {
+      var board = activeBoard();
+      return KB.Core.Relations.purgeArchiveColumn(current, board.id, columnId);
+    });
+    return Boolean(result);
+  }
+
+
+  KB.State.addCard = addCard;
+  KB.State.addCards = addCards;
+  KB.State.updateCard = updateCard;
+  KB.State.setFlowState = setFlowState;
+  KB.State.updateCardWithFlow = updateCardWithFlow;
+  KB.State.moveCard = moveCard;
+  KB.State.evaluateMove = evaluateMove;
+  KB.State.evaluateMoveTo = evaluateMoveTo;
+  KB.State.createNeedsConfirmation = createNeedsConfirmation;
+  KB.State.moveCardChecked = moveCardChecked;
+  KB.State.moveCardTo = moveCardTo;
+  KB.State.restoreCardChecked = restoreCardChecked;
+  KB.State.duplicateCard = duplicateCard;
+  KB.State.archiveCard = archiveCard;
+  KB.State.restoreCard = restoreCard;
+  KB.State.restoreColumn = restoreColumn;
+  KB.State.purgeCard = purgeCard;
+  KB.State.purgeColumn = purgeColumn;
+})(window.KB = window.KB || {});
