@@ -1,0 +1,1642 @@
+/* ============================================================
+   PIXEL DESK — a colored ditherpunk desktop
+   Rules of the world: square corners, hard 1px chrome, offset
+   pixel shadows, dithers instead of gradients, steps() motion,
+   Press Start 2P chrome over VT323 body.
+   ============================================================ */
+
+:root {
+  --font-chrome: "Press Start 2P", "Courier New", monospace;
+  --font-body: "VT323", "Courier New", monospace;
+
+  --bg: #101116;
+  --bg-2: #171821;
+  --surface: #1a1c23;
+  --surface-2: #22252e;
+  --surface-3: #2b2f3a;
+  --border: #3a3f4d;
+  --border-strong: #4a5161;
+  --input: #12141a;
+  --text: #f0eee8;
+  --muted: #a7adbb;
+  --faint: #8b93a3;
+
+  --chrome: #f0eee8;
+  --shadow-ink: rgba(0, 0, 0, 0.55);
+
+  --accent: #8b5cf6;
+  --accent-soft: rgba(139, 92, 246, 0.3);
+  --on-accent: #f5f5f2;
+  --primary: #3fd7e0;
+  --primary-hi: #7ceaf0;
+  --on-primary: #101116;
+  --success: #31d078;
+  --danger: #c81e14;
+  --warn: #ffb020;
+
+  --ants: #f0eee8;
+  --d-ink: rgba(240, 238, 232, 0.32);
+  --d-paper: transparent;
+  --win-bg: #5b22c9;
+  --win-ink: #f5f5f2;
+
+  --wall-checker: rgba(255, 255, 255, 0.04);
+  --hs-line: rgba(0, 0, 0, 0.16);
+}
+
+[data-theme="light"] {
+  --bg: #e8e6df;
+  --bg-2: #d9d6cc;
+  --surface: #f6f4ee;
+  --surface-2: #ece9e1;
+  --surface-3: #e0ddd4;
+  --border: #3a3d45;
+  --border-strong: #23262d;
+  --input: #fbfaf6;
+  --text: #17181d;
+  --muted: #585e6b;
+  --faint: #5a6172;
+
+  --chrome: #17181d;
+  --shadow-ink: rgba(23, 24, 29, 0.28);
+
+  --accent: #7a3cf0;
+  --accent-soft: rgba(122, 60, 240, 0.22);
+  --on-accent: #f5f5f2;
+  --primary: #056b78;
+  --primary-hi: #0a6b7c;
+  --on-primary: #f5f5f2;
+  --success: #1da463;
+  --danger: #c81e14;
+  --warn: #b07d00;
+
+  --ants: #17181d;
+  --d-ink: rgba(23, 24, 29, 0.24);
+  --d-paper: transparent;
+  --win-bg: #6d30d6;
+  --win-ink: #f5f5f2;
+
+  --wall-checker: rgba(23, 24, 29, 0.05);
+  --hs-line: rgba(23, 24, 29, 0.07);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 17px;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+:focus-visible {
+  outline: 2px dashed var(--accent);
+  outline-offset: 2px;
+}
+
+::placeholder {
+  color: var(--faint);
+  opacity: 1;
+}
+
+/* ---------- Scrollbars (square, machine-drawn) ---------- */
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-3) var(--surface);
+}
+
+/* ---------- Menu bar ---------- */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border-bottom: 2px solid var(--chrome);
+  box-shadow: 0 4px 0 var(--shadow-ink);
+  flex: none;
+  z-index: 5;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-dot {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  display: inline-block;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect x='0' y='0' width='8' height='8' fill='%23ff4136'/%3E%3Crect x='8' y='0' width='8' height='8' fill='%23ffd60a'/%3E%3Crect x='0' y='8' width='8' height='8' fill='%233fd7e0'/%3E%3Crect x='8' y='8' width='8' height='8' fill='%238b5cf6'/%3E%3C/svg%3E");
+  background-size: 16px 16px;
+  box-shadow: 2px 2px 0 var(--shadow-ink);
+}
+
+.logo-name {
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+
+.header-spacer {
+  flex: 1;
+}
+
+.clock {
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--muted);
+  padding: 6px 8px;
+  border: 2px solid var(--border);
+  background: var(--input);
+  box-shadow: 2px 2px 0 var(--shadow-ink);
+}
+
+.archive-badge {
+  display: none;
+  background: var(--danger);
+  color: #f5f5f2;
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  padding: 3px 5px;
+  box-shadow: 1px 1px 0 var(--shadow-ink);
+}
+
+.archive-badge.show {
+  display: inline-block;
+}
+
+/* ---------- Buttons (chunky pixels) ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 2px solid var(--chrome);
+  background: var(--surface-3);
+  color: var(--text);
+  border-radius: 0;
+  padding: 8px 11px;
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--shadow-ink);
+  user-select: none;
+}
+
+.btn:hover {
+  background: var(--chrome);
+  color: var(--surface-3);
+}
+
+.btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--shadow-ink);
+}
+
+.btn.ghost {
+  background: transparent;
+  border-color: var(--border-strong);
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.btn.ghost:hover {
+  background: var(--surface-3);
+  border-color: var(--chrome);
+  color: var(--text);
+}
+
+.btn.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+
+.btn.primary:hover {
+  background: var(--primary-hi);
+  color: var(--on-primary);
+}
+
+.btn.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #f5f5f2;
+}
+
+.btn.danger:hover {
+  background: #ff6a5e;
+  color: #f5f5f2;
+}
+
+.btn.danger-ghost {
+  background: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn.danger-ghost:hover {
+  background: var(--danger);
+  color: #f5f5f2;
+}
+
+.btn.icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
+.btn.icon.sm {
+  width: 26px;
+  height: 26px;
+}
+
+.btn.sm {
+  font-size: 11px;
+  padding: 6px 9px;
+  box-shadow: 2px 2px 0 var(--shadow-ink);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.btn-icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.icon-sun {
+  display: none;
+}
+
+.icon-moon {
+  display: inline-flex;
+}
+
+[data-theme="light"] .icon-sun {
+  display: inline-flex;
+}
+
+[data-theme="light"] .icon-moon {
+  display: none;
+}
+
+/* ---------- Toolbar / filter bar ---------- */
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: var(--surface);
+  border-bottom: 2px solid var(--border-strong);
+  flex: none;
+}
+
+.search-box {
+  position: relative;
+  flex: 0 1 300px;
+  min-width: 190px;
+}
+
+.search-box .search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--faint);
+  display: flex;
+  pointer-events: none;
+}
+
+.search-box .search-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.search-box input {
+  width: 100%;
+  padding: 8px 12px 8px 34px;
+}
+
+input,
+select,
+textarea {
+  font-family: var(--font-body);
+  font-size: 18px;
+  color: var(--text);
+  background: var(--input);
+  border: 2px solid var(--border);
+  border-radius: 0;
+  padding: 6px 10px;
+  caret-color: var(--accent);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 2px 2px 0 var(--accent-soft);
+}
+
+input[type="search"]::-webkit-search-cancel-button {
+  cursor: pointer;
+  filter: invert(0.6);
+}
+
+.label-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+#clear-filters {
+  display: none;
+}
+
+#clear-filters.show {
+  display: inline-flex;
+}
+
+/* ---------- Chips ---------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 2px solid transparent;
+  background: var(--surface-3);
+  color: var(--text);
+  border-radius: 0;
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.2;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chip .dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 0;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+.chip:hover {
+  border-color: var(--chrome);
+}
+
+.chip.active {
+  border-color: var(--text);
+  box-shadow: 2px 2px 0 var(--shadow-ink);
+}
+
+.chip-static {
+  cursor: default;
+  pointer-events: none;
+  border-color: transparent;
+}
+
+.chip-static.assignee {
+  background: transparent;
+  color: var(--muted);
+}
+
+.chip-static.assignee svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ---------- Desktop ---------- */
+
+.board-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--bg);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='8' y='10' width='2' height='2' fill='%23ff4136' opacity='.5'/%3E%3Crect x='40' y='6' width='2' height='2' fill='%23ffd60a' opacity='.45'/%3E%3Crect x='56' y='32' width='2' height='2' fill='%233fd7e0' opacity='.5'/%3E%3Crect x='24' y='50' width='2' height='2' fill='%238b5cf6' opacity='.45'/%3E%3Crect x='4' y='40' width='2' height='2' fill='%23f15bb5' opacity='.45'/%3E%3Crect x='48' y='54' width='2' height='2' fill='%2331d078' opacity='.45'/%3E%3Crect x='30' y='22' width='2' height='2' fill='%23ff8a1e' opacity='.4'/%3E%3C/svg%3E"),
+    repeating-conic-gradient(var(--wall-checker) 0 25%, transparent 0 50%);
+  background-size: 64px 64px, 12px 12px;
+}
+
+.board {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  padding: 20px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  justify-content: space-evenly;
+  width: 100%;
+  max-width: 1480px;
+  margin-inline: auto;
+}
+
+.board.has-overflow {
+  justify-content: flex-start;
+}
+
+.no-results {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 14px 20px 0;
+  padding: 12px 16px;
+  border: 2px dashed var(--border-strong);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 18px;
+  box-shadow: 3px 3px 0 var(--shadow-ink);
+}
+
+.no-results-text {
+  margin: 0;
+}
+
+/* ---------- Windows (columns) ---------- */
+
+.column {
+  flex: 0 0 300px;
+  min-height: 220px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 2px solid var(--border-strong);
+  border-radius: 0;
+  box-shadow: 4px 4px 0 var(--shadow-ink);
+}
+
+.column.dragging {
+  opacity: 0.5;
+}
+
+.column.col-drop {
+  border-color: var(--accent);
+  box-shadow: 4px 4px 0 var(--shadow-ink), 0 0 0 2px var(--accent-soft);
+}
+
+.column.col-drop-last {
+  border-color: var(--accent);
+  box-shadow: 4px 4px 0 var(--shadow-ink), 0 0 0 2px var(--accent-soft);
+}
+
+.column-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 8px 8px 10px;
+  background: var(--win-bg);
+  color: var(--win-ink);
+  border-bottom: 2px solid var(--win-ink);
+  cursor: grab;
+  user-select: none;
+  flex: none;
+}
+
+.column-header:active {
+  cursor: grabbing;
+}
+
+.col-grip {
+  display: flex;
+  color: inherit;
+  opacity: 0.75;
+  flex: none;
+}
+
+.col-grip svg {
+  width: 12px;
+  height: 12px;
+}
+
+.col-title {
+  margin: 0;
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  letter-spacing: 1px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.col-count {
+  flex: none;
+  margin-left: auto;
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.1;
+  padding: 2px 7px;
+  background: var(--win-ink);
+  color: var(--win-bg);
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.25);
+}
+
+.column-header .btn.icon {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--win-ink);
+  background: transparent;
+  color: var(--win-ink);
+  box-shadow: none;
+  padding: 0;
+}
+
+.column-header .btn.icon:hover {
+  background: var(--win-ink);
+  color: var(--win-bg);
+}
+
+.column-header .btn.icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ---------- Card list ---------- */
+
+.card-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 9px;
+  min-height: 96px;
+  overflow-y: auto;
+  position: relative;
+}
+
+.drop-line {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  height: 3px;
+  background: var(--accent);
+  box-shadow: 1px 1px 0 var(--shadow-ink);
+  pointer-events: none;
+  z-index: 5;
+  animation: line-blink 0.5s steps(1) infinite;
+}
+
+/* ---------- Files (cards) ---------- */
+
+.card {
+  background: var(--surface-2);
+  border: 2px solid var(--border);
+  border-radius: 0;
+  padding: 10px 12px;
+  cursor: grab;
+  position: relative;
+  flex: none;
+  transition: border-color 0.08s;
+}
+
+.card:active {
+  cursor: grabbing;
+}
+
+.card:hover {
+  border-color: var(--text);
+  box-shadow: 3px 3px 0 var(--shadow-ink);
+}
+
+.card.dragging {
+  opacity: 0.55;
+  border-color: var(--ants);
+  background-image:
+    repeating-linear-gradient(90deg, var(--ants) 0 6px, transparent 6px 12px),
+    repeating-linear-gradient(90deg, var(--ants) 0 6px, transparent 6px 12px),
+    repeating-linear-gradient(0deg, var(--ants) 0 6px, transparent 6px 12px),
+    repeating-linear-gradient(0deg, var(--ants) 0 6px, transparent 6px 12px),
+    repeating-conic-gradient(var(--d-ink) 0 25%, var(--d-paper) 0 50%);
+  background-size: 100% 2px, 100% 2px, 2px 100%, 2px 100%, 4px 4px;
+  background-position: 0 0, 0 100%, 0 0, 100% 0, 0 0;
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+  animation: ants-march 0.6s steps(1) infinite;
+}
+
+.card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.card-title {
+  flex: 1;
+  margin: 0 0 4px;
+  font-family: var(--font-body);
+  font-size: 23px;
+  line-height: 1.25;
+  letter-spacing: 0.4px;
+  overflow-wrap: anywhere;
+}
+
+.card-check {
+  flex: none;
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  background: var(--success);
+  color: #111113;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 2px 2px 0 var(--shadow-ink);
+}
+
+.card-check svg {
+  width: 11px;
+  height: 11px;
+}
+
+.card-desc {
+  margin: 0 0 9px;
+  font-size: 16px;
+  color: var(--muted);
+  line-height: 1.3;
+  letter-spacing: 0.3px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.card-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: none;
+  gap: 4px;
+  background: var(--surface-2);
+  border: 2px solid var(--border);
+  box-shadow: 2px 2px 0 var(--shadow-ink);
+  padding: 2px;
+}
+
+.card:hover .card-actions,
+.card:focus-within .card-actions {
+  display: flex;
+}
+
+/* ---------- Empty / hint states ---------- */
+
+.list-empty {
+  flex: 1;
+  min-height: 96px;
+  border: 2px dashed var(--border-strong);
+  border-radius: 0;
+  padding: 16px;
+  text-align: center;
+  color: var(--faint);
+  font-size: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+}
+
+.list-empty p {
+  margin: 0;
+}
+
+.list-empty .sub {
+  font-size: 16px;
+}
+
+.empty-board {
+  margin: auto;
+  max-width: 460px;
+  text-align: center;
+  padding: 48px 36px;
+  border: 2px dashed var(--border-strong);
+  background: var(--surface);
+  box-shadow: 5px 5px 0 var(--shadow-ink);
+  color: var(--muted);
+}
+
+.empty-board-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 18px;
+  background: var(--surface-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  box-shadow: 3px 3px 0 var(--shadow-ink);
+}
+
+.empty-board-icon svg {
+  width: 40px;
+  height: 40px;
+}
+
+.empty-board h2 {
+  margin: 0 0 8px;
+  font-family: var(--font-chrome);
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--text);
+}
+
+.empty-board p {
+  margin: 0 0 22px;
+  font-size: 18px;
+}
+
+/* ---------- Modal (a window) ---------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  animation: fade 0.12s steps(2);
+  padding: 20px;
+}
+
+.modal-panel {
+  width: min(560px, 100%);
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 2px solid var(--border-strong);
+  border-radius: 0;
+  box-shadow: 6px 6px 0 var(--shadow-ink);
+  animation: win-in 0.18s steps(4);
+}
+
+.card-form {
+  padding: 18px;
+}
+
+.card-form h2 {
+  margin: -18px -18px 18px;
+  padding: 11px 14px;
+  background: var(--win-bg);
+  color: var(--win-ink);
+  border-bottom: 2px solid var(--win-ink);
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.field > span {
+  display: block;
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.field.check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  margin: 16px 0;
+}
+
+.field.check > span {
+  font-family: var(--font-body);
+  font-size: 17px;
+  letter-spacing: 0.3px;
+  color: var(--text);
+  margin: 0;
+}
+
+.field.check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  border-radius: 0;
+}
+
+.label-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.label-create-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.label-create-row input[type="text"] {
+  flex: 1;
+}
+
+.label-create-row input[type="color"] {
+  width: 46px;
+  height: 38px;
+  padding: 3px;
+  flex: none;
+  cursor: pointer;
+  border: 2px solid var(--border);
+}
+
+.modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.modal-actions .spacer {
+  flex: 1;
+}
+
+.form-hint {
+  font-size: 16px;
+  color: var(--muted);
+  margin: -6px 0 14px;
+}
+
+.label-manager-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.label-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-2);
+  border: 2px solid var(--border);
+  border-radius: 0;
+  padding: 7px 10px;
+}
+
+.label-row .spacer {
+  flex: 1;
+}
+
+/* ---------- Archive (a window on the right) ---------- */
+
+.archive-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 39;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s steps(3);
+}
+
+.archive-backdrop.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.archive-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(400px, 94vw);
+  background: var(--surface);
+  border-left: 2px solid var(--border-strong);
+  box-shadow: -4px 0 0 var(--shadow-ink);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(105%);
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform 0.2s steps(5), visibility 0s linear 0.2s;
+}
+
+.archive-panel.open {
+  transform: none;
+  visibility: visible;
+  pointer-events: auto;
+  transition: transform 0.2s steps(5), visibility 0s linear 0s;
+}
+
+.archive-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  background: var(--win-bg);
+  color: var(--win-ink);
+  border-bottom: 2px solid var(--on-accent);
+  flex: none;
+}
+
+.archive-head .header-spacer {
+  flex: 1;
+}
+
+.archive-title {
+  margin: 0;
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.archive-head .btn.icon {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--win-ink);
+  background: transparent;
+  color: var(--win-ink);
+  box-shadow: none;
+}
+
+.archive-head .btn.icon:hover {
+  background: var(--win-ink);
+  color: var(--win-bg);
+}
+
+.archive-head .btn.icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.archive-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 14px 14px;
+}
+
+.archive-section-title {
+  margin: 16px 0 9px;
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--faint);
+}
+
+.archive-item {
+  background: var(--surface-2);
+  border: 2px solid var(--border);
+  border-radius: 0;
+  padding: 9px 11px;
+  margin-bottom: 10px;
+}
+
+.archive-item:hover {
+  border-color: var(--text);
+}
+
+.archive-item-title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.archive-item-meta {
+  margin: 0 0 9px;
+  font-size: 16px;
+  color: var(--muted);
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.archive-item-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.archive-empty {
+  text-align: center;
+  color: var(--faint);
+  padding: 48px 10px;
+  font-size: 18px;
+}
+
+.archive-empty p {
+  margin: 0 0 6px;
+}
+
+/* ---------- Homescreen (power-on) ---------- */
+
+.homescreen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background-color: var(--bg);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='8' y='10' width='2' height='2' fill='%23ff4136' opacity='.5'/%3E%3Crect x='40' y='6' width='2' height='2' fill='%23ffd60a' opacity='.45'/%3E%3Crect x='56' y='32' width='2' height='2' fill='%233fd7e0' opacity='.5'/%3E%3Crect x='24' y='50' width='2' height='2' fill='%238b5cf6' opacity='.45'/%3E%3Crect x='4' y='40' width='2' height='2' fill='%23f15bb5' opacity='.45'/%3E%3Crect x='48' y='54' width='2' height='2' fill='%2331d078' opacity='.45'/%3E%3C/svg%3E"),
+    repeating-conic-gradient(var(--wall-checker) 0 25%, transparent 0 50%);
+  background-size: 64px 64px, 12px 12px;
+}
+
+.hs-scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, var(--hs-line) 0 1px, transparent 1px 3px);
+}
+
+.hs-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-conic-gradient(var(--chrome) 0 25%, transparent 0 50%);
+  background-size: 8px 8px;
+  opacity: 0;
+}
+
+.homescreen .hs-flash {
+  animation: hs-flash 0.3s steps(4) 1;
+}
+
+.hs-boot {
+  position: absolute;
+  top: 30px;
+  left: 34px;
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 18px;
+  line-height: 1.4;
+  letter-spacing: 0.3px;
+}
+
+.hs-boot p {
+  margin: 0 0 2px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.hs-boot .c-chrome {
+  color: var(--text);
+}
+
+.hs-boot .c-cyan {
+  color: var(--primary);
+}
+
+.hs-boot .c-green {
+  color: var(--success);
+}
+
+.hs-caret {
+  display: inline-block;
+  width: 9px;
+  height: 17px;
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  background: var(--primary);
+  animation: caret-blink 0.8s steps(1) infinite;
+}
+
+.hs-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  text-align: center;
+  opacity: 0;
+}
+
+.homescreen.booted .hs-stage {
+  opacity: 1;
+  animation: win-in 0.26s steps(6);
+}
+
+.hs-mark {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 0;
+  background: var(--surface);
+  border: 2px solid var(--border-strong);
+  box-shadow: 6px 6px 0 var(--shadow-ink);
+}
+
+.hs-mark span:nth-child(1) {
+  background: #ff4136;
+  animation: hs-wink 1.6s steps(1) infinite;
+}
+
+.hs-mark span:nth-child(2) {
+  background: #ffd60a;
+  animation: hs-wink 1.6s steps(1) 0.4s infinite;
+}
+
+.hs-mark span:nth-child(3) {
+  background: #3fd7e0;
+  animation: hs-wink 1.6s steps(1) 0.8s infinite;
+}
+
+.hs-mark span:nth-child(4) {
+  background: #8b5cf6;
+  animation: hs-wink 1.6s steps(1) 1.2s infinite;
+}
+
+.hs-title {
+  margin: 0;
+  font-family: var(--font-chrome);
+  font-size: 46px;
+  letter-spacing: 10px;
+  color: var(--text);
+}
+
+.hs-tagline {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 26px;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+
+.hs-prompt {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 104px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  opacity: 0;
+}
+
+.homescreen.booted .hs-prompt {
+  opacity: 1;
+  animation: win-in 0.26s steps(6);
+}
+
+.hs-prompt-text {
+  font-family: var(--font-chrome);
+  font-size: 16px;
+  letter-spacing: 1px;
+  color: var(--text);
+  animation: caret-blink 1.1s steps(1) infinite;
+}
+
+.hs-hint {
+  font-family: var(--font-body);
+  font-size: 16px;
+  letter-spacing: 1px;
+  color: var(--faint);
+}
+
+.hs-mascot {
+  position: absolute;
+  bottom: 12px;
+  left: 16px;
+  width: 64px;
+  height: 64px;
+  image-rendering: pixelated;
+}
+
+.homescreen.starting .hs-prompt,
+.homescreen.starting .hs-stage {
+  opacity: 0;
+}
+
+.homescreen.off {
+  animation: crt-off 0.34s steps(8) forwards;
+  transform-origin: 50% 50%;
+}
+
+.homescreen.off .hs-flash {
+  animation: hs-flash 0.22s steps(3) forwards;
+}
+
+@keyframes hs-flash {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes hs-wink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes crt-off {
+  0% {
+    transform: none;
+    opacity: 1;
+  }
+  35% {
+    transform: scaleY(0.06);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleY(0.002);
+    opacity: 0;
+  }
+}
+
+/* ---------- Mascot scene (accepted via live session 350edd9b) ---------- */
+
+#hs-mascot.m-scene {
+  --m-sheet: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20168%2024%22%20shape-rendering%3D%22crispEdges%22%3E%3Cg%20transform%3D%22translate(0%2C0)%22%3E%3Crect%20x%3D%2216%22%20y%3D%220%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%233fd7e0%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%233fd7e0%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%222%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%223%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%224%22%20width%3D%2212%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%225%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23c22785%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%228%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23c22785%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%229%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2210%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2211%22%20width%3D%2214%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2212%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2212%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2212%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2213%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2213%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2213%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2214%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2214%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2214%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2215%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2215%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%2215%22%20width%3D%225%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2215%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2216%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2216%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2216%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2217%22%20width%3D%2214%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2219%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2219%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2219%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%2219%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%2219%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2219%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2220%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2220%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2221%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2221%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2222%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2222%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(24%2C0)%22%3E%3Crect%20x%3D%2216%22%20y%3D%220%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%233fd7e0%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%233fd7e0%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%222%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%223%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%224%22%20width%3D%2212%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%225%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%226%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23c22785%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%228%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23c22785%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%229%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2210%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2211%22%20width%3D%2214%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2212%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2212%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2212%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2213%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2213%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2213%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2214%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2214%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2214%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2215%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2215%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%2215%22%20width%3D%225%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2215%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2216%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2216%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2216%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2217%22%20width%3D%2214%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2219%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2219%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2219%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%2219%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%2219%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2219%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2220%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2220%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2221%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2221%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2222%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2222%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(48%2C0)%22%3E%3Crect%20x%3D%2216%22%20y%3D%220%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%233fd7e0%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%233fd7e0%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%222%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%223%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%224%22%20width%3D%2212%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%225%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23c22785%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%228%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23c22785%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%229%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2210%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2211%22%20width%3D%2214%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2212%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2212%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2212%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2213%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2213%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2213%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2214%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2214%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2214%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2215%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2215%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%2215%22%20width%3D%225%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2215%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2216%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2216%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2216%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2217%22%20width%3D%2214%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2219%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%2219%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2220%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%2220%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2221%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%2221%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(72%2C0)%22%3E%3Crect%20x%3D%2216%22%20y%3D%220%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%233fd7e0%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%233fd7e0%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%222%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%223%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%224%22%20width%3D%2212%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%225%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23c22785%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%228%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23c22785%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%229%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2210%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2211%22%20width%3D%2216%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2212%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2213%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2214%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2215%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%2215%22%20width%3D%225%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2216%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2216%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2216%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2217%22%20width%3D%2214%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2219%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2220%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%2221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%2221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2222%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2223%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(96%2C0)%22%3E%3Crect%20x%3D%223%22%20y%3D%220%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%220%22%20width%3D%2214%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2223%22%20y%3D%220%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%221%22%20width%3D%2214%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2223%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%222%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%222%22%20width%3D%2214%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2223%22%20y%3D%222%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%223%22%20width%3D%2212%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%224%22%20width%3D%2212%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%225%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23c22785%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%228%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23c22785%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%229%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2210%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%2211%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2211%22%20width%3D%2214%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2223%22%20y%3D%2211%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2212%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2221%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2213%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2213%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2213%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2221%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2214%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2221%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2215%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2215%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%2215%22%20width%3D%225%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2215%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2221%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%2216%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2216%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2216%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2216%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2221%22%20y%3D%2216%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2217%22%20width%3D%2214%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%2219%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2219%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2220%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%2220%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(120%2C0)%22%3E%3Crect%20x%3D%2216%22%20y%3D%220%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%233fd7e0%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%233fd7e0%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%222%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%223%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%224%22%20width%3D%2212%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%225%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23c22785%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%228%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23c22785%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%229%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2210%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2211%22%20width%3D%2216%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2212%22%20width%3D%2216%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2213%22%20width%3D%2216%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2214%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2214%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2221%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2215%22%20width%3D%2216%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2216%22%20width%3D%2216%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2217%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2217%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2217%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2217%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%2217%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2217%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2218%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2218%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2219%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2219%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(144%2C0)%22%3E%3Crect%20x%3D%2216%22%20y%3D%220%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%233fd7e0%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%233fd7e0%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%222%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%223%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%224%22%20width%3D%2212%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%225%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%226%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%226%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%227%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23c22785%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%228%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23c22785%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%229%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2210%22%20width%3D%2216%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2211%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2211%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2211%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2212%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2213%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2214%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%2214%22%20width%3D%225%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2215%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23ffd60a%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2216%22%20width%3D%2214%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2217%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2217%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2217%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2217%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2217%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2217%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2218%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%2218%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23a34800%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2219%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%2219%22%20width%3D%224%22%20height%3D%221%22%20fill%3D%22%23101116%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+  --b-left: calc(50% - 230px);
+  --b-top: calc(50vh - 92px);
+  --lx0: 93px;
+  --lp: 56px;
+  --lt: 90px;
+  --floor: 170px;
+  --mark-x: 230px;
+  --mark-y: 34px;
+  position: fixed;
+  left: var(--b-left);
+  top: var(--b-top);
+  width: 460px;
+  height: 200px;
+  pointer-events: none;
+}
+
+#hs-mascot.m-scene .m {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 48px;
+  height: 48px;
+  background-image: var(--m-sheet);
+  background-size: 336px 48px;
+  background-repeat: no-repeat;
+  will-change: transform;
+  transform: translate(calc(var(--lx0) - 20px), var(--floor));
+  animation: m-move 12s steps(1) infinite, m-frames 12s steps(1) infinite;
+  animation-play-state: paused;
+}
+
+.homescreen.booted #hs-mascot.m-scene .m {
+  animation-play-state: running;
+}
+
+@keyframes m-move {
+  0%   { transform: translate(var(--lx0), var(--floor)); animation-timing-function: steps(5); }
+  1.5% { transform: translate(var(--lx0), 88px); animation-timing-function: steps(4); }
+  6%   { transform: translate(var(--lx0), 88px); animation-timing-function: steps(1); }
+  8.5% { transform: translate(calc(var(--lx0) + var(--lp)), 88px); animation-timing-function: steps(1); }
+  10%  { transform: translate(calc(var(--lx0) + var(--lp)), 30px); animation-timing-function: steps(5); }
+  15%  { transform: translate(calc(var(--lx0) + 2 * var(--lp)), 88px); animation-timing-function: steps(5); }
+  17%  { transform: translate(calc(var(--lx0) + 2 * var(--lp)), 88px); animation-timing-function: steps(1); }
+  18.5%{ transform: translate(calc(var(--lx0) + 2 * var(--lp)), 30px); animation-timing-function: steps(5); }
+  23.5%{ transform: translate(calc(var(--lx0) + 3 * var(--lp)), 88px); animation-timing-function: steps(5); }
+  25.5%{ transform: translate(calc(var(--lx0) + 3 * var(--lp)), 88px); animation-timing-function: steps(1); }
+  27%  { transform: translate(calc(var(--lx0) + 3 * var(--lp)), 30px); animation-timing-function: steps(5); }
+  32%  { transform: translate(calc(var(--lx0) + 4 * var(--lp)), 88px); animation-timing-function: steps(5); }
+  34%  { transform: translate(calc(var(--lx0) + 4 * var(--lp)), 88px); animation-timing-function: steps(1); }
+  35.5%{ transform: translate(calc(var(--lx0) + 4 * var(--lp)), 30px); animation-timing-function: steps(5); }
+  40.5%{ transform: translate(calc(var(--lx0) + 5 * var(--lp)), 88px); animation-timing-function: steps(5); }
+  42.5%{ transform: translate(calc(var(--lx0) + 5 * var(--lp)), 88px); animation-timing-function: steps(1); }
+  44%  { transform: translate(calc(var(--lx0) + 5 * var(--lp)), 88px); animation-timing-function: steps(2); }
+  47%  { transform: translate(calc(var(--lx0) + 5 * var(--lp) + 16px), 118px); animation-timing-function: steps(6); }
+  50%  { transform: translate(calc(var(--lx0) + 5 * var(--lp) + 44px), var(--floor)); animation-timing-function: steps(1); }
+  52%  { transform: translate(calc(var(--lx0) + 5 * var(--lp) + 44px), 160px); animation-timing-function: steps(1); }
+  54%  { transform: translate(calc(var(--lx0) + 5 * var(--lp) + 44px), var(--floor)); animation-timing-function: steps(1); }
+  56%  { transform: translate(calc(var(--lx0) + 5 * var(--lp) + 44px), var(--floor)); animation-timing-function: steps(8); }
+  62%  { transform: translate(var(--mark-x), var(--floor)) scaleX(-1); animation-timing-function: steps(6); }
+  66%  { transform: translate(var(--mark-x), 60px) scaleX(1); animation-timing-function: steps(1); }
+  70%  { transform: translate(var(--mark-x), 24px) scaleX(1); animation-timing-function: steps(1); }
+  72%  { transform: translate(var(--mark-x), 30px) scaleX(1); animation-timing-function: steps(1); }
+  74%  { transform: translate(var(--mark-x), 24px) scaleX(1); animation-timing-function: steps(3); }
+  78%  { transform: translate(var(--mark-x), 4px) scaleX(1); animation-timing-function: steps(1); }
+  82%  { transform: translate(var(--mark-x), 24px) scaleX(1); animation-timing-function: steps(3); }
+  86%  { transform: translate(var(--mark-x), 12px) scaleX(1); animation-timing-function: steps(1); }
+  90%  { transform: translate(var(--mark-x), 24px) scaleX(1); animation-timing-function: steps(1); }
+  100% { transform: translate(var(--mark-x), 24px) scaleX(1); animation-timing-function: steps(1); }
+}
+
+@keyframes m-frames {
+  0% { background-position: 0px 0; }
+  1.5% { background-position: -96px 0; }
+  6% { background-position: -240px 0; }
+  8.5% { background-position: -96px 0; }
+  15% { background-position: -240px 0; }
+  17% { background-position: -96px 0; }
+  23.5% { background-position: -240px 0; }
+  25.5% { background-position: -96px 0; }
+  32% { background-position: -240px 0; }
+  34% { background-position: -96px 0; }
+  40.5% { background-position: -240px 0; }
+  42.5% { background-position: -96px 0; }
+  44% { background-position: -192px 0; }
+  50% { background-position: -240px 0; }
+  52% { background-position: -96px 0; }
+  54% { background-position: -96px 0; }
+  62% { background-position: -96px 0; }
+  66% { background-position: -288px 0; }
+  70% { background-position: -240px 0; }
+  72% { background-position: -96px 0; }
+  74% { background-position: -96px 0; }
+  78% { background-position: -240px 0; }
+  82% { background-position: -96px 0; }
+  86% { background-position: -240px 0; }
+  90% { background-position: 0px 0; }
+  100% { background-position: 0px 0; }
+}
+
+@media (max-width: 640px) {
+  #hs-mascot.m-scene {
+    --b-left: calc(50% - 140px);
+    --b-top: calc(50vh - 74px);
+    --lx0: 60px;
+    --lp: 32px;
+    --lt: 72px;
+    --floor: 150px;
+    --mark-x: 140px;
+    --mark-y: 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #hs-mascot.m-scene .m {
+    animation: none;
+  }
+}
+
+/* ---------- Toasts ---------- */
+
+#toast-root {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 60;
+  pointer-events: none;
+}
+
+.toast {
+  position: relative;
+  background: var(--surface);
+  border: 2px solid var(--border-strong);
+  color: var(--text);
+  padding: 11px 13px;
+  font-size: 17px;
+  line-height: 1.25;
+  box-shadow: 3px 3px 0 var(--shadow-ink);
+  max-width: 330px;
+  animation: toast-in 0.16s steps(4);
+}
+
+.toast::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  height: 5px;
+  background: var(--accent);
+}
+
+.toast.success::before {
+  background: var(--success);
+}
+
+.toast.error::before {
+  background: var(--danger);
+}
+
+.toast.warn::before {
+  background: var(--warn);
+}
+
+.toast.out {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.2s steps(4), transform 0.2s steps(4);
+}
+
+/* ---------- Motion ---------- */
+
+@keyframes ants-march {
+  to {
+    background-position: 12px 0, -12px 100%, 0 12px, 100% -12px, 0 0;
+  }
+}
+
+@keyframes line-blink {
+  50% {
+    background: var(--bg);
+    box-shadow: none;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes win-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card.dragging,
+  .drop-line,
+  .modal-panel,
+  .toast,
+  .modal-backdrop,
+  .hs-flash,
+  .hs-caret,
+  .hs-prompt-text,
+  .hs-mark span,
+  .homescreen.off,
+  .homescreen.booted .hs-stage,
+  .homescreen.booted .hs-prompt {
+    animation: none;
+  }
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 640px) {
+  .app-header {
+    padding: 8px 10px;
+    gap: 8px;
+  }
+
+  .clock {
+    display: none;
+  }
+
+  .btn-label {
+    display: none;
+  }
+
+  .filter-bar {
+    padding: 8px 10px;
+  }
+
+  .board {
+    padding: 12px;
+  }
+
+  .search-box {
+    flex-basis: 100%;
+  }
+
+  .hs-boot {
+    top: 18px;
+    left: 18px;
+    font-size: 16px;
+  }
+
+  .hs-title {
+    font-size: 26px;
+    letter-spacing: 6px;
+  }
+
+  .hs-tagline {
+    font-size: 20px;
+    letter-spacing: 1px;
+  }
+
+  .hs-mark {
+    width: 56px;
+    height: 56px;
+    box-shadow: 4px 4px 0 var(--shadow-ink);
+  }
+
+  .hs-prompt {
+    bottom: 88px;
+  }
+
+  .hs-mascot {
+    width: 48px;
+    height: 48px;
+  }
+}
+
+
+

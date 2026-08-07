@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kanban</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect width='16' height='16' fill='%23101116'/%3E%3Crect x='2' y='2' width='5' height='5' fill='%23ff4136'/%3E%3Crect x='9' y='2' width='5' height='5' fill='%23ffd60a'/%3E%3Crect x='2' y='9' width='5' height='5' fill='%233fd7e0'/%3E%3Crect x='9' y='9' width='5' height='5' fill='%238b5cf6'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <script>
+    (function () {
+      try {
+        var raw = localStorage.getItem('kanban.board.v1');
+        if (raw) {
+          var parsed = JSON.parse(raw);
+          if (parsed && parsed.theme) document.documentElement.dataset.theme = parsed.theme;
+        }
+      } catch (err) {}
+    })();
+  </script>
+</head>
+<body>
+  <!--
+    PIXEL DESK — direction contract (seed c33e5a42)
+    THESIS: The kanban board as a colored ditherpunk desktop: columns are
+      windows with accent title bars, cards are files, drags cut holes with
+      marching ants, and every blend is an ordered dither. It refuses the
+      sticky-note wall and the soft-round Trello default.
+    OWN-WORLD: Hard 1px chrome and offset pixel shadows only (no blur, no
+      radius, no gradients — dithers stand in for every blend); one vivid
+      9-color pixel palette carried by title bars, labels, and state;
+      Press Start 2P chrome over VT323 body; every icon authored as
+      crisp-edge pixels; motion is discrete steps() and instant inverts.
+    STORY: A solo developer opens their desktop and sees their work as a
+      machine of windows and files; color carries meaning (labels, state,
+      per-column accents) and nothing is ever destroyed — the trash takes
+      files, never loses them.
+    FIRST VIEWPORT: A menu bar (KANBAN mark, New column, Labels, Archive,
+      clock) over a dithered desktop; columns tile as windows with colored
+      title bars and count badges; cards are paper files with label chips;
+      the Done window wears a green check; the whole board spaced evenly.
+    FORM: One-bit desktop challenger (colored), the roll's hand winner on
+      audience identification and product clarity; seed c33e5a42.
+    ENTRY: a power-on homescreen — live boot log announcing the real board,
+      a wandering pixel mascot, blinking CLICK TO START — CRT-collapses
+      into the desktop.
+    FINISH: unreviewed and undocumented is unfinished; this build ends with
+      the finish review, the verdict, and DESIGN.md
+  -->
+  <div id="homescreen" class="homescreen" role="button" tabindex="0" aria-label="Power on and enter the Kanban desktop">
+    <div class="hs-scanlines" aria-hidden="true"></div>
+    <div class="hs-flash" aria-hidden="true"></div>
+    <div id="hs-boot" class="hs-boot" aria-hidden="true"></div>
+    <div class="hs-stage" aria-hidden="true">
+      <div class="hs-mark" aria-hidden="true">
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <h1 class="hs-title">KANBAN</h1>
+      <p class="hs-tagline">YOUR WORK, ON THE DESK.</p>
+    </div>
+    <div class="hs-prompt" aria-hidden="true">
+      <span class="hs-prompt-text">CLICK TO START</span>
+      <span class="hs-hint">OR PRESS ANY KEY</span>
+    </div>
+        <div id="hs-mascot" class="hs-mascot m-scene" aria-hidden="true"><div class="m"></div></div>
+</div>
+    </div>
+  </div>
+  <header class="app-header">
+    <div class="logo"><span class="logo-dot" aria-hidden="true"></span><span class="logo-name">KANBAN</span></div>
+    <span class="header-spacer"></span>
+    <button id="add-column" class="btn" type="button">
+      <span class="btn-icon"></span><span class="btn-label">New column</span>
+    </button>
+    <button id="manage-labels" class="btn icon" type="button" title="Manage labels" aria-label="Manage labels">
+      <span class="btn-icon"></span>
+    </button>
+    <button id="toggle-archive" class="btn" type="button">
+      <span class="btn-icon"></span><span class="btn-label">Archive</span><span id="archive-badge" class="archive-badge"></span>
+    </button>
+    <span id="clock" class="clock" aria-hidden="true"></span>
+    <button id="toggle-theme" class="btn icon" type="button" title="Toggle dark / light theme" aria-label="Toggle dark / light theme">
+      <span class="icon-sun"></span><span class="icon-moon"></span>
+    </button>
+  </header>
+
+  <div class="filter-bar">
+    <div class="search-box">
+      <span class="search-icon"></span>
+      <input id="search-input" type="search" placeholder="SEARCH CARDS…  ( / )" aria-label="Search cards">
+    </div>
+    <select id="assignee-filter" aria-label="Filter by assignee" title="Filter by assignee"></select>
+    <div id="label-filters" class="label-filters" aria-label="Filter by label"></div>
+    <button id="clear-filters" class="btn" type="button">Clear filters</button>
+    <datalist id="assignee-list"></datalist>
+  </div>
+
+  <main id="board-area" class="board-area">
+    <div id="no-results" class="no-results" hidden>
+      <p class="no-results-text"></p>
+      <button type="button" class="btn sm" data-action="clear-filters">Clear filters</button>
+    </div>
+    <div id="board" class="board" aria-label="Board"></div>
+  </main>
+
+  <div id="archive-backdrop" class="archive-backdrop"></div>
+  <aside id="archive-panel" class="archive-panel" aria-label="Archive"></aside>
+
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+
+  <script src="js/state.js"></script>
+  <script src="js/filters.js"></script>
+  <script src="js/dom.js"></script>
+  <script src="js/dragdrop.js"></script>
+  <script src="js/modal.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/app.js"></script>
+<!-- impeccable-live-start -->
+<script src="http://localhost:8400/live.js?token=2288cb3f-4ed7-42c9-a93b-2b72fc77b472"></script>
+<!-- impeccable-live-end -->
+</body>
+</html>
