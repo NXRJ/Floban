@@ -93,7 +93,7 @@
       }).filter(Boolean);
     }
 
-    function normalizeFlowPeriods(periods, deps) {
+    function normalizeFlowPeriods(periods) {
       if (!Array.isArray(periods)) return [];
       return periods.map(function (period) {
         if (!period || typeof period !== 'object') return null;
@@ -106,7 +106,7 @@
       }).filter(Boolean).slice(-PERIOD_LIMIT);
     }
 
-    function normalizeTransitions(transitions, deps) {
+    function normalizeTransitions(transitions) {
       if (!Array.isArray(transitions)) return [];
       return transitions.map(function (t) {
         if (!t || typeof t !== 'object') return null;
@@ -473,7 +473,7 @@
       return state;
     }
 
-    function repairRecurrences(state, deps) {
+    function repairRecurrences(state) {
       var locations = locationIndex(state);
       var columns = columnIndex(state);
       state.recurrences.forEach(function (recurrence) {
@@ -499,7 +499,6 @@
     }
 
     function normalizeState(state, deps) {
-      var d = resolveDeps(deps);
       var out = cloneShallow(state);
       out.version = STATE_VERSION;
       if (!Array.isArray(out.boards)) out.boards = [];

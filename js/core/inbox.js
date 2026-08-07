@@ -75,7 +75,6 @@
     }
 
     function captureItem(state, input, deps) {
-      var d = resolveDeps(deps);
       var titleText = input && typeof input.title === 'string' ? input.title.trim() : '';
       if (!titleText && !(input && (input.url || ''))) {
         return noop(state, 'empty-capture');
@@ -89,7 +88,6 @@
     }
 
     function captureLines(state, text, deps) {
-      var d = resolveDeps(deps);
       var lines = String(text || '').split('\n').map(function (line) { return line.trim(); }).filter(Boolean);
       if (lines.length === 0) return noop(state, 'empty-capture');
       var next = cloneState(state);
@@ -136,7 +134,6 @@
     }
 
     function triageInboxItem(state, id, target, cardPatch, deps, opts) {
-      var d = resolveDeps(deps);
       var options = opts || {};
       var next = cloneState(state);
       var items = next.inbox && Array.isArray(next.inbox.items) ? next.inbox.items : [];
@@ -147,7 +144,6 @@
       if (!board) return noop(state, 'board-not-found');
       var column = board.columns.find(function (c) { return c.id === target.columnId; });
       if (!column) return noop(state, 'column-not-found');
-      var now = d.now();
       var patch = cardPatch || {};
       var card = Model.createCard(column.id, {
         title: typeof patch.title === 'string' && patch.title.trim() ? patch.title.trim() : item.title,

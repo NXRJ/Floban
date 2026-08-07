@@ -243,9 +243,9 @@ test('placeCard clamps toIndex at both ends', () => {
   const board = s.boards[0];
   const target = board.columns.find(c => c.id === 'col-a');
   target.cards = [card('a', target.id), card('b', target.id)];
-  const top = Pipeline.placeCard(s, card('new-1', target.id), null, board, target, { toIndex: -5 }, deps);
+  Pipeline.placeCard(s, card('new-1', target.id), null, board, target, { toIndex: -5 }, deps);
   assert.equal(target.cards[0].id, 'new-1');
-  const bottom = Pipeline.placeCard(s, card('new-2', target.id), null, board, target, { toIndex: 999 }, deps);
+  Pipeline.placeCard(s, card('new-2', target.id), null, board, target, { toIndex: 999 }, deps);
   assert.equal(target.cards[target.cards.length - 1].id, 'new-2');
 });
 

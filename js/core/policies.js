@@ -161,7 +161,7 @@
       return evaluateMovePolicy(state, cardRef, columnRef, { sourceColumn: null });
     }
 
-    function canLeaveColumn(state, cardRef, columnRef) {
+    function canLeaveColumn(state, cardRef) {
       var source = null;
       var board = findBoard(state, cardRef.boardId);
       if (board) {

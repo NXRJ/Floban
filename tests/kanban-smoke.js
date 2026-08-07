@@ -719,13 +719,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await page.evaluate(() => KB.App.refresh());
 
   // ---- Multi-line quick-add pre-flights the whole batch ----
-  const batchSetup = await page.evaluate(() => {
+  await page.evaluate(() => {
     const board = KB.State.activeBoard();
     const col1 = board.columns[0];
     const count = col1.cards.length;
     KB.State.updateColumn(col1.id, { wipLimit: count + 2, policy: { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' } });
     KB.App.refresh();
-    return { count: count };
   });
 
   // A batch that exactly fills the WIP limit creates without confirmation
@@ -846,7 +845,6 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('review workspace renders summary', await page.$$eval('.metric-card', els => els.length) >= 4);
   await waitFor(() => document.querySelectorAll('.review-row').length >= 1, 3000, 'review queue');
   check('review workspace renders attention queue', await page.$$eval('.review-row', els => els.length) >= 1);
-  const reviewFirst = await page.$eval('.review-row .review-title', el => el.textContent);
   check('review row explains why', (await page.$$eval('.review-row .review-reason', els => els.map(e => e.textContent))).length >= 1);
   check('review summary shows p85 cycle time', (await page.$$eval('.metric-label', els => els.map(e => e.textContent))).some(t => t.includes('P85')));
   await page.evaluate(() => KB.Workspaces.set('board'));
@@ -1033,7 +1031,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   check('repeated processing creates no duplicates', recSecond.processed === 0 && recSecond.count === 1);
 
-  const recUndo = await page.evaluate(() => KB.State.undo());
+  await page.evaluate(() => KB.State.undo());
   const recUndone = await page.evaluate(() => {
     const cards = KB.State.activeBoard().columns[0].cards.filter(c => c.title === 'Daily standup');
     return cards.length;
@@ -1068,7 +1066,6 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('completion delay is respected', afterCompletion.delayDays === 7);
 
   const afterCompletionCreated = await page.evaluate(() => {
-    const board = KB.State.activeBoard();
     const rec = KB.State.recurrences().find(r => r.template.title === 'Quarterly review');
     rec.nextRunAt = 1;
     KB.State.updateRecurrence(rec.id, { nextRunAt: 1 });
@@ -1424,7 +1421,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await waitFor(() => document.querySelector('#board-name') && document.querySelector('#board-name').textContent === 'My Board', 3000, 'back to my board');
 
   // ---- Policy criteria confirmation in the move dialog ----
-  const criteriaMove = await page.evaluate(() => {
+  await page.evaluate(() => {
     const board = KB.State.activeBoard();
     const col = board.columns.find(c => c.cards.length > 0);
     board.columns[1].policy.entryCriteria = ['Acceptance criteria written', 'Dependencies resolved'];

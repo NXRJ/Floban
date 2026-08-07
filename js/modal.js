@@ -236,7 +236,7 @@
       return card ? card.title : '(missing card)';
     }
 
-    function relRow(ref, kind, onRemove) {
+    function relRow(ref, kind) {
       var row = h('div', { class: 'rel-row' });
       var board = KB.State.data().boards.find(function (b) { return b.id === ref.boardId; });
       var label = h('span', { class: 'rel-label' });

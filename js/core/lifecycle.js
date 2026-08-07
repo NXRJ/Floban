@@ -17,13 +17,6 @@
     var FLOW_STATES = ['normal', 'blocked', 'waiting', 'paused'];
     var COLUMN_ROLES = ['backlog', 'queue', 'active', 'done'];
 
-    function resolveDeps(deps) {
-      if (!deps || typeof deps.uid !== 'function' || typeof deps.now !== 'function') {
-        throw new Error('core lifecycle functions require { uid, now } dependencies');
-      }
-      return deps;
-    }
-
     function noop(card, reason) {
       return { changed: false, card: card, reason: reason };
     }
