@@ -6,7 +6,7 @@ no framework, no backend — everything runs in the browser and persists to `loc
 **Design world: The 8-Bit Atelier.** A colored ditherpunk desktop — columns are
 windows with accent title bars, cards are paper files, drags cut holes with
 marching ants, and every blend is an ordered dither. The system is documented in
-`DESIGN.md` (with its machine-readable sidecar at `.impeccable/design.json`).
+`DESIGN.md`.
 
 **Power-on homescreen.** The app boots like a machine: a live terminal log
 announces your actual board (windows, files, archive), the four-square mark

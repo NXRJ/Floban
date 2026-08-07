@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "A personal Kanban board with the 8-Bit Atelier look: vanilla HTML/CSS/JS, no build step, localStorage persistence.",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "devDependencies": {
     "puppeteer": "^25.5.0"
   },
