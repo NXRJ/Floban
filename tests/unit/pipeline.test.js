@@ -311,3 +311,25 @@ test('placeCard does not mutate the caller state when policy blocks', () => {
   assert.equal(result.changed, false);
   assert.equal(JSON.stringify(s), before);
 });
+
+test('placeCard preserve mode never reapplies entry defaults', () => {
+  const s = state();
+  const board = s.boards[0];
+  const source = board.columns.find(c => c.id === 'col-q');
+  source.policy = { wipMode: 'off', defaultLabelIds: ['l-1'], defaultAssignee: 'Sam' };
+  const result = Pipeline.placeCard(s, source.cards[0], source, board, source, { sameColumnMode: 'preserve', toIndex: 1 }, deps);
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.value.labels, []);
+  assert.equal(result.value.assignee, '');
+});
+
+test('placeCard cross-column moves still apply entry defaults', () => {
+  const s = state();
+  const board = s.boards[0];
+  const source = board.columns.find(c => c.id === 'col-q');
+  const target = board.columns.find(c => c.id === 'col-a');
+  target.policy = { wipMode: 'off', defaultLabelIds: ['l-1'], defaultAssignee: 'Sam' };
+  const result = Pipeline.placeCard(s, source.cards[0], source, board, target, {}, deps);
+  assert.deepEqual(result.value.labels, ['l-1']);
+  assert.equal(result.value.assignee, 'Sam');
+});

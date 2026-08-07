@@ -783,3 +783,21 @@ test('restoreColumn returns the archived column with its metadata intact', () =>
   assert.equal(entry.policy.wipMode, 'hard');
   assert.equal(entry.policy.defaultAssignee, 'Sam');
 });
+
+test('same-column reorder does not reapply entry defaults', () => {
+  const state = makeState();
+  state.boards[0].columns[0].policy = { wipMode: 'off', defaultLabelIds: ['label-1'], defaultAssignee: 'Sam', entryCriteria: [], exitCriteria: [] };
+  const result = Operations.moveCard(state, { columnId: 'column-1', cardId: 'card-a', targetColumnId: 'column-1', toIndex: 2 }, makeDeps());
+  const moved = result.state.boards[0].columns[0].cards[1];
+  assert.deepEqual(moved.labels, []);
+  assert.equal(moved.assignee, '');
+});
+
+test('cross-column moves apply entry defaults', () => {
+  const state = makeState();
+  state.boards[0].columns[1].policy = { wipMode: 'off', defaultLabelIds: ['label-1'], defaultAssignee: 'Sam', entryCriteria: [], exitCriteria: [] };
+  const result = Operations.moveCard(state, { columnId: 'column-1', cardId: 'card-a', targetColumnId: 'column-2', toIndex: 0 }, makeDeps());
+  const moved = result.state.boards[0].columns[1].cards[0];
+  assert.deepEqual(moved.labels, ['label-1']);
+  assert.equal(moved.assignee, 'Sam');
+});

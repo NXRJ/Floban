@@ -62,7 +62,8 @@
       if (Array.isArray(options.labelMapping)) {
         card.labels = options.labelMapping.slice();
       }
-      if (options.applyDefaults !== false) {
+      var preservingPositionOnly = sameColumn && options.sameColumnMode === 'preserve';
+      if (options.applyDefaults !== false && !preservingPositionOnly) {
         card = Policies.applyEntryDefaults(card, targetColumn);
       }
 

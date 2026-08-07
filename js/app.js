@@ -236,7 +236,7 @@
         item.textContent = template.title;
         item.addEventListener('click', function () {
           closePop();
-          var created = KB.State.addCard(columnId, {
+          var data = {
             title: template.title,
             description: template.description,
             labels: (template.labels || []).slice(),
@@ -246,13 +246,24 @@
             checklist: (template.checklist || []).map(function (item) {
               return { id: KB.Dom.uid('ck'), text: item.text, done: false };
             })
-          });
-          if (created) {
-            toast('Card created from template', 'success', 'Undo', undoAction);
-          } else {
-            toast('Column policy blocks this card', 'error');
+          };
+          var createCard = function (opts) {
+            var created = KB.State.addCard(columnId, data, opts);
+            if (created) {
+              toast('Card created from template', 'success', 'Undo', undoAction);
+            } else {
+              toast('Column policy blocks this card', 'error');
+            }
+            KB.App.refresh();
+          };
+          var evaluation = KB.State.evaluateCreate(columnId);
+          if (evaluation && (!evaluation.allowed || evaluation.requiresConfirmation)) {
+            KB.Modal.moveConfirmModal('Adding this card requires confirmation', evaluation, '', function (reason) {
+              createCard({ confirmed: true, overrideReason: reason });
+            });
+            return;
           }
-          KB.App.refresh();
+          createCard();
         });
         popEl.appendChild(item);
       });
@@ -265,16 +276,30 @@
     var columnId = list.dataset.columnId;
     var lines = input.value.split('\n').map(function (line) { return line.trim(); }).filter(Boolean);
     if (lines.length === 0) return;
-    var added = KB.State.addCards(columnId, lines);
-    input.value = '';
-    if (added > 0) {
-      toast(KB.Dom.plural(added, 'card') + ' added', 'success', 'Undo', undoAction);
-    } else {
-      toast('Column policy blocks these cards', 'error');
+    var finish = function (added, keepInput, text) {
+      if (!keepInput) input.value = '';
+      if (added > 0) {
+        toast(KB.Dom.plural(added, 'card') + ' added', 'success', 'Undo', undoAction);
+      } else {
+        toast('Column policy blocks these cards', 'error');
+      }
+      KB.App.refresh();
+      var fresh = KB.el('board').querySelector('.card-list[data-column-id="' + columnId + '"] .qa-input');
+      if (fresh) {
+        if (keepInput && text) fresh.value = text;
+        fresh.focus();
+      }
+    };
+    var evaluation = KB.State.evaluateCreate(columnId);
+    if (evaluation && (!evaluation.allowed || evaluation.requiresConfirmation)) {
+      KB.Modal.moveConfirmModal('Adding these cards requires confirmation', evaluation, '', function (reason) {
+        var added = KB.State.addCards(columnId, lines, { confirmed: true, overrideReason: reason });
+        finish(added, false, lines.join('\n'));
+      });
+      return;
     }
-    KB.App.refresh();
-    var fresh = KB.el('board').querySelector('.card-list[data-column-id="' + columnId + '"] .qa-input');
-    if (fresh) fresh.focus();
+    var added = KB.State.addCards(columnId, lines);
+    finish(added, added === 0, lines.join('\n'));
   }
 
   function requestMove(fromColumnId, cardId, toColumnId, toIndex, onDone) {

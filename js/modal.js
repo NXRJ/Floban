@@ -577,7 +577,7 @@
         KB.UI.toast('Changes saved', 'success');
       } else {
         var createEvaluation = KB.State.evaluateCreate(columnId);
-        if (createEvaluation && !createEvaluation.allowed) {
+        if (createEvaluation && (!createEvaluation.allowed || createEvaluation.requiresConfirmation)) {
           KB.Modal.moveConfirmModal('Adding this card requires confirmation', createEvaluation, '', function (reason) {
             var created = KB.State.addCard(columnId, data, { confirmed: true, overrideReason: reason });
             close();

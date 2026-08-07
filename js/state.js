@@ -296,7 +296,7 @@
     });
   }
 
-  function addCards(columnId, titles) {
+  function addCards(columnId, titles, opts) {
     var cleanTitles = (Array.isArray(titles) ? titles : []).filter(function (title) {
       return typeof title === 'string' && title.trim();
     }).map(function (title) {
@@ -310,16 +310,25 @@
       var next = JSON.parse(JSON.stringify(current));
       var nextBoard = next.boards.find(function (b) { return b.id === board.id; });
       var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
-      var added = 0;
+      var created = [];
+      var failed = false;
       cleanTitles.forEach(function (title) {
+        if (failed) return;
         var card = freshCard(columnId, { title: title });
         var placed = KB.Core.Pipeline.placeCard(next, card, null, nextBoard, nextColumn, {
-          confirmed: false
+          confirmed: opts && opts.confirmed,
+          overrideReason: opts && opts.overrideReason
         }, deps());
-        if (placed.changed) added += 1;
+        if (!placed.changed) {
+          failed = true;
+          return;
+        }
+        created.push(placed.value);
       });
-      if (added === 0) return { changed: false, state: current, value: 0, reason: 'policy' };
-      return { changed: true, state: next, value: added };
+      if (failed || created.length === 0) {
+        return { changed: false, state: current, value: 0, reason: 'policy' };
+      }
+      return { changed: true, state: next, value: created.length };
     });
   }
 
