@@ -117,7 +117,7 @@
 
     // Every write action in this dialog must refuse politely in a read-only
     // tab (its saves are dropped by the funnel).
-    function readOnlyToast() {
+    function warnIfReadOnly() {
       if (KB.MultiTab && KB.MultiTab.readOnly()) {
         KB.UI.toast('Read-only — Kanban is open in another tab', 'error');
         return true;
@@ -129,7 +129,7 @@
     var snapNowBtn = h('button', { type: 'button', class: 'btn sm' });
     snapNowBtn.textContent = 'Snapshot now';
     snapNowBtn.addEventListener('click', function () {
-      if (readOnlyToast()) return;
+      if (warnIfReadOnly()) return;
       if (!KB.Storage.status().idbAvailable) {
         KB.UI.toast('Storage unavailable — snapshot not saved', 'error');
         return;
@@ -171,7 +171,7 @@
           var restoreBtn = h('button', { type: 'button', class: 'btn ghost sm' });
           restoreBtn.textContent = 'Restore';
           restoreBtn.addEventListener('click', function () {
-            if (readOnlyToast()) return;
+            if (warnIfReadOnly()) return;
             if (!KB.Storage.status().idbAvailable) {
               KB.UI.toast('Storage unavailable — restore not possible', 'error');
               return;
@@ -223,7 +223,7 @@
     importBtn.textContent = 'Import backup…';
     importBtn.addEventListener('click', function () {
       // Gate before the file picker opens (the change handler also guards).
-      if (readOnlyToast()) return;
+      if (warnIfReadOnly()) return;
       fileInput.click();
     });
     actions.appendChild(importBtn);
@@ -241,7 +241,7 @@
       if (!file) return;
       // Belt-and-braces: the button gates before the picker; a direct change
       // (e.g. drag-drop onto the input) still refuses politely.
-      if (readOnlyToast()) return;
+      if (warnIfReadOnly()) return;
       if (!confirm('Importing a full backup replaces ALL boards; a single-board export is added as a new board. Continue?')) return;
       var reader = new FileReader();
       reader.onload = function () {

@@ -21,6 +21,11 @@
 
   function requestUpdateReload() {
     reloadingForUpdate = true;
+    function plainReload() {
+      // Nothing waiting (or its context died): fall back to a plain reload.
+      reloadingForUpdate = false;
+      window.location.reload();
+    }
     // If SKIP_WAITING never activates the worker, release the flag so a
     // later, unrelated controllerchange (from a future update) cannot
     // trigger a surprise reload. A worker that HAS activated is mid-reload —
@@ -37,15 +42,14 @@
         try {
           registration.waiting.postMessage({ type: 'SKIP_WAITING' });
         } catch (err) {
-          // The waiting worker's context died — fall back to a plain reload.
-          reloadingForUpdate = false;
-          window.location.reload();
+          plainReload();
         }
       } else {
-        // Nothing waiting — fall back to a plain reload.
-        reloadingForUpdate = false;
-        window.location.reload();
+        plainReload();
       }
+    }).catch(function () {
+      // Registration lookup failed — a plain reload still honors the click.
+      plainReload();
     });
   }
 
