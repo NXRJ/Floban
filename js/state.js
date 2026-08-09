@@ -1,6 +1,5 @@
 
 (function (KB) {
-  var STORAGE_KEY = 'kanban.board.v1';
   var HISTORY_LIMIT = 50;
 
   var state = null;
@@ -104,35 +103,34 @@
     };
   }
 
-  function load() {
+  function validatePayload(parsed) {
     try {
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        var parsed = JSON.parse(raw);
-        if (parsed && parsed.version === 1 && Array.isArray(parsed.columns)) {
-          state = KB.Core.Migration.migrateV1(parsed, deps());
-          save();
-          return;
-        }
-        if (parsed && Array.isArray(parsed.boards) && parsed.boards.length > 0) {
-          state = KB.Core.Migration.normalizeState(parsed, deps());
-          save();
-          return;
-        }
+      if (parsed && parsed.version === 1 && Array.isArray(parsed.columns)) {
+        return { ok: true, state: KB.Core.Migration.migrateV1(parsed, deps()) };
       }
+      if (parsed && Array.isArray(parsed.boards) && parsed.boards.length > 0) {
+        return { ok: true, state: KB.Core.Migration.normalizeState(parsed, deps()) };
+      }
+      return { ok: false };
     } catch (err) {
-      console.warn('Could not read saved board', err);
+      return { ok: false };
     }
-    state = defaults();
-    save();
   }
 
-  function save() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch (err) {
-      console.warn('Could not persist board', err);
-    }
+  function load() {
+    return KB.Storage.load({
+      validate: validatePayload,
+      defaults: defaults
+    }).then(function (result) {
+      state = result.state;
+      if (result.source === 'defaults') save('load');
+      return result;
+    });
+  }
+
+  function save(source) {
+    KB.Storage.save(state, source || 'change');
+    KB.Sync.emit({ source: source || 'change', at: now(), state: state });
   }
 
   function pushHistory() {
@@ -143,7 +141,7 @@
     var restored = history.undo(state);
     if (restored === null) return false;
     state = restored;
-    save();
+    save('undo');
     return true;
   }
 
@@ -151,7 +149,7 @@
     var restored = history.redo(state);
     if (restored === null) return false;
     state = restored;
-    save();
+    save('redo');
     return true;
   }
 
@@ -457,12 +455,14 @@
   function importAll(text) {
     var result = KB.Core.Migration.parseImportPayload(text, state, deps());
     if (result.kind === 'all') {
+      KB.Storage.backup(state, 'pre-import');
       pushHistory();
       state = result.state;
-      save();
+      save('import');
       return 'all';
     }
     if (result.kind === 'board') {
+      KB.Storage.backup(state, 'pre-import');
       pushHistory();
       if (Array.isArray(result.board.importedRecurrences)) {
         state.recurrences = (state.recurrences || []).concat(result.board.importedRecurrences);
@@ -472,10 +472,46 @@
       }
       state.boards.push(result.board);
       state.activeBoardId = result.board.id;
-      save();
+      save('import');
       return 'board';
     }
     return false;
+  }
+
+  // Restores a previously snapshotted state (from the local backup store)
+  // through the same boundary as every other change: validated, undoable,
+  // persisted. Returns { ok } or { ok: false, reason }.
+  function restoreSnapshot(payload) {
+    var result = validatePayload(payload);
+    if (!result.ok) return { ok: false, reason: 'invalid' };
+    pushHistory();
+    state = result.state;
+    save('restore');
+    return { ok: true };
+  }
+
+  // Locate a card anywhere in the state — any board, live column or archive —
+  // returning { board, column, card, archived } or null. Used by commands
+  // whose context may not carry a valid column (archive, cross-board sheets).
+  function findCardAnywhere(stateData, cardId) {
+    var board = null;
+    var column = null;
+    var card = null;
+    var archived = false;
+    stateData.boards.forEach(function (b) {
+      if (board) return;
+      b.columns.forEach(function (c) {
+        if (board) return;
+        var found = c.cards.find(function (x) { return x.id === cardId; });
+        if (found) { board = b; column = c; card = found; }
+      });
+      if (!board) {
+        var arc = b.archive.cards.find(function (x) { return x.id === cardId; });
+        if (arc) { board = b; card = arc; archived = true; }
+      }
+    });
+    if (!card) return null;
+    return { board: board, column: column, card: card, archived: archived };
   }
 
   function data() {
@@ -520,8 +556,11 @@
     exportAll: exportAll,
     exportBoard: exportBoard,
     importAll: importAll,
+    restoreSnapshot: restoreSnapshot,
     undo: undo,
-    redo: redo
+    redo: redo,
+    canUndo: function () { return history.canUndo(); },
+    canRedo: function () { return history.canRedo(); }
   };
 
   KB.State.internal = {
@@ -535,6 +574,8 @@
     wrapResult: wrapResult,
     pushHistory: pushHistory,
     save: save,
+    validatePayload: validatePayload,
+    findCardAnywhere: findCardAnywhere,
     activeBoard: activeBoard,
     boardForColumn: boardForColumn,
     boardById: boardById,

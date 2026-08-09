@@ -53,20 +53,36 @@
   }
 
   function applyTheme() {
-    document.documentElement.dataset.theme = KB.State.data().theme;
+    var current = KB.State.data();
+    document.documentElement.dataset.theme = current ? current.theme : 'dark';
   }
 
   function refresh() {
+    if (!KB.State.data()) return;
     applyTheme();
     KB.Workspaces.render();
     KB.Workspaces.inboxBadge();
-    if (KB.Workspaces.current() !== 'board') return;
+    updateMobileTabs();
+    if (KB.Workspaces.current() !== 'board') {
+      KB.Render.boardPager();
+      return;
+    }
     KB.Render.board();
     KB.Render.filterBar();
     KB.Render.archivePanel();
     refreshHeader();
     updateBoardOverflow();
+    updateFilterToggle();
     KB.Select.syncAll();
+  }
+
+  function updateFilterToggle() {
+    var toggle = KB.el('filter-toggle');
+    if (!toggle) return;
+    var active = KB.Filters.active(KB.Filters.read());
+    toggle.classList.toggle('active', active);
+    var bar = KB.el('filter-bar');
+    toggle.setAttribute('aria-expanded', bar ? (bar.classList.contains('open') ? 'true' : 'false') : 'false');
   }
 
   function updateBoardOverflow() {
@@ -219,6 +235,34 @@
       popEl.appendChild(popItem('Backup / restore…', function () {
         KB.Modal.backupModal();
       }));
+    });
+  }
+
+  function openAppMenu(trigger) {
+    if (KB.Commands.isMobile()) {
+      KB.Sheet.open({ title: 'KANBAN MENU', ctx: null, opener: trigger });
+      return;
+    }
+    openPop(trigger, function (popEl) {
+      var lastCategory = null;
+      KB.Commands.availableIn(null).forEach(function (command) {
+        if (command.category !== lastCategory) {
+          if (lastCategory !== null) popEl.appendChild(popDivider());
+          var label = h('div', { class: 'pop-category' });
+          label.textContent = command.category.toUpperCase();
+          popEl.appendChild(label);
+          lastCategory = command.category;
+        }
+        var item = popItem(command.title, function () {
+          KB.Commands.run(command.id, null);
+        });
+        if (command.shortcut) {
+          var key = h('span', { class: 'pop-shortcut' });
+          key.textContent = command.shortcut.replace('mod', 'Ctrl/Cmd');
+          item.appendChild(key);
+        }
+        popEl.appendChild(item);
+      });
     });
   }
 
@@ -385,6 +429,51 @@
     KB.el('open-recurrences').addEventListener('click', function () {
       KB.Modal.recurrenceManager();
     });
+    KB.el('palette-btn').addEventListener('click', function () {
+      KB.Palette.open(null, KB.el('palette-btn'));
+    });
+    KB.el('app-menu').addEventListener('click', function () {
+      openAppMenu(KB.el('app-menu'));
+    });
+  }
+
+  function wireMobile() {
+    var tabs = KB.el('mobile-tabs');
+    tabs.addEventListener('click', function (e) {
+      var btn = e.target.closest('.mt-btn');
+      if (!btn) return;
+      KB.Workspaces.set(btn.dataset.workspace);
+    });
+
+    var boardEl = KB.el('board');
+    boardEl.addEventListener('scroll', function () {
+      KB.Render.updatePagerState();
+    }, { passive: true });
+
+    var pager = KB.el('board-pager');
+    pager.querySelector('.bp-prev').addEventListener('click', function () {
+      KB.Render.scrollToColumn(KB.Render.pagerActiveIndex() - 1);
+    });
+    pager.querySelector('.bp-next').addEventListener('click', function () {
+      KB.Render.scrollToColumn(KB.Render.pagerActiveIndex() + 1);
+    });
+
+    var filterToggle = KB.el('filter-toggle');
+    filterToggle.addEventListener('click', function () {
+      var bar = KB.el('filter-bar');
+      var open = bar.classList.toggle('open');
+      filterToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  }
+
+  function updateMobileTabs() {
+    var tabs = KB.el('mobile-tabs');
+    if (!tabs) return;
+    var current = KB.Workspaces.current();
+    tabs.querySelectorAll('.mt-btn').forEach(function (btn) {
+      btn.classList.toggle('active', btn.dataset.workspace === current);
+    });
+    KB.Workspaces.inboxBadge();
   }
 
   function wireFilters() {
@@ -481,7 +570,25 @@
   function wireBoard() {
     KB.el('board-area').addEventListener('click', function (e) {
       var actionEl = e.target.closest('[data-action]');
-      if (!actionEl) return;
+      if (!actionEl) {
+        // Mobile: tapping a card opens its action sheet (selection clicks
+        // with modifiers are left alone).
+        var tappedCard = e.target.closest('.card');
+        if (tappedCard && KB.Commands.isMobile() && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+          var columnEl = tappedCard.closest('.column');
+          var columnId = columnEl ? columnEl.dataset.id : null;
+          var cardId = tappedCard.dataset.id;
+          var card = KB.State.findCard(columnId, cardId);
+          if (card) {
+            KB.Sheet.open({
+              title: card.title,
+              ctx: { boardId: KB.State.activeBoard().id, columnId: columnId, cardId: cardId },
+              opener: tappedCard
+            });
+          }
+        }
+        return;
+      }
       var action = actionEl.dataset.action;
       var columnEl = e.target.closest('.column');
       var cardEl = e.target.closest('.card');
@@ -490,38 +597,47 @@
 
       switch (action) {
         case 'col-add':
-          KB.Modal.cardEditor(columnId, null);
+          KB.Commands.run('column.addCard', { boardId: KB.State.activeBoard().id, columnId: columnId });
           break;
         case 'col-menu':
-          KB.Modal.columnEditor(columnId);
-          break;
-        case 'col-collapse': {
-          var column = KB.State.findColumn(columnId);
-          if (column) {
-            KB.State.updateColumn(columnId, { collapsed: !column.collapsed });
-            refresh();
+          if (KB.Commands.isMobile()) {
+            KB.Sheet.open({
+              title: 'COLUMN',
+              ctx: { boardId: KB.State.activeBoard().id, columnId: columnId },
+              opener: actionEl
+            });
+          } else {
+            KB.Modal.columnEditor(columnId);
           }
           break;
-        }
+        case 'col-collapse':
+          KB.Commands.run('column.collapse', { boardId: KB.State.activeBoard().id, columnId: columnId });
+          break;
         case 'add-column-empty':
           KB.Modal.columnEditor(null);
           break;
         case 'edit-card':
-          KB.Modal.cardEditor(columnId, KB.State.findCard(columnId, cardId));
+          KB.Commands.run('card.open', { boardId: KB.State.activeBoard().id, columnId: columnId, cardId: cardId });
           break;
         case 'move-card':
-          KB.MoveTo.moveToMenu(KB.State.activeBoard().id, columnId, cardId);
+          KB.Commands.run('card.move', { boardId: KB.State.activeBoard().id, columnId: columnId, cardId: cardId });
           break;
         case 'duplicate-card':
-          KB.State.duplicateCard(columnId, cardId);
-          toast('Card duplicated', 'success', 'Undo', undoAction);
-          refresh();
+          KB.Commands.run('card.duplicate', { boardId: KB.State.activeBoard().id, columnId: columnId, cardId: cardId });
           break;
         case 'archive-card':
-          KB.State.archiveCard(columnId, cardId);
-          toast('Card archived', 'info', 'Undo', undoAction);
-          refresh();
+          KB.Commands.run('card.archive', { boardId: KB.State.activeBoard().id, columnId: columnId, cardId: cardId });
           break;
+        case 'card-sheet': {
+          var boardId = KB.State.activeBoard().id;
+          var card = KB.State.findCard(columnId, cardId);
+          KB.Sheet.open({
+            title: card ? card.title : 'CARD',
+            ctx: { boardId: boardId, columnId: columnId, cardId: cardId },
+            opener: actionEl
+          });
+          break;
+        }
         case 'qa-templates':
           openTemplatesMenu(actionEl, columnId);
           break;
@@ -578,47 +694,39 @@
     });
   }
 
+  function keyCombo(e) {
+    var parts = [];
+    if (e.ctrlKey || e.metaKey) parts.push('mod');
+    if (e.altKey) parts.push('alt');
+    // Shift + a bare letter is just case (N, C, I...) — the old dispatcher
+    // matched both cases, so do not let Shift change the shortcut identity
+    // unless a modifier is already held (Ctrl/Cmd+Shift+Z must stay redo).
+    if (e.shiftKey && !(e.ctrlKey || e.metaKey) && !e.altKey && /^[a-zA-Z]$/.test(e.key)) {
+      parts.push(e.key.toLowerCase());
+    } else {
+      if (e.shiftKey) parts.push('shift');
+      var key = e.key === ' ' ? 'space' : String(e.key || '').toLowerCase();
+      parts.push(key);
+    }
+    return parts.join('+');
+  }
+
   function wireKeys() {
-    window.addEventListener('resize', updateBoardOverflow);
+    window.addEventListener('resize', function () {
+      updateBoardOverflow();
+      KB.Render.boardPager();
+    });
     document.addEventListener('keydown', function (e) {
+      // Palette and action sheets own their keys while open.
+      if (KB.Palette.isOpen() || KB.Sheet.isOpen()) return;
       var tag = document.activeElement && document.activeElement.tagName;
       var typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
-      var mod = e.ctrlKey || e.metaKey;
-
-      if (mod && (e.key === 'z' || e.key === 'Z')) {
-        if (typing || KB.Modal.isOpen()) return;
-        e.preventDefault();
-        if (e.shiftKey) {
-          if (KB.State.redo()) refresh();
-        } else if (KB.State.undo()) {
-          refresh();
-        }
-        return;
-      }
-      if (mod && (e.key === 'y' || e.key === 'Y')) {
-        if (typing || KB.Modal.isOpen()) return;
-        e.preventDefault();
-        if (KB.State.redo()) refresh();
-        return;
-      }
-      if (e.key === '/') {
-        if (typing || KB.Modal.isOpen()) return;
-        e.preventDefault();
-        KB.el('search-input').focus();
-        return;
-      }
-      if (typing || mod || e.altKey || KB.Modal.isOpen()) return;
-      if (e.key === 'n' || e.key === 'N') {
-        e.preventDefault();
-        var qa = KB.el('board').querySelector('.qa-input');
-        if (qa) qa.focus();
-      } else if (e.key === 'c' || e.key === 'C') {
-        e.preventDefault();
-        KB.Modal.columnEditor(null);
-      } else if (e.key === 'i' || e.key === 'I') {
-        e.preventDefault();
-        KB.Modal.captureModal();
-      }
+      if (typing || KB.Modal.isOpen()) return;
+      var shortcut = KB.Commands.normalizeShortcut(keyCombo(e));
+      var command = KB.Commands.findByShortcut(shortcut);
+      if (!command) return;
+      e.preventDefault();
+      KB.Commands.run(command.id, null);
     });
   }
 
@@ -631,7 +739,16 @@
     KB.el('open-recurrences').querySelector('.btn-icon').innerHTML = icon('clock');
     KB.el('toggle-theme').querySelector('.icon-sun').innerHTML = icon('sun');
     KB.el('toggle-theme').querySelector('.icon-moon').innerHTML = icon('moon');
+    KB.el('palette-btn').querySelector('.btn-icon').innerHTML = icon('command');
+    KB.el('app-menu').querySelector('.btn-icon').innerHTML = icon('menu');
     KB.el('search-input').previousElementSibling.innerHTML = icon('search');
+
+    var tabIcons = { board: 'board', mydesk: 'star', inbox: 'box', review: 'check' };
+    KB.el('mobile-tabs').querySelectorAll('.mt-btn').forEach(function (btn) {
+      btn.querySelector('.mt-icon').innerHTML = icon(tabIcons[btn.dataset.workspace] || 'doc');
+    });
+    KB.el('board-pager').querySelector('.bp-prev').innerHTML = icon('chevronLeft');
+    KB.el('board-pager').querySelector('.bp-next').innerHTML = icon('chevronRight');
   }
 
   function tickClock() {
@@ -729,33 +846,47 @@
   }
 
   function init() {
-    KB.State.load();
-    KB.Workspaces.loadPrefs();
-    applyTheme();
-    bootScreen();
-    mountIcons();
-    KB.DnD.init(KB.el('board'));
-    KB.MoveTo.wireKeyboardMove();
-    KB.Select.wire();
-    wireHeader();
-    wireFilters();
-    wireBoard();
-    wireArchive();
-    wireWorkspaces();
-    wireKeys();
-    toggleArchive(false);
-    tickClock();
-    setInterval(tickClock, 10000);
-    processRecurrences();
-    setInterval(processRecurrences, 60000);
-    document.addEventListener('visibilitychange', function () {
-      if (document.visibilityState === 'visible') processRecurrences();
+    KB.State.load().then(function () {
+      KB.Commands.registerBoardSwitchCommands();
+      KB.Workspaces.loadPrefs();
+      applyTheme();
+      bootScreen();
+      mountIcons();
+      KB.DnD.init(KB.el('board'));
+      KB.MoveTo.wireKeyboardMove();
+      KB.Select.wire();
+      wireHeader();
+      wireMobile();
+      wireFilters();
+      wireBoard();
+      wireArchive();
+      wireWorkspaces();
+      wireKeys();
+      toggleArchive(false);
+      tickClock();
+      setInterval(tickClock, 10000);
+      processRecurrences();
+      setInterval(processRecurrences, 60000);
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') processRecurrences();
+      });
+      window.addEventListener('focus', processRecurrences);
+      refresh();
+      KB.PWA.init();
+      document.documentElement.dataset.ready = '1';
     });
-    window.addEventListener('focus', processRecurrences);
-    refresh();
   }
 
-  KB.App = { init: init, refresh: refresh, requestMove: requestMove, requestRestore: requestRestore, afterCardMove: afterCardMove };
+  KB.App = {
+    init: init,
+    refresh: refresh,
+    requestMove: requestMove,
+    requestRestore: requestRestore,
+    afterCardMove: afterCardMove,
+    clearFilters: clearFilters,
+    applyTheme: applyTheme,
+    openArchive: function (open) { toggleArchive(open !== false); }
+  };
   KB.UI = { toast: toast, clearToasts: clearToasts, download: download, undoAction: undoAction };
 
   init();

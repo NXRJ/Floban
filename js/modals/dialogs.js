@@ -105,6 +105,90 @@
     var fileInput = h('input', { type: 'file', accept: '.json,application/json', style: 'display:none', 'aria-label': 'Backup file' });
     panel.appendChild(fileInput);
 
+    // Local snapshots: automatic rotating backups plus manual snapshots.
+    var snapSection = h('div', { class: 'snapshot-section' });
+    var snapTitle = h('h3', { class: 'snapshot-title' });
+    snapTitle.textContent = 'Local snapshots';
+    snapSection.appendChild(snapTitle);
+
+    var snapHint = h('p', { class: 'form-hint' });
+    snapHint.textContent = 'The app keeps the last 10 automatic snapshots in this browser. Restore one to roll the whole app back to that moment (undoable).';
+    snapSection.appendChild(snapHint);
+
+    var snapActions = h('div', { class: 'snapshot-actions' });
+    var snapNowBtn = h('button', { type: 'button', class: 'btn sm' });
+    snapNowBtn.textContent = 'Snapshot now';
+    snapNowBtn.addEventListener('click', function () {
+      if (!KB.Storage.status().idbAvailable) {
+        KB.UI.toast('Storage unavailable — snapshot not saved', 'error');
+        return;
+      }
+      KB.Storage.backup(KB.State.data(), 'manual').then(function () {
+        KB.UI.toast('Snapshot saved', 'success');
+        renderSnapshots();
+      });
+    });
+    snapActions.appendChild(snapNowBtn);
+    snapSection.appendChild(snapActions);
+
+    var snapList = h('div', { class: 'snapshot-list' });
+    snapSection.appendChild(snapList);
+
+    function fmtSnapshotTime(ts) {
+      return KB.Dom.fmtDate(ts) + ' \u00B7 ' + new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function renderSnapshots() {
+      KB.Storage.listBackups().then(function (backups) {
+        snapList.innerHTML = '';
+        if (!backups || backups.length === 0) {
+          var empty = h('p', { class: 'snapshot-empty' });
+          empty.textContent = 'No snapshots yet — they are taken automatically as you work.';
+          snapList.appendChild(empty);
+          return;
+        }
+        backups.forEach(function (backup) {
+          var row = h('div', { class: 'snapshot-row' });
+          var meta = h('div', { class: 'snapshot-meta' });
+          var reason = h('span', { class: 'snapshot-reason' });
+          reason.textContent = backup.reason === 'manual' ? 'Manual snapshot' : backup.reason;
+          var time = h('span', { class: 'snapshot-time' });
+          time.textContent = fmtSnapshotTime(backup.createdAt);
+          meta.appendChild(reason);
+          meta.appendChild(time);
+          row.appendChild(meta);
+          var restoreBtn = h('button', { type: 'button', class: 'btn ghost sm' });
+          restoreBtn.textContent = 'Restore';
+          restoreBtn.addEventListener('click', function () {
+            if (!KB.Storage.status().idbAvailable) {
+              KB.UI.toast('Storage unavailable — restore not possible', 'error');
+              return;
+            }
+            if (!window.confirm('Restore this snapshot? Current data is kept in a new snapshot first.')) return;
+            KB.Storage.backup(KB.State.data(), 'pre-restore');
+            KB.Storage.restore(backup.id).then(function (payload) {
+              if (!payload) {
+                KB.UI.toast('Snapshot is unreadable', 'error');
+                return;
+              }
+              var result = KB.State.restoreSnapshot(payload);
+              if (result.ok) {
+                KB.UI.toast('Snapshot restored', 'success', 'Undo', KB.UI.undoAction);
+                close();
+                KB.App.refresh();
+              } else {
+                KB.UI.toast('Snapshot is not a valid state', 'error');
+              }
+            });
+          });
+          row.appendChild(restoreBtn);
+          snapList.appendChild(row);
+        });
+      });
+    }
+    renderSnapshots();
+    panel.appendChild(snapSection);
+
     var actions = h('div', { class: 'modal-actions column-actions' });
     var exportAllBtn = h('button', { type: 'button', class: 'btn' });
     exportAllBtn.textContent = 'Export all boards';

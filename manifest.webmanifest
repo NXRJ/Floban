@@ -1,0 +1,16 @@
+{
+  "name": "Kanban — The 8-Bit Atelier",
+  "short_name": "Kanban",
+  "description": "A personal, flow-aware Kanban board with a retro pixel-desktop look. Local-first: your data lives in this browser, offline-capable.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#101116",
+  "theme_color": "#101116",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

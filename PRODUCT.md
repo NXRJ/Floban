@@ -12,7 +12,7 @@ Solo developers and freelancers tracking their own work — between meetings, co
 
 ## Product Purpose
 
-A personal Kanban board for task management: multiple boards with a switcher; create, rename, reorder, collapse and delete columns; cards with titles, descriptions (light markdown), colour-coded labels, assignees, due dates and checklists; templates and duplication; WIP limits; drag-and-drop between and within columns; archive with restore; undo/redo; search, due-date filters and sorting; JSON backup/export; dark/light theme. Everything persists to localStorage in the browser — no backend, no accounts.
+A personal Kanban board for task management: multiple boards with a switcher; create, rename, reorder, collapse and delete columns; cards with titles, descriptions (light markdown), colour-coded labels, assignees, due dates and checklists; templates and duplication; WIP limits; drag-and-drop between and within columns; archive with restore; undo/redo; search, due-date filters and sorting; JSON backup/export; dark/light theme. Everything persists locally in the browser (IndexedDB with a localStorage crash mirror and rotating automatic backups) — no backend, no accounts.
 
 ## Positioning
 

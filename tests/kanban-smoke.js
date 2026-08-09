@@ -1,4 +1,6 @@
 const path = require('path');
+const fs = require('fs');
+const { spawn } = require('child_process');
 const puppeteer = require('puppeteer');
 
 const URL = 'file:///' + path.join(__dirname, '..', 'index.html').replace(/\\/g, '/') + '?boot=off';
@@ -39,7 +41,25 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   }
 
   async function waitBoard() {
-    return waitFor(() => !!document.querySelector('#board-name') && !!document.querySelector('#board'), 5000, 'board render');
+    return waitFor(() => document.documentElement.dataset.ready === '1' && !!document.querySelector('#board-name'), 5000, 'board render');
+  }
+
+  // Writes a raw payload into the legacy localStorage key and resets
+  // IndexedDB so the next page load treats the payload as the only source of
+  // truth (exercises the first-run migration path). The savedAt marker is
+  // bumped so the crash-recovery mirror comparison prefers this payload.
+  async function seedLocalStorage(payload) {
+    await page.evaluate((json) => {
+      const write = () => {
+        localStorage.setItem('kanban.board.v1', json);
+        localStorage.setItem('kanban.savedAt.v1', String(Date.now()));
+      };
+      if (window.KB && KB.Storage) {
+        return KB.Storage.clearAll().then(() => { write(); });
+      }
+      write();
+      return Promise.resolve();
+    }, JSON.stringify(payload));
   }
 
   async function cardAction(col, card, action) {
@@ -222,7 +242,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await waitFor(() => true, 100, 'sort settle');
 
   // ---- Filter by due (make dues deterministic in LOCAL time) ----
-  await page.evaluate(() => {
+  const dueSeed = await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     const d = new Date();
     d.setDate(d.getDate() - 1);
@@ -235,8 +255,9 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
         card.due = card.title.indexOf('Fix card drag') !== -1 ? yesterday : '';
       });
     });
-    localStorage.setItem('kanban.board.v1', JSON.stringify(b));
+    return b;
   });
+  await seedLocalStorage(dueSeed);
   await page.goto(URL, { waitUntil: 'load' });
   await waitBoard();
   await page.select('#due-filter', 'overdue');
@@ -268,11 +289,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const v2 = await page.evaluate(() => JSON.parse(localStorage.getItem('kanban.board.v1')));
   check('saved state is version 3', v2.version === 3 && Array.isArray(v2.boards));
 
-  await page.evaluate(() => {
+  const v1Seed = await page.evaluate(() => {
     const old = JSON.parse(localStorage.getItem('kanban.board.v1'));
-    const v1 = { version: 1, theme: 'light', labels: [], columns: old.boards[0].columns.map(c => ({ id: c.id, title: c.title, isDone: c.isDone, cards: c.cards })), archive: { cards: [], columns: [] } };
-    localStorage.setItem('kanban.board.v1', JSON.stringify(v1));
+    return { version: 1, theme: 'light', labels: [], columns: old.boards[0].columns.map(c => ({ id: c.id, title: c.title, isDone: c.isDone, cards: c.cards })), archive: { cards: [], columns: [] } };
   });
+  await seedLocalStorage(v1Seed);
   await page.goto(URL, { waitUntil: 'load' });
   await waitBoard();
   const migrated = await page.evaluate(() => JSON.parse(localStorage.getItem('kanban.board.v1')));
@@ -281,7 +302,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('migrated board renders', await waitCount('.column', 3));
 
   // ---- Corrupt payload resilience ----
-  await page.evaluate(() => {
+  const corruptSeed = await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     const board = b.boards[0];
     board.labels.push(null, { id: 'l-bad', name: 'Bad', color: 'url(https://example.com/x.png)' });
@@ -289,8 +310,9 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     delete board.columns[0].cards[1].labels;
     board.columns[0].cards[1].assignee = { evil: true };
     delete board.columns[1].cards;
-    localStorage.setItem('kanban.board.v1', JSON.stringify(b));
+    return b;
   });
+  await seedLocalStorage(corruptSeed);
   await page.goto(URL, { waitUntil: 'load' });
   await waitBoard();
   check('corrupt labels payload still renders', await waitCount('.column', 3));
@@ -314,12 +336,13 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('full export replaces all boards', roundTrip.r2 === 'all' && roundTrip.boardsAfterFullImport === 2);
 
   // ---- Markdown + XSS (targets the active board after the import round trip) ----
-  await page.evaluate(() => {
+  const mdSeed = await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     const board = b.boards.find(x => x.id === b.activeBoardId);
     board.columns[0].cards[0].description = '**bold** *ital* `code` and a [link](https://example.com)';
-    localStorage.setItem('kanban.board.v1', JSON.stringify(b));
+    return b;
   });
+  await seedLocalStorage(mdSeed);
   await page.goto(URL, { waitUntil: 'load' });
   await waitBoard();
   await waitFor(() => !!document.querySelector('.card-desc'), 3000, 'markdown renders');
@@ -327,12 +350,13 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('markdown renders bold', md.includes('<strong>bold</strong>'));
   check('markdown renders link', md.includes('href="https://example.com"'));
 
-  await page.evaluate(() => {
+  const xssSeed = await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     const board = b.boards.find(x => x.id === b.activeBoardId);
     board.columns[0].cards[0].description = '<img src=x onerror=alert(1)> **b**';
-    localStorage.setItem('kanban.board.v1', JSON.stringify(b));
+    return b;
   });
+  await seedLocalStorage(xssSeed);
   await page.goto(URL, { waitUntil: 'load' });
   await waitBoard();
   await waitFor(() => !!document.querySelector('.card-desc'), 3000, 'xss case renders');
@@ -388,14 +412,15 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('single undo removes only the probe card', !afterUndo.some(t => t === 'History probe'));
 
   // ---- Priority and size editing + badges + filters ----
-  await page.evaluate(() => {
+  const prioSeed = await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     const board = b.boards.find(x => x.id === b.activeBoardId);
     const card = board.columns[0].cards[0];
     card.priority = 'urgent';
     card.size = 'xl';
-    localStorage.setItem('kanban.board.v1', JSON.stringify(b));
+    return b;
   });
+  await seedLocalStorage(prioSeed);
   await page.goto(URL, { waitUntil: 'load' });
   await waitBoard();
   await waitFor(() => {
@@ -862,7 +887,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await waitFor(() => !!document.querySelector('.column'), 3000, 'back to board');
 
   // ---- Lifecycle fields follow role-based moves ----
-  await page.evaluate(() => {
+  const lifeSeed = await page.evaluate(() => {
     const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
     const board = b.boards.find(x => x.id === b.activeBoardId);
     board.columns[0].role = 'queue';
@@ -890,8 +915,9 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       recurrenceId: null,
       transitions: []
     }];
-    localStorage.setItem('kanban.board.v1', JSON.stringify(b));
+    return b;
   });
+  await seedLocalStorage(lifeSeed);
   await page.goto(URL, { waitUntil: 'load' });
   await waitBoard();
   const colCount = await page.$$eval('.column', els => els.length);
@@ -1649,6 +1675,377 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     return others.length;
   }, v3RoundTrip.recId);
   check('imported recurrence id does not collide', recIdConflict === 1);
+
+  // ---- IndexedDB is the primary store and survives reloads ----
+  await page.evaluate(() => {
+    const col = KB.State.activeBoard().columns[0];
+    KB.State.addCard(col.id, { title: 'IDB persistence probe' });
+  });
+  await page.evaluate(() => KB.Storage.flush());
+  const idbRead = await page.evaluate(() => new Promise((resolve) => {
+    const req = indexedDB.open('kanban-store', 1);
+    req.onsuccess = () => {
+      const db = req.result;
+      const tx = db.transaction('state', 'readonly');
+      const g = tx.objectStore('state').get('current');
+      g.onsuccess = () => {
+        const parsed = JSON.parse(g.result);
+        db.close();
+        resolve({ found: parsed && parsed.boards.some(b => b.columns.some(c => c.cards.some(x => x.title === 'IDB persistence probe'))) });
+      };
+      g.onerror = () => resolve({ found: false });
+    };
+    req.onerror = () => resolve({ found: false });
+  }));
+  check('state persisted to IndexedDB primary', idbRead.found === true);
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  const idbAfterReload = await page.evaluate(() => ({
+    source: KB.Storage.status().source,
+    survives: KB.State.activeBoard().columns.some(c => c.cards.some(x => x.title === 'IDB persistence probe'))
+  }));
+  check('reload loads from IndexedDB', idbAfterReload.source === 'primary' && idbAfterReload.survives === true);
+
+  // ---- Corrupt primary + mirror recovers from a backup ----
+  await page.evaluate(() => KB.Storage.backup(KB.State.data(), 'e2e-recovery'));
+  const corruptState = await page.evaluate(() => new Promise((resolve) => {
+    localStorage.setItem('kanban.board.v1', '{not json');
+    localStorage.setItem('kanban.savedAt.v1', String(Date.now() + 1000));
+    const req = indexedDB.open('kanban-store', 1);
+    req.onsuccess = () => {
+      const db = req.result;
+      const tx = db.transaction('state', 'readwrite');
+      tx.objectStore('state').put('{not json', 'current');
+      tx.oncomplete = () => { db.close(); resolve(true); };
+      tx.onerror = () => resolve(false);
+    };
+    req.onerror = () => resolve(false);
+  }));
+  check('corruption seeded', corruptState === true);
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  const recovered = await page.evaluate(() => ({
+    source: KB.Storage.status().source,
+    boardName: KB.State.activeBoard().name
+  }));
+  check('recovery falls back to a backup', recovered.source === 'backup' && typeof recovered.boardName === 'string');
+
+  // ---- Serialized writes land in order ----
+  const writeOrder = await page.evaluate(async () => {
+    const writes = [];
+    for (let i = 1; i <= 10; i++) {
+      writes.push(KB.Storage.save({ ok: true, n: i, tag: 'serial' + i }, 'test-' + i));
+    }
+    await KB.Storage.flush();
+    const req = indexedDB.open('kanban-store', 1);
+    return new Promise((resolve) => {
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('state', 'readonly');
+        const g = tx.objectStore('state').get('current');
+        g.onsuccess = () => { db.close(); resolve(JSON.parse(g.result)); };
+        g.onerror = () => resolve(null);
+      };
+    });
+  });
+  check('serialized writes preserve order', writeOrder && writeOrder.n === 10 && writeOrder.tag === 'serial10');
+  // Restore the real app state into the store so later reloads see valid data.
+  await page.evaluate(async () => {
+    await KB.Storage.save(KB.State.data(), 'restore');
+    await KB.Storage.flush();
+  });
+
+  // ---- Sync events fire for every mutation with the right source ----
+  const syncEvents = await page.evaluate(async () => {
+    window.__syncEvents = [];
+    KB.Sync.subscribe((change) => window.__syncEvents.push(change.source));
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    KB.State.addCard(col.id, { title: 'Sync event probe' }); // change
+    KB.State.setTheme('dark'); // change
+    KB.State.undo(); // undo
+    KB.State.redo(); // redo
+    KB.State.importAll(KB.State.exportAll()); // import
+    await KB.Storage.flush();
+    const events = window.__syncEvents;
+    return {
+      hasChange: events.includes('change'),
+      hasUndo: events.includes('undo'),
+      hasRedo: events.includes('redo'),
+      hasImport: events.includes('import'),
+      count: events.length
+    };
+  });
+  check('sync observer sees change/undo/redo/import',
+    syncEvents.hasChange && syncEvents.hasUndo && syncEvents.hasRedo && syncEvents.hasImport);
+
+  // ---- Command palette (Ctrl+K) ----
+  await page.evaluate(() => KB.Workspaces.set('board'));
+  await page.evaluate(() => KB.App.refresh());
+  await page.keyboard.down('Control');
+  await page.keyboard.press('k');
+  await page.keyboard.up('Control');
+  await waitFor(() => KB.Palette.isOpen(), 2000, 'palette opens');
+  check('ctrl+k opens the command palette', await page.evaluate(() => KB.Palette.isOpen() && document.querySelectorAll('.palette-item').length > 5));
+  check('palette focuses its search input', await page.evaluate(() => document.activeElement && document.activeElement.id === 'palette-input'));
+  check('palette exposes dialog and combobox semantics', await page.evaluate(() => {
+    const panel = document.querySelector('.palette-panel');
+    const input = document.getElementById('palette-input');
+    return panel.getAttribute('role') === 'dialog' && panel.getAttribute('aria-modal') === 'true' &&
+      input.getAttribute('role') === 'combobox' && input.getAttribute('aria-expanded') === 'true' &&
+      Boolean(input.getAttribute('aria-activedescendant'));
+  }));
+  await page.type('#palette-input', 'theme');
+  await waitFor(() => {
+    const titles = [...document.querySelectorAll('.palette-title')].map(e => e.textContent.toLowerCase());
+    return titles.some(t => t.includes('theme'));
+  }, 2000, 'palette filters');
+  const paletteFiltered = await page.$$eval('.palette-title', els => els.map(e => e.textContent));
+  check('palette filters by query', paletteFiltered.length >= 1 && paletteFiltered.every(t => t.toLowerCase().includes('theme')));
+  const themeBeforePalette = await page.evaluate(() => document.documentElement.dataset.theme);
+  await page.keyboard.press('Enter');
+  await waitFor(() => !KB.Palette.isOpen(), 2000, 'palette closes after run');
+  const themeAfterPalette = await page.evaluate(() => document.documentElement.dataset.theme);
+  check('palette runs the selected command', themeAfterPalette !== themeBeforePalette);
+  await page.evaluate((theme) => {
+    KB.State.setTheme(theme);
+    document.documentElement.dataset.theme = theme;
+  }, themeBeforePalette);
+  await page.keyboard.down('Control');
+  await page.keyboard.press('k');
+  await page.keyboard.up('Control');
+  await waitFor(() => KB.Palette.isOpen(), 2000, 'palette reopens');
+  await page.keyboard.press('Escape');
+  await waitFor(() => !KB.Palette.isOpen(), 2000, 'palette escapes');
+  check('escape closes the palette', await page.evaluate(() => !KB.Palette.isOpen()));
+
+  // Palette arrow navigation moves the selection
+  await page.keyboard.down('Control');
+  await page.keyboard.press('k');
+  await page.keyboard.up('Control');
+  await waitFor(() => KB.Palette.isOpen(), 2000, 'palette reopens for arrows');
+  const firstTitle = await page.evaluate(() => document.querySelector('.palette-item.selected .palette-title').textContent);
+  await page.keyboard.press('ArrowDown');
+  const secondTitle = await page.evaluate(() => document.querySelector('.palette-item.selected .palette-title').textContent);
+  check('palette arrows move the selection', secondTitle !== firstTitle);
+  await page.keyboard.press('Escape');
+  await waitFor(() => !KB.Palette.isOpen(), 2000, 'palette closes after arrows');
+
+  // Shift+letter shortcuts keep working (the old dispatcher matched both cases)
+  await page.evaluate(() => { const qa = document.querySelector('.qa-input'); if (qa) qa.blur(); });
+  await page.keyboard.down('Shift');
+  await page.keyboard.press('N');
+  await page.keyboard.up('Shift');
+  check('shift+N focuses quick add', await page.evaluate(() => document.activeElement && document.activeElement.classList.contains('qa-input')));
+
+  // App menu is a registry popover and runs a command
+  await page.click('#app-menu');
+  await waitFor(() => document.querySelectorAll('.pop .pop-item').length > 5, 2000, 'app menu popover');
+  check('app menu lists registry categories', await page.evaluate(() => document.querySelectorAll('.pop-category').length >= 5));
+  await page.evaluate(() => { [...document.querySelectorAll('.pop .pop-item')].find(b => b.textContent.includes('New board')).click(); });
+  await waitFor(() => !!document.querySelector('.modal-panel input'), 2000, 'menu command opens modal');
+  check('app menu command runs', (await page.$('.modal-panel input')) !== null);
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('.modal-actions .btn')].find(x => x.textContent.trim() === 'Cancel');
+    if (b) b.click();
+  });
+  await waitFor(() => !document.querySelector('.modal-panel'), 2000, 'menu modal cancels');
+
+  // ---- Mobile: pager, tabs, and the card action sheet ----
+  await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+  await waitBoard();
+  await page.evaluate(() => KB.Workspaces.set('board'));
+  await page.evaluate(() => KB.App.refresh());
+  await waitFor(() => !document.getElementById('board-pager').hidden && document.querySelectorAll('.bp-dot').length === 3, 3000, 'mobile pager');
+  check('mobile shows a column pager', await page.evaluate(() => {
+    const cols = [...document.querySelectorAll('.column')];
+    const rect = cols[0].getBoundingClientRect();
+    return rect.width > 300 && !document.getElementById('board-pager').hidden;
+  }));
+  check('mobile bottom tabs visible', await page.evaluate(() => getComputedStyle(document.getElementById('mobile-tabs')).display === 'flex'));
+  const colBeforeNext = await page.evaluate(() => KB.Render.pagerActiveIndex());
+  await page.click('.bp-next');
+  await sleep(400); // let scroll-snap settle
+  check('pager next moves to the second column', await page.evaluate((before) => KB.Render.pagerActiveIndex() === before + 1, colBeforeNext));
+  await page.evaluate(() => KB.Render.scrollToColumn(0));
+  await page.click('.card-actions [data-action="card-sheet"]');
+  await waitFor(() => KB.Sheet.isOpen(), 2000, 'card sheet opens');
+  await page.keyboard.press('Tab');
+  check('sheet traps Tab focus', await page.evaluate(() => {
+    return document.querySelector('.sheet-panel').contains(document.activeElement);
+  }));
+  const sheetItems = await page.$$eval('.sheet-item', els => els.map(e => e.textContent));
+  check('card action sheet lists card commands', sheetItems.some(t => t.includes('Archive card')) && sheetItems.some(t => t.includes('Move to')));
+  await page.evaluate(() => { [...document.querySelectorAll('.sheet-item')].find(b => b.textContent.includes('Archive card')).click(); });
+  await waitFor(() => !KB.Sheet.isOpen(), 2000, 'sheet closes after archive');
+  check('archive via action sheet works', await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    return board.archive.cards.some(c => c.title === 'Plan the weekly sync') || board.archive.cards.length >= 1;
+  }));
+
+  // Action sheet closes on Escape
+  await page.evaluate(() => { document.querySelector('.card-actions [data-action="card-sheet"]').click(); });
+  await waitFor(() => KB.Sheet.isOpen(), 2000, 'sheet reopens for escape');
+  await page.keyboard.press('Escape');
+  await waitFor(() => !KB.Sheet.isOpen(), 2000, 'sheet escapes');
+  check('escape closes the action sheet', await page.evaluate(() => !KB.Sheet.isOpen()));
+
+  // Filter drawer toggle opens and closes (self-contained: click, settle,
+  // then assert — avoids interleaving with unrelated page activity)
+  const drawerOpened = await page.evaluate(() => new Promise((resolve) => {
+    const bar = document.getElementById('filter-bar');
+    document.getElementById('filter-toggle').click();
+    setTimeout(() => resolve(bar.classList.contains('open')), 120);
+  }));
+  check('filter drawer opens on mobile', drawerOpened === true);
+  const drawerClosed = await page.evaluate(() => new Promise((resolve) => {
+    const bar = document.getElementById('filter-bar');
+    document.getElementById('filter-toggle').click();
+    setTimeout(() => resolve(!bar.classList.contains('open')), 120);
+  }));
+  check('filter drawer closes', drawerClosed === true);
+
+  await page.keyboard.press('Escape');
+  await page.setViewport({ width: 1440, height: 900, isMobile: false });
+  await waitBoard();
+
+  // ---- Local snapshots: listed, created, restored from the backup dialog ----
+  await page.evaluate(() => { KB.Modal.backupModal(); });
+  await waitFor(() => document.querySelectorAll('.snapshot-row').length >= 1, 3000, 'snapshot list renders');
+  const snapCountBefore = await page.$$eval('.snapshot-row', els => els.length);
+  check('snapshots listed in backup dialog', snapCountBefore >= 1);
+  await page.evaluate(() => { document.querySelector('.snapshot-actions .btn').click(); }); // Snapshot now
+  await waitFor((before) => document.querySelectorAll('.snapshot-row').length >= before + 1, 6000, 'snapshot grows', snapCountBefore);
+  check('snapshot now adds a row', await page.$$eval('.snapshot-row', els => els.length) >= snapCountBefore + 1);
+  await page.evaluate(() => { window.confirm = () => true; });
+  await page.evaluate(() => { document.querySelector('.snapshot-row .btn').click(); }); // Restore newest
+  await waitFor(() => [...document.querySelectorAll('.toast')].some(t => t.textContent.includes('Snapshot restored')), 3000, 'snapshot restore toast');
+  check('snapshot restore reports success', await page.$$eval('.toast', els => els.some(e => e.textContent.includes('Snapshot restored'))));
+  await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'snapshot restore closes dialog');
+  check('snapshot restore keeps the board consistent', await page.evaluate(() => {
+    return KB.State.activeBoard().name === document.querySelector('#board-name').textContent;
+  }));
+
+  // ---- Mid-session IndexedDB write failure degrades to the mirror ----
+  const degradeResult = await page.evaluate(async () => {
+    const realPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function () { throw new Error('simulated quota'); };
+    KB.State.addCard(KB.State.activeBoard().columns[0].id, { title: 'Degrade probe' });
+    await new Promise((r) => setTimeout(r, 60));
+    IDBObjectStore.prototype.put = realPut;
+    return { degraded: !KB.Storage.status().idbAvailable };
+  });
+  check('write failure degrades to the mirror', degradeResult.degraded === true);
+  const degradeState = await page.evaluate(() => ({
+    cardPresent: KB.State.activeBoard().columns[0].cards.some(c => c.title === 'Degrade probe'),
+    mirrorHolds: JSON.parse(localStorage.getItem('kanban.board.v1')).boards.some(b => b.columns.some(c => c.cards.some(x => x.title === 'Degrade probe')))
+  }));
+  check('degraded session keeps working via memory and mirror', degradeState.cardPresent && degradeState.mirrorHolds);
+
+  // ---- Reduced motion: palette still opens without animation ----
+  const reducedPage = await browser.newPage();
+  await reducedPage.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+  await reducedPage.goto(URL, { waitUntil: 'load' });
+  await reducedPage.waitForFunction(() => document.documentElement.dataset.ready === '1', { timeout: 5000 });
+  await reducedPage.keyboard.down('Control');
+  await reducedPage.keyboard.press('k');
+  await reducedPage.keyboard.up('Control');
+  await reducedPage.waitForFunction(() => KB.Palette.isOpen(), 3000, 'reduced-motion palette');
+  const reducedMotionPalette = await reducedPage.evaluate(() => ({
+    open: KB.Palette.isOpen(),
+    animation: getComputedStyle(document.querySelector('.palette-panel')).animationName
+  }));
+  check('palette works under prefers-reduced-motion', reducedMotionPalette.open === true && reducedMotionPalette.animation === 'none');
+  await reducedPage.close();
+
+  // ---- PWA: manifest, service worker, offline from cache ----
+  const pwaServer = spawn(process.execPath, [path.join(__dirname, '..', 'serve.js')], {
+    env: Object.assign({}, process.env, { PORT: '8191' }),
+    stdio: 'ignore'
+  });
+  await sleep(800);
+  const pwaPage = await browser.newPage();
+  const pwaErrors = [];
+  pwaPage.on('pageerror', (e) => pwaErrors.push(e.message));
+  try {
+    await pwaPage.goto('http://localhost:8191/index.html?boot=off', { waitUntil: 'load' });
+    await pwaPage.waitForFunction(() => document.documentElement.dataset.ready === '1', { timeout: 5000 });
+    const manifest = await pwaPage.evaluate(async () => {
+      const res = await fetch('manifest.webmanifest');
+      const json = await res.json();
+      return { name: json.name, display: json.display, icons: json.icons.length };
+    });
+    check('manifest is valid and installable', manifest.name === 'Kanban \u2014 The 8-Bit Atelier' && manifest.display === 'standalone' && manifest.icons >= 3);
+    const swState = await pwaPage.evaluate(() => new Promise((resolve) => {
+      navigator.serviceWorker.ready.then(() => resolve({
+        registered: true,
+        controller: Boolean(navigator.serviceWorker.controller)
+      })).catch(() => resolve({ registered: false }));
+    }));
+    check('service worker registers over http', swState.registered === true);
+    await sleep(1500); // let the precache finish
+    const cacheSize = await pwaPage.evaluate(async () => {
+      const keys = await caches.keys();
+      if (keys.length === 0) return 0;
+      const cache = await caches.open(keys[0]);
+      return (await cache.keys()).length;
+    });
+    check('service worker precaches the app shell', cacheSize >= 30);
+
+    // ---- Update flow: a new worker waits for consent, then reloads ----
+    // Puppeteer's request interception cannot see service-worker script
+    // fetches, so the update is triggered by registering a patched worker
+    // from a temp file under the same scope (an update by another name).
+    const tempSwPath = path.join(__dirname, '..', 'sw-update-test.js');
+    fs.writeFileSync(tempSwPath, fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8').replace(/kanban-v1/g, 'kanban-v2-updated'));
+    try {
+      await pwaPage.evaluate(() => { window.__updateMarker = true; });
+      await pwaPage.evaluate(() => navigator.serviceWorker.register('/sw-update-test.js', { scope: './' }));
+      await pwaPage.waitForFunction(() => [...document.querySelectorAll('.toast')].some(t => t.textContent.includes('Update ready')), { timeout: 10000 });
+      check('update toast appears for a waiting service worker', await pwaPage.evaluate(() => {
+        return [...document.querySelectorAll('.toast')].some(t => t.textContent.includes('Update ready'));
+      }));
+      await pwaPage.evaluate(() => {
+        const btn = [...document.querySelectorAll('.toast .toast-btn')].find(b => b.textContent.trim() === 'Reload');
+        if (btn) btn.click();
+      });
+      // The reload wipes the marker; wait for it to be gone.
+      await pwaPage.waitForFunction(() => document.documentElement.dataset.ready === '1' && window.__updateMarker === undefined, { timeout: 10000 }).catch(() => {});
+      await pwaPage.waitForFunction(async () => (await caches.keys()).includes('kanban-v2-updated'), { timeout: 10000 });
+      // The updated worker must be active and serving its cache after the
+      // consent-driven reload. The old cache may briefly reappear while the
+      // dying worker's in-flight fetches complete, so "old cache absent" is
+      // not asserted.
+      check('updated worker activates and serves the new cache', await pwaPage.evaluate(async () => {
+        const reg = await navigator.serviceWorker.getRegistration();
+        const keys = await caches.keys();
+        return window.__updateMarker === undefined &&
+          reg && reg.active && reg.active.scriptURL.indexOf('sw-update-test.js') !== -1 &&
+          keys.includes('kanban-v2-updated');
+      }));
+    } finally {
+      try { fs.unlinkSync(tempSwPath); } catch (err) {}
+    }
+
+    pwaServer.kill('SIGKILL');
+    await sleep(400);
+    await pwaPage.reload({ waitUntil: 'load' }).catch(() => {});
+    await pwaPage.waitForFunction(() => document.documentElement.dataset.ready === '1', { timeout: 8000 }).catch(() => {});
+    const offlineRender = await pwaPage.evaluate(() => ({
+      cols: document.querySelectorAll('.column').length,
+      ready: document.documentElement.dataset.ready,
+      fonts: document.fonts ? document.fonts.status : 'n/a'
+    }));
+    check('app renders offline from cache', offlineRender.ready === '1' && offlineRender.cols >= 3);
+    const swSource = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
+    const urls = swSource.match(/'(\.\/[^']+)'/g).map((u) => u.slice(1, -1));
+    const missing = urls.filter((u) => !fs.existsSync(path.join(__dirname, '..', u.replace(/^\.\//, ''))));
+    check('service worker precache lists only real files', missing.length === 0);
+    check('pwa page has no errors', pwaErrors.length === 0);
+  } finally {
+    if (!pwaServer.killed) pwaServer.kill('SIGKILL');
+    await pwaPage.close();
+  }
 
   check('no unexpected page errors', errors.filter(e => !e.includes('ERR_CONNECTION_REFUSED')).length === 0);
 

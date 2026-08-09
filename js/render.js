@@ -215,10 +215,13 @@
     copyBtn.innerHTML = icon('copy');
     var archiveBtn = h('button', { type: 'button', class: 'btn icon sm', 'data-action': 'archive-card', title: 'Archive card' });
     archiveBtn.innerHTML = icon('archive');
+    var sheetBtn = h('button', { type: 'button', class: 'btn icon sm', 'data-action': 'card-sheet', title: 'More actions', 'aria-label': 'More card actions' });
+    sheetBtn.innerHTML = icon('more');
     actions.appendChild(editBtn);
     actions.appendChild(moveBtn);
     actions.appendChild(copyBtn);
     actions.appendChild(archiveBtn);
+    actions.appendChild(sheetBtn);
     el.appendChild(actions);
 
     return el;
@@ -373,6 +376,80 @@
     columns.forEach(function (column) {
       el.appendChild(columnEl(column, filters));
     });
+    boardPager();
+  }
+
+  function isMobilePager() {
+    return KB.Dom.isMobile();
+  }
+
+  function pagerActiveIndex() {
+    var boardEl = KB.el('board');
+    var columns = boardEl.querySelectorAll('.column');
+    if (columns.length === 0) return -1;
+    var mid = boardEl.scrollLeft + boardEl.clientWidth / 2;
+    var best = 0;
+    for (var i = 0; i < columns.length; i++) {
+      var left = columns[i].offsetLeft;
+      if (left <= mid) best = i;
+    }
+    return best;
+  }
+
+  // Single-column pager for small screens: one column window at a time with
+  // prev/next arrows, dots, and a filters toggle. Desktop keeps the full
+  // bench and hides the pager.
+  function boardPager() {
+    var pager = KB.el('board-pager');
+    if (!pager) return;
+    if (!isMobilePager() || (KB.Workspaces && KB.Workspaces.current() !== 'board')) {
+      pager.hidden = true;
+      return;
+    }
+    var boardEl = KB.el('board');
+    var columns = boardEl.querySelectorAll('.column');
+    pager.hidden = columns.length === 0;
+
+    var dots = KB.el('bp-dots');
+    if (dots) dots.innerHTML = '';
+    for (var i = 0; i < columns.length; i++) {
+      var column = columns[i];
+      var dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'bp-dot';
+      dot.setAttribute('aria-label', 'Column ' + (i + 1) + ': ' + (column.querySelector('.col-title') ? column.querySelector('.col-title').textContent : ''));
+      dot.dataset.index = String(i);
+      dot.addEventListener('click', function () {
+        scrollToColumn(Number(this.dataset.index));
+      });
+      dots.appendChild(dot);
+    }
+    updatePagerState();
+  }
+
+  function scrollToColumn(index) {
+    var boardEl = KB.el('board');
+    var columns = boardEl.querySelectorAll('.column');
+    if (index < 0 || index >= columns.length) return;
+    boardEl.scrollLeft = columns[index].offsetLeft - boardEl.clientWidth / 2 + columns[index].clientWidth / 2;
+    updatePagerState();
+  }
+
+  function updatePagerState() {
+    var dots = KB.el('bp-dots');
+    if (!dots) return;
+    var index = pagerActiveIndex();
+    var dotsList = dots.querySelectorAll('.bp-dot');
+    for (var i = 0; i < dotsList.length; i++) {
+      var active = i === index;
+      dotsList[i].classList.toggle('active', active);
+      if (active) dotsList[i].setAttribute('aria-current', 'true');
+      else dotsList[i].removeAttribute('aria-current');
+    }
+    var prev = KB.el('board-pager') && KB.el('board-pager').querySelector('.bp-prev');
+    var next = KB.el('board-pager') && KB.el('board-pager').querySelector('.bp-next');
+    if (prev) prev.disabled = index <= 0;
+    if (next) next.disabled = index >= dotsList.length - 1;
   }
 
   function setNoResults(show) {
@@ -573,6 +650,10 @@
   KB.Render = {
     board: board,
     filterBar: filterBar,
-    archivePanel: archivePanel
+    archivePanel: archivePanel,
+    boardPager: boardPager,
+    updatePagerState: updatePagerState,
+    scrollToColumn: scrollToColumn,
+    pagerActiveIndex: pagerActiveIndex
   };
 })(window.KB = window.KB || {});

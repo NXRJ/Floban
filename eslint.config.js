@@ -42,6 +42,7 @@ const js = {
       IntersectionObserver: 'readonly',
       CSS: 'readonly',
       crypto: 'readonly',
+      indexedDB: 'readonly',
       globalThis: 'readonly',
       module: 'readonly',
       require: 'readonly',
@@ -128,7 +129,11 @@ const smoke = {
       crypto: 'readonly',
       Blob: 'readonly',
       FileReader: 'readonly',
-      URL: 'readonly'
+      URL: 'readonly',
+      indexedDB: 'readonly',
+      IDBObjectStore: 'readonly',
+      fetch: 'readonly',
+      caches: 'readonly'
     }
   },
   rules: {
@@ -141,4 +146,59 @@ const smoke = {
   }
 };
 
-module.exports = [js, tests, smoke];
+const nodeTools = {
+  name: 'kanban-node-tools',
+  files: ['serve.js', 'scripts/**/*.js'],
+  languageOptions: {
+    ecmaVersion: 2022,
+    sourceType: 'commonjs',
+    globals: {
+      console: 'readonly',
+      process: 'readonly',
+      require: 'readonly',
+      module: 'readonly',
+      __dirname: 'readonly',
+      Buffer: 'readonly',
+      URL: 'readonly'
+    }
+  },
+  rules: {
+    'no-unused-vars': ['error', { args: 'after-used', vars: 'all', caughtErrors: 'none' }],
+    'no-undef': 'error',
+    'no-constant-condition': 'error',
+    'no-dupe-keys': 'error',
+    'no-dupe-args': 'error',
+    'no-cond-assign': ['error', 'except-parens'],
+    'no-func-assign': 'error',
+    'no-unreachable': 'error'
+  }
+};
+
+const sw = {
+  name: 'kanban-sw',
+  files: ['sw.js'],
+  languageOptions: {
+    ecmaVersion: 2022,
+    sourceType: 'script',
+    globals: {
+      self: 'readonly',
+      caches: 'readonly',
+      clients: 'readonly',
+      URL: 'readonly',
+      fetch: 'readonly',
+      console: 'readonly'
+    }
+  },
+  rules: {
+    'no-unused-vars': ['error', { args: 'after-used', vars: 'all', caughtErrors: 'none' }],
+    'no-undef': 'error',
+    'no-constant-condition': 'error',
+    'no-dupe-keys': 'error',
+    'no-dupe-args': 'error',
+    'no-cond-assign': ['error', 'except-parens'],
+    'no-func-assign': 'error',
+    'no-unreachable': 'error'
+  }
+};
+
+module.exports = [js, tests, smoke, nodeTools, sw];

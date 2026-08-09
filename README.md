@@ -2,7 +2,10 @@
 
 A personal, flow-aware Kanban board built with vanilla HTML, CSS and JavaScript.
 No build step, no framework, no backend — everything runs in the browser and
-persists to `localStorage`. Works directly from `file://`.
+persists locally in **IndexedDB**, with a localStorage crash mirror and rotating
+automatic backups. It is an installable **PWA**: over HTTP(S) it works fully
+offline after the first visit. Opening `index.html` directly from `file://`
+also works, exactly as before (minus the offline cache).
 
 **Design world: The 8-Bit Atelier.** A colored ditherpunk desktop — columns are
 windows with accent title bars, cards are paper files, drags cut holes with
@@ -17,21 +20,55 @@ desktop.
 
 ## Running the app
 
-There are two equally valid ways to run it:
+The full experience (install prompt, offline cache, service worker) needs
+HTTP(S):
 
-1. **Open `index.html` directly** — double-click the file (or drag it into a browser
-   tab). It works over `file://` with no server, fully offline.
-2. **Any static file server**, e.g.:
+```sh
+npm run serve     # zero-dependency static server → http://localhost:8123
+# or any static file server:
+npx serve .
+python -m http.server 8000
+```
 
-   ```sh
-   npx serve .
-   # or
-   python -m http.server 8000
-   ```
+Opening `index.html` directly still works over `file://` with no server — all
+assets are local files (fonts included), so nothing needs the network at all.
 
-   then open `http://localhost:8000`.
+## Command palette, menus & shortcuts
 
-No dependencies are required and nothing needs to be installed or compiled.
+One shared command registry (`js/core/commands.js` + `js/commands.js`) powers
+every action surface, so a command behaves identically wherever it is invoked:
+
+- **Command palette** — press **Ctrl/Cmd+K** (or the ⌘ button in the header):
+  filter by title or keywords, arrows + Enter to run, Esc to close. Fully
+  keyboard-navigable, `role="combobox"`/`listbox` semantics, focus trapped.
+- **Keyboard shortcuts** — `N`, `C`, `I`, `/`, Ctrl/Cmd+Z/Y and more are
+  registered in the same registry (see the table below). Press **Ctrl/Cmd+K →
+  "Keyboard shortcuts"** for the full list.
+- **App menu** — the ☰ button opens a registry-driven menu (desktop popover,
+  mobile bottom sheet) with every category.
+- **Mobile action sheets** — on touch screens, tapping a card opens a bottom
+  sheet (Open, Move to…, Duplicate, Block/Wait/Pause/Clear flow, Archive); the
+  column `⋯` opens a column sheet; both route through the same commands and the
+  same policy/lifecycle/undo machinery as desktop.
+
+## Mobile experience
+
+At ≤640px the board is a **single-column pager**, not a squashed bench: one
+column window at a time, swiped or stepped with ◀ ▶ and dots, with snap
+scrolling. A collapsible **Filters** drawer, a bottom workspace tab bar
+(Board / Desk / Inbox / Review), bigger touch targets, and card/column action
+sheets replace hover-only menus. Desktop is untouched.
+
+## PWA & offline
+
+- `manifest.webmanifest` + generated pixel icons (192/512/maskable/Apple
+  touch) make the app **installable**; the browser prompt is deferred into an
+  **Install app** command in the palette.
+- `sw.js` precaches every local asset (the app has no CDN dependencies — the
+  two display fonts are vendored under `fonts/` with their OFL licenses) and
+  serves the whole app offline after the first visit.
+- Updates: when a new service worker is found, a toast offers **Reload**;
+  the new worker only takes over after you accept.
 
 ## Workspaces
 
@@ -248,10 +285,18 @@ Your current workspace is remembered across reloads.
   lens edits the original board card. Lenses can never be accidentally deleted
   (built-ins are code-defined), and deleting a board trims lens scopes safely.
 
-### Backup
+### Backup & recovery
+- Application data lives in **IndexedDB** (primary). Every save also writes a
+  synchronous localStorage mirror (`kanban.board.v1`) so a tab that closes
+  mid-write can never lose work — on the next boot the newer mirror wins and
+  repairs the store.
+- **Automatic rotating backups**: up to 10 snapshots are kept in IndexedDB (at
+  most one per minute), plus an explicit backup before migrations and imports.
+  Load order on boot: primary → mirror (if newer) → newest valid backup →
+  legacy localStorage → fresh default board. Corrupt data is skipped, never
+  fatal.
 - From the board menu: **Backup / restore** exports all boards (or just the
-  current one) to a JSON file, and imports a backup back — everything lives in
-  `localStorage` only, so take one before clearing the browser.
+  current one) to a JSON file, and imports a backup back.
 - Board-only exports include flow settings, roles, policies, dependencies and
   the recurrences/lenses scoped to that board; unresolved external dependency
   references are dropped on import with a count.
@@ -268,8 +313,13 @@ Your current workspace is remembered across reloads.
 
 ## Keyboard shortcuts
 
+All shortcuts are registered in the command registry; Ctrl/Cmd+K → "Keyboard
+shortcuts" lists them from the live registry.
+
 | Keys | Action |
 | --- | --- |
+| `Ctrl/Cmd+K` | Command palette |
+| `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`, `Ctrl/Cmd+Y` | Undo / redo |
 | `N` | Focus the first quick-add box |
 | `C` | New column |
 | `I` | Capture into the Inbox |
@@ -277,7 +327,6 @@ Your current workspace is remembered across reloads.
 | `M` (card focused) | Start keyboard move mode |
 | Arrow keys / Home / End (move mode) | Choose destination |
 | Enter / Escape (move mode) | Commit / cancel move |
-| Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl+Y | Undo / redo |
 
 ## Code structure
 
@@ -304,13 +353,21 @@ that use them.
 | Core | `js/core/history.js` | Undo/redo stack mechanics (record, undo, redo, clear, limits). |
 | Core | `js/core/operations.js` | High-risk state mutations (move, duplicate, archive, restore, delete column, board duplicate/delete, label removal) returning `{ changed, state, value }` results. |
 | Core | `js/core/markdown.js` | HTML escaping and the light markdown renderer, with explicit safe-link handling. |
-| Browser | `index.html` | Page skeleton: workspace nav, filter bar, board, workspace sections, archive panel, modal/toast/live-region roots. Inline theme bootstrap. |
-| Browser | `css/styles.css` | All styling. Theming via CSS custom properties; components (columns, cards, chips, popups, modal, toasts, workspaces, bulk toolbar) are styled there. |
-| Browser | `js/state.js` | State service: owns the live state, localStorage read/write (`kanban.board.v1`, version 3), undo/redo integration, and the `KB.State` API (board-aware card ops, recurrence/inbox/lens/bulk wrappers). |
+| Core | `js/core/store.js` | Storage engine over an injectable promise backend: serialized writes, rotating backups with throttling, and the boot recovery chain (primary → newer mirror → backups → legacy → defaults). Pure logic; the IndexedDB backend is injected. |
+| Core | `js/core/commands.js` | Command registry: register/search/filter/shortcut lookup/dispatch with contexts and availability. Powers the palette, shortcuts, menus and sheets. |
+| Browser | `index.html` | Page skeleton: workspace nav, filter bar, board + pager, workspace sections, archive panel, mobile tabs, modal/palette/sheet/toast/live-region roots. |
+| Browser | `css/styles.css` | All styling. Theming via CSS custom properties; components (columns, cards, chips, popups, modal, palette, sheets, toasts, workspaces, mobile pager/tabs, bulk toolbar) are styled there. |
+| Browser | `js/state.js` | State service: owns the live state, persistence routing (IndexedDB + mirror via `KB.Storage`), undo/redo integration, the sync observer emission, and the `KB.State` API (board-aware card ops, recurrence/inbox/lens/bulk wrappers). |
+| Browser | `js/storage.js` | IndexedDB adapter for the storage engine plus the synchronous localStorage crash mirror and the boot-time recovery wiring. |
+| Browser | `js/sync.js` | Mutation observer (`KB.Sync.subscribe`): the seam a future optional CRDT sync layer hooks into. No-op today. |
+| Browser | `js/commands.js` | The app's command definitions (single source of truth for the palette, shortcuts, app menu, action sheets). |
+| Browser | `js/palette.js` | Ctrl/Cmd+K command palette overlay: filter, keyboard navigation, combobox/listbox semantics, focus trap. |
+| Browser | `js/actionsheet.js` | Bottom action sheets for cards, columns and the app menu. |
+| Browser | `js/pwa.js` | Service-worker registration, update toast flow, deferred install prompt. |
 | Browser | `js/filters.js` | Filter controls adapter: reads DOM filter values, owns selected labels and the sort mode, delegates matching/sorting to `KB.Core.Filtering`. |
 | Browser | `js/dom.js` | Tiny helpers: `h()` element builder, inline SVG pixel-icon set, presentation date formatting, `KB.el` selector shortcut. |
 | Browser | `js/dragdrop.js` | HTML5 drag-and-drop wiring; every drop routes through the shared policy-gated move path. |
-| Browser | `js/modal.js` | Modal system plus editors: card (planning, flow, relationships, recurrence, activity), column (role + policies), labels, backup, move confirmation, recurrence editor/manager, capture/triage/merge, lens editor. |
+| Browser | `js/modals/core.js` | Modal system (overlay, focus, prompt/dialog helpers) plus the card, column, recurrence, triage, labels, backup, capture/merge and lens editors. |
 | Browser | `js/moveto.js` | Move-to menu (board/column/position with cross-board label mapping) and keyboard move mode with `aria-live` announcements. |
 | Browser | `js/selection.js` | Ephemeral multi-select (Ctrl/Shift-click, Escape) and the bulk-action toolbar. |
 | Browser | `js/workspaces.js` | Workspace switching, My Desk / Inbox / Review rendering, lens bar, UI preference persistence. |
@@ -325,7 +382,8 @@ receive an ID factory — this is what makes the unit tests deterministic.
 
 ### Data model
 
-State **version 3** (still stored under the key `kanban.board.v1`):
+State **version 3** (persisted to IndexedDB; the legacy key `kanban.board.v1`
+is kept as the synchronous crash-recovery mirror):
 
 ```js
 {
@@ -362,11 +420,14 @@ Cards carry: `priority`, `size`, `startedAt`, `completedAt`,
 (cross-board `{ boardId, cardId }` references), `recurrenceId` and a capped
 `transitions` log.
 
-Everything is saved to `localStorage` under the key `kanban.board.v1` after
-every mutation. Data saved by older versions (v1, v2) is migrated automatically
-on first load; corrupt or malformed payloads are repaired rather than crashing;
-if recovery is impossible a fresh default board is created. Derived data
-(review queues, lens results, ready state) is never persisted.
+Everything is saved to **IndexedDB** (`kanban-store` database) after every
+mutation through a serialized write queue, with a synchronous localStorage
+mirror under `kanban.board.v1` for crash recovery and up to 10 rotating
+automatic backups. Data saved by older versions (v1, v2) is migrated
+automatically on first load; corrupt or malformed payloads are repaired rather
+than crashing; the boot recovery chain is primary → newer mirror → newest valid
+backup → legacy payload → fresh default board. Derived data (review queues,
+lens results, ready state) is never persisted.
 
 ## Testing
 
@@ -387,19 +448,27 @@ npm test           # unit tests first, then the end-to-end suite
   independence), undo/redo, lifecycle, relations and cycle detection, policies,
   metrics and SLE, recurrence scheduling and idempotency, inbox triage
   atomicity, lens evaluation, the placement pipeline (policy + defaults +
-  lifecycle + recurrence side effect), bulk operations, and performance
-  budgets on large deterministic fixtures (20 boards, 5,000 cards).
+  lifecycle + recurrence side effect), bulk operations, the storage engine
+  (serialized writes, backup rotation and throttling, the full recovery
+  chain), the command registry (search, shortcuts, contexts, availability,
+  dispatch), and performance budgets on large deterministic fixtures (20
+  boards, 5,000 cards).
 - **End-to-end tests** (`tests/kanban-smoke.js`) validate the integrated
   application in Chromium: boot, rendering, keyboard and button wiring, modal
-  workflows, drag/drop, localStorage persistence, theme, undo/redo, migration,
-  corrupt-data resilience, import/export, markdown/XSS safety, priority/size,
-  column roles, flow states, dependencies and ready-to-pull, policy
-  enforcement (including soft-WIP "Move anyway" and per-criterion
-  confirmation), recurrence, inbox triage through policies, archived
-  dependencies, lens semantics, My Desk, move-to menu, keyboard movement with
-  live-region text, multi-select bulk actions, and cross-feature composition
-  scenarios (recurring card → bulk move into a hard-WIP column → confirm →
-  completion recorded → next occurrence scheduled → one undo restores
-  everything).
+  workflows, drag/drop, IndexedDB persistence across reloads, backup recovery
+  from a corrupted store, serialized-write ordering, sync-observer events,
+  localStorage legacy migration, theme, undo/redo, migration, corrupt-data
+  resilience, import/export, markdown/XSS safety, priority/size, column roles,
+  flow states, dependencies and ready-to-pull, policy enforcement (including
+  soft-WIP "Move anyway" and per-criterion confirmation), recurrence, inbox
+  triage through policies, archived dependencies, lens semantics, My Desk,
+  move-to menu, keyboard movement with live-region text, multi-select bulk
+  actions, the command palette (open, filter, run, escape, combobox semantics),
+  mobile pager/tabs and card action sheets with focus trapping, reduced-motion
+  behavior, PWA installability (manifest), service-worker registration,
+  precache integrity, and rendering fully offline from cache, and
+  cross-feature composition scenarios (recurring card → bulk move into a
+  hard-WIP column → confirm → completion recorded → next occurrence scheduled
+  → one undo restores everything).
 - The app itself still has no runtime dependencies and no build step.
   Puppeteer remains a development-only dependency.
