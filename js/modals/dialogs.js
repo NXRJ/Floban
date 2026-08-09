@@ -115,14 +115,21 @@
     snapHint.textContent = 'The app keeps the last 10 automatic snapshots in this browser. Restore one to roll the whole app back to that moment (undoable).';
     snapSection.appendChild(snapHint);
 
+    // Every write action in this dialog must refuse politely in a read-only
+    // tab (its saves are dropped by the funnel).
+    function readOnlyToast() {
+      if (KB.MultiTab && KB.MultiTab.readOnly()) {
+        KB.UI.toast('Read-only — Kanban is open in another tab', 'error');
+        return true;
+      }
+      return false;
+    }
+
     var snapActions = h('div', { class: 'snapshot-actions' });
     var snapNowBtn = h('button', { type: 'button', class: 'btn sm' });
     snapNowBtn.textContent = 'Snapshot now';
     snapNowBtn.addEventListener('click', function () {
-      if (KB.MultiTab && KB.MultiTab.readOnly()) {
-        KB.UI.toast('Read-only — Kanban is open in another tab', 'error');
-        return;
-      }
+      if (readOnlyToast()) return;
       if (!KB.Storage.status().idbAvailable) {
         KB.UI.toast('Storage unavailable — snapshot not saved', 'error');
         return;
@@ -164,10 +171,7 @@
           var restoreBtn = h('button', { type: 'button', class: 'btn ghost sm' });
           restoreBtn.textContent = 'Restore';
           restoreBtn.addEventListener('click', function () {
-            if (KB.MultiTab && KB.MultiTab.readOnly()) {
-              KB.UI.toast('Read-only — Kanban is open in another tab', 'error');
-              return;
-            }
+            if (readOnlyToast()) return;
             if (!KB.Storage.status().idbAvailable) {
               KB.UI.toast('Storage unavailable — restore not possible', 'error');
               return;
@@ -217,7 +221,11 @@
 
     var importBtn = h('button', { type: 'button', class: 'btn danger-ghost' });
     importBtn.textContent = 'Import backup…';
-    importBtn.addEventListener('click', function () { fileInput.click(); });
+    importBtn.addEventListener('click', function () {
+      // Gate before the file picker opens (the change handler also guards).
+      if (readOnlyToast()) return;
+      fileInput.click();
+    });
     actions.appendChild(importBtn);
 
     actions.appendChild(h('span', { class: 'spacer' }));
@@ -231,12 +239,9 @@
       var file = fileInput.files && fileInput.files[0];
       fileInput.value = '';
       if (!file) return;
-      // A read-only tab's import would apply in memory only and vanish on
-      // the next reload — say so instead of claiming success.
-      if (KB.MultiTab && KB.MultiTab.readOnly()) {
-        KB.UI.toast('Read-only — Kanban is open in another tab', 'error');
-        return;
-      }
+      // Belt-and-braces: the button gates before the picker; a direct change
+      // (e.g. drag-drop onto the input) still refuses politely.
+      if (readOnlyToast()) return;
       if (!confirm('Importing a full backup replaces ALL boards; a single-board export is added as a new board. Continue?')) return;
       var reader = new FileReader();
       reader.onload = function () {

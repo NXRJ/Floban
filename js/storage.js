@@ -93,6 +93,8 @@
       clear: function (store) { return tx(store, 'readwrite', function (s) { return s.clear(); }); },
       close: function () {
         if (db) {
+          // close() may throw if the connection is already closing — teardown
+          // is best-effort either way.
           try { db.close(); } catch (err) {}
           db = null;
           opening = null;
@@ -282,7 +284,9 @@
     try {
       localStorage.removeItem(MIRROR_KEY);
       localStorage.removeItem(STORAGE_KEY);
-    } catch (err) {}
+    } catch (err) {
+      // Storage disabled/private mode — the keys simply were not removable.
+    }
     if (!idbOk) return Promise.resolve();
     return engine.clearAll();
   }

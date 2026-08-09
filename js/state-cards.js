@@ -10,6 +10,7 @@
   var wrapResult = internal.wrapResult;
   var noop = internal.noop;
   var cloneState = internal.cloneState;
+  var safePatchKeys = internal.safePatchKeys;
   var pushHistory = internal.pushHistory;
   var save = internal.save;
   var activeBoard = internal.activeBoard;
@@ -42,13 +43,6 @@
         confirmed: opts && opts.confirmed,
         overrideReason: opts && opts.overrideReason
       }, deps());
-    });
-  }
-
-  // Patch keys that could pollute the object prototype must never be merged.
-  function safePatchKeys(patch) {
-    return Object.keys(patch || {}).filter(function (key) {
-      return key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
     });
   }
 
@@ -150,9 +144,11 @@
         }
       }
       // Same prototype-pollution hygiene as updateCard: patch keys must not
-      // touch __proto__/constructor/prototype.
+      // touch __proto__/constructor/prototype. Values are deep-compared —
+      // array fields (checklist, labels) get fresh references on every modal
+      // save, so a plain !== would mark an unchanged save as dirty.
       safePatchKeys(patch).forEach(function (key) {
-        if (cloned.nextCard[key] !== patch[key]) {
+        if (JSON.stringify(cloned.nextCard[key]) !== JSON.stringify(patch[key])) {
           cloned.nextCard[key] = patch[key];
           changed = true;
         }

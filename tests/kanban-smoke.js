@@ -1815,12 +1815,17 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   // ---- Sync events fire for every mutation with the right source ----
   const syncEvents = await page.evaluate(async () => {
+    // Deterministic baseline: the mutations below must be the only history
+    // entries, and the theme flip must always change something, or undo/redo
+    // and the second 'change' event could silently not fire.
+    while (KB.State.canUndo()) KB.State.undo();
+    while (KB.State.canRedo()) KB.State.redo();
     window.__syncEvents = [];
     KB.Sync.subscribe((change) => window.__syncEvents.push(change.source));
     const board = KB.State.activeBoard();
     const col = board.columns[0];
     KB.State.addCard(col.id, { title: 'Sync event probe' }); // change
-    KB.State.setTheme('dark'); // change
+    KB.State.setTheme(KB.State.data().theme === 'dark' ? 'light' : 'dark'); // change
     KB.State.undo(); // undo
     KB.State.redo(); // redo
     KB.State.importAll(KB.State.exportAll()); // import
@@ -2163,7 +2168,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     // fetches, so the update is triggered by registering a patched worker
     // from a temp file under the same scope (an update by another name).
     const tempSwPath = path.join(__dirname, '..', 'sw-update-test.js');
-    fs.writeFileSync(tempSwPath, fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8').replace(/kanban-v2/g, 'kanban-v2-updated'));
+    fs.writeFileSync(tempSwPath, fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8').replace(/kanban-v3/g, 'kanban-v3-updated'));
     try {
       await pwaPage.evaluate(() => { window.__updateMarker = true; });
       await pwaPage.evaluate(() => navigator.serviceWorker.register('/sw-update-test.js', { scope: './' }));
@@ -2177,7 +2182,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       });
       // The reload wipes the marker; wait for it to be gone.
       await pwaPage.waitForFunction(() => document.documentElement.dataset.ready === '1' && window.__updateMarker === undefined, { timeout: 10000 }).catch(() => {});
-      await pwaPage.waitForFunction(async () => (await caches.keys()).includes('kanban-v2-updated'), { timeout: 10000 });
+      await pwaPage.waitForFunction(async () => (await caches.keys()).includes('kanban-v3-updated'), { timeout: 10000 });
       // The updated worker must be active and serving its cache after the
       // consent-driven reload. The old cache may briefly reappear while the
       // dying worker's in-flight fetches complete, so "old cache absent" is
@@ -2187,7 +2192,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
         const keys = await caches.keys();
         return window.__updateMarker === undefined &&
           reg && reg.active && reg.active.scriptURL.indexOf('sw-update-test.js') !== -1 &&
-          keys.includes('kanban-v2-updated');
+          keys.includes('kanban-v3-updated');
       }));
     } finally {
       try { fs.unlinkSync(tempSwPath); } catch (err) {}

@@ -28,11 +28,19 @@
     setTimeout(function () {
       navigator.serviceWorker.getRegistration().then(function (registration) {
         if (!registration || registration.waiting) reloadingForUpdate = false;
+      }).catch(function () {
+        reloadingForUpdate = false;
       });
     }, 10000);
     navigator.serviceWorker.getRegistration().then(function (registration) {
       if (registration && registration.waiting) {
-        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        try {
+          registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        } catch (err) {
+          // The waiting worker's context died — fall back to a plain reload.
+          reloadingForUpdate = false;
+          window.location.reload();
+        }
       } else {
         // Nothing waiting — fall back to a plain reload.
         reloadingForUpdate = false;

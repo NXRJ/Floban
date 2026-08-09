@@ -353,7 +353,7 @@ that use them.
 | Core | `js/core/history.js` | Undo/redo stack mechanics (record, undo, redo, clear, limits). |
 | Core | `js/core/operations.js` | High-risk state mutations (move, duplicate, archive, restore, delete column, board duplicate/delete, label removal) returning `{ changed, state, value }` results. |
 | Core | `js/core/markdown.js` | HTML escaping and the light markdown renderer, with explicit safe-link handling. |
-| Core | `js/core/store.js` | Storage engine over an injectable promise backend: serialized writes, rotating backups with throttling, and the boot recovery chain (primary → newer mirror → backups → legacy → defaults). Pure logic; the IndexedDB backend is injected. |
+| Core | `js/core/store.js` | Storage engine over an injectable promise backend: serialized writes, rotating backups with throttling, and the boot recovery chain (newer valid mirror → primary → backups → legacy → defaults). Pure logic; the IndexedDB backend is injected. |
 | Core | `js/core/commands.js` | Command registry: register/search/filter/shortcut lookup/dispatch with contexts and availability. Powers the palette, shortcuts, menus and sheets. |
 | Browser | `index.html` | Page skeleton: workspace nav, filter bar, board + pager, workspace sections, archive panel, mobile tabs, modal/palette/sheet/toast/live-region roots. |
 | Browser | `css/styles.css` | All styling. Theming via CSS custom properties; components (columns, cards, chips, popups, modal, palette, sheets, toasts, workspaces, mobile pager/tabs, bulk toolbar) are styled there. |
@@ -361,7 +361,7 @@ that use them.
 | Browser | `js/state-cards.js` | Card-focused `KB.State` operations (create/edit/archive, checklist, labels, assignee, due, flow, dependencies). |
 | Browser | `js/state-features.js` | Feature-state `KB.State` operations (boards, columns, labels, templates, recurrences, inbox, lenses, bulk). |
 | Browser | `js/storage.js` | IndexedDB adapter for the storage engine plus the atomic localStorage crash-mirror envelope and the boot-time recovery wiring. |
-| Browser | `js/sync.js` | Mutation observer (`KB.Sync.subscribe`): the seam a future optional CRDT sync layer hooks into. No-op today. Contract in `docs/SYNC.md`. |
+| Browser | `js/sync.js` | Mutation observer (`KB.Sync.subscribe`): the seam a future optional CRDT sync layer hooks into. No-op today. Contract in [docs/SYNC.md](docs/SYNC.md). |
 | Browser | `js/multitab.js` | Cross-tab guard: a localStorage edit lock makes a second tab read-only with a takeover banner (prevents last-writer-wins loss). |
 | Browser | `js/commands.js` | The app's command definitions (single source of truth for the palette, shortcuts, app menu, action sheets). |
 | Browser | `js/palette.js` | Ctrl/Cmd+K command palette overlay: filter, keyboard navigation, combobox/listbox semantics, focus trap. |
@@ -432,7 +432,7 @@ mutation through a serialized write queue, with an atomic localStorage
 crash-mirror envelope (`kanban.mirror.v1`) and up to 10 rotating automatic
 backups. Data saved by older versions (v1, v2) is migrated automatically on
 first load; corrupt or malformed payloads are repaired rather than crashing;
-the boot recovery chain is primary → newer valid mirror → newest valid backup →
+the boot recovery chain is newer valid mirror → primary → newest valid backup →
 legacy payload → fresh default board. Derived data (review queues, lens
 results, ready state) is never persisted.
 

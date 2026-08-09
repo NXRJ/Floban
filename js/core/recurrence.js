@@ -41,6 +41,10 @@
       return d.getTime();
     }
 
+    function cloneState(state) {
+      return JSON.parse(JSON.stringify(state));
+    }
+
     function computeNextRun(definition, fromTimestamp) {
       var from = typeof fromTimestamp === 'number' ? fromTimestamp : Date.now();
       var schedule = definition && definition.schedule ? definition.schedule : {};
@@ -202,7 +206,7 @@
     }
 
     function processDueRecurrences(state, now, deps) {
-      var next = JSON.parse(JSON.stringify(state));
+      var next = cloneState(state);
       var created = 0;
       var skippedWaiting = 0;
       var disabled = 0;
@@ -305,7 +309,7 @@
     }
 
     function handleRecurringCardCompletion(state, cardRef) {
-      var next = JSON.parse(JSON.stringify(state));
+      var next = cloneState(state);
       var board = next.boards.find(function (b) { return b.id === cardRef.boardId; });
       if (!board) return { changed: false, state: state };
       var card = null;
@@ -350,7 +354,7 @@
 
     function pauseRecurrence(state, recurrenceId, reason, deps) {
       var d = resolveDeps(deps);
-      var next = JSON.parse(JSON.stringify(state));
+      var next = cloneState(state);
       var recurrence = next.recurrences.find(function (r) { return r.id === recurrenceId; });
       if (!recurrence) return { changed: false, state: state, reason: 'not-found' };
       if (!recurrence.enabled) return { changed: false, state: state, reason: 'already-paused' };
@@ -362,7 +366,7 @@
 
     function resumeRecurrence(state, recurrenceId, deps) {
       var d = resolveDeps(deps);
-      var next = JSON.parse(JSON.stringify(state));
+      var next = cloneState(state);
       var recurrence = next.recurrences.find(function (r) { return r.id === recurrenceId; });
       if (!recurrence) return { changed: false, state: state, reason: 'not-found' };
       if (recurrence.enabled) return { changed: false, state: state, reason: 'not-paused' };
@@ -377,7 +381,7 @@
 
     function runNow(state, recurrenceId, deps) {
       var d = resolveDeps(deps);
-      var next = JSON.parse(JSON.stringify(state));
+      var next = cloneState(state);
       var recurrence = next.recurrences.find(function (r) { return r.id === recurrenceId; });
       if (!recurrence) return { changed: false, state: state, reason: 'not-found' };
       if (recurrence.overlapPolicy === 'single-active' && activeCardIsOpen(next, recurrence)) {

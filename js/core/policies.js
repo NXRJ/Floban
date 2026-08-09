@@ -169,11 +169,25 @@
         if (found) source = found.column;
       }
       if (!source) {
-        return { allowed: true, requiresOverride: false, requiresConfirmation: false, blocking: false, needsReason: false, violations: [] };
+        return {
+          allowed: true,
+          requiresOverride: false,
+          requiresConfirmation: false,
+          blocking: false,
+          needsReason: false,
+          violations: []
+        };
       }
       var policy = source.policy || {};
       if (!Array.isArray(policy.exitCriteria) || policy.exitCriteria.length === 0) {
-        return { allowed: true, requiresOverride: false, requiresConfirmation: false, blocking: false, needsReason: false, violations: [] };
+        return {
+          allowed: true,
+          requiresOverride: false,
+          requiresConfirmation: false,
+          blocking: false,
+          needsReason: false,
+          violations: []
+        };
       }
       return {
         allowed: false,
