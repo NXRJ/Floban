@@ -2,6 +2,7 @@ const browserGlobals = {
   KB: 'readonly',
   window: 'readonly',
   document: 'readonly',
+  getComputedStyle: 'readonly',
   localStorage: 'readonly',
   sessionStorage: 'readonly',
   BroadcastChannel: 'readonly',
@@ -43,6 +44,17 @@ const browserGlobals = {
   globalThis: 'readonly'
 };
 
+const coreRules = {
+  'no-unused-vars': ['error', { args: 'after-used', vars: 'all', caughtErrors: 'none' }],
+  'no-undef': 'error',
+  'no-constant-condition': 'error',
+  'no-dupe-keys': 'error',
+  'no-dupe-args': 'error',
+  'no-cond-assign': ['error', 'except-parens'],
+  'no-func-assign': 'error',
+  'no-unreachable': 'error'
+};
+
 const js = {
   name: 'kanban-js',
   files: ['js/**/*.js'],
@@ -51,16 +63,7 @@ const js = {
     sourceType: 'script',
     globals: browserGlobals
   },
-  rules: {
-    'no-unused-vars': ['error', { args: 'after-used', vars: 'all', caughtErrors: 'none' }],
-    'no-undef': 'error',
-    'no-constant-condition': 'error',
-    'no-dupe-keys': 'error',
-    'no-dupe-args': 'error',
-    'no-cond-assign': ['error', 'except-parens'],
-    'no-func-assign': 'error',
-    'no-unreachable': 'error'
-  }
+  rules: coreRules
 };
 
 // js/core/* is the deterministic layer; it additionally runs under Node for
@@ -80,16 +83,7 @@ const jsCore = {
       process: 'readonly'
     })
   },
-  rules: {
-    'no-unused-vars': ['error', { args: 'after-used', vars: 'all', caughtErrors: 'none' }],
-    'no-undef': 'error',
-    'no-constant-condition': 'error',
-    'no-dupe-keys': 'error',
-    'no-dupe-args': 'error',
-    'no-cond-assign': ['error', 'except-parens'],
-    'no-func-assign': 'error',
-    'no-unreachable': 'error'
-  }
+  rules: coreRules
 };
 
 const tests = {
@@ -126,56 +120,21 @@ const smoke = {
   languageOptions: {
     ecmaVersion: 2022,
     sourceType: 'commonjs',
-    globals: {
-      console: 'readonly',
+    // A Node test harness whose page.evaluate callbacks run browser code:
+    // browser globals plus the Node ones the harness itself uses.
+    globals: Object.assign({}, browserGlobals, {
       process: 'readonly',
       require: 'readonly',
       module: 'readonly',
       __dirname: 'readonly',
-      setTimeout: 'readonly',
-      clearTimeout: 'readonly',
       Date: 'readonly',
       JSON: 'readonly',
-      KB: 'readonly',
-      document: 'readonly',
-      window: 'readonly',
-      localStorage: 'readonly',
-      sessionStorage: 'readonly',
-      DOMException: 'readonly',
-      getComputedStyle: 'readonly',
-      navigator: 'readonly',
-      location: 'readonly',
-      Event: 'readonly',
-      KeyboardEvent: 'readonly',
-      MouseEvent: 'readonly',
-      DragEvent: 'readonly',
-      NodeList: 'readonly',
-      Element: 'readonly',
-      HTMLElement: 'readonly',
-      HTMLInputElement: 'readonly',
-      HTMLSelectElement: 'readonly',
-      Option: 'readonly',
-      MutationObserver: 'readonly',
-      requestAnimationFrame: 'readonly',
-      CSS: 'readonly',
-      crypto: 'readonly',
-      Blob: 'readonly',
-      FileReader: 'readonly',
-      URL: 'readonly',
-      indexedDB: 'readonly',
       IDBObjectStore: 'readonly',
       fetch: 'readonly',
       caches: 'readonly'
-    }
+    })
   },
-  rules: {
-    'no-unused-vars': ['error', { args: 'after-used', vars: 'all', caughtErrors: 'none' }],
-    'no-undef': 'error',
-    'no-constant-condition': 'error',
-    'no-dupe-keys': 'error',
-    'no-cond-assign': ['error', 'except-parens'],
-    'no-unreachable': 'error'
-  }
+  rules: coreRules
 };
 
 const nodeTools = {

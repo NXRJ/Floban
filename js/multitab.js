@@ -100,6 +100,8 @@
         // the lease). The stale window covers the residual race either way.
         writeClaim();
         if (channel) {
+          // A channel closed by a torn-down page throws on postMessage; the
+          // claim in localStorage is the authoritative takeover either way.
           try { channel.postMessage({ type: 'takeover', id: tabId }); } catch (err) {}
         }
         setTimeout(function () { location.reload(); }, 250);

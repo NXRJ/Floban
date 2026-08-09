@@ -29,9 +29,8 @@
     var entity = list.find(function (r) { return r.id === id; });
     if (!entity) return { changed: false, reason: notFoundReason };
     var changed = false;
-    Object.keys(patch || {}).forEach(function (key) {
-      // Same prototype-pollution hygiene as updateCard / updateCardWithFlow.
-      if (key === '__proto__' || key === 'constructor' || key === 'prototype') return;
+    // Same prototype-pollution hygiene as updateCard / updateCardWithFlow.
+    internal.safePatchKeys(patch).forEach(function (key) {
       if (JSON.stringify(entity[key]) !== JSON.stringify(patch[key])) {
         entity[key] = patch[key];
         changed = true;

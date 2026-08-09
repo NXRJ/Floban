@@ -26,7 +26,10 @@
   function savePrefs() {
     try {
       localStorage.setItem(UI_KEY, JSON.stringify({ workspace: workspace, lens: activeLensId }));
-    } catch (err) {}
+    } catch (err) {
+      // Quota exceeded or storage disabled — prefs are best-effort; the
+      // defaults are used next boot.
+    }
   }
 
   function isValidWorkspace(name) {

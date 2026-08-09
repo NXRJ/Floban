@@ -266,7 +266,7 @@
       var next = cloneState(state);
       var source = next.boards.find(function (b) { return b.id === command.boardId; });
       if (!source) return noop(state, 'board-not-found');
-      var copy = JSON.parse(JSON.stringify(source));
+      var copy = cloneState(source);
       copy.id = d.uid();
       copy.name = source.name + ' copy';
       next.boards.push(copy);

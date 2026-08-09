@@ -15,7 +15,7 @@
  */
 'use strict';
 
-var CACHE = 'kanban-v2';
+var CACHE = 'kanban-v3';
 
 var PRECACHE = [
   './',
@@ -53,6 +53,7 @@ var PRECACHE = [
   './js/core/markdown.js',
   './js/core/store.js',
   './js/core/commands.js',
+  './js/boot-theme.js',
   './js/dom.js',
   './js/sync.js',
   './js/multitab.js',

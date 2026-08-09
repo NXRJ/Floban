@@ -193,6 +193,13 @@
     return JSON.parse(JSON.stringify(state));
   }
 
+  // Patch keys that could pollute the object prototype must never be merged.
+  function safePatchKeys(patch) {
+    return Object.keys(patch || {}).filter(function (key) {
+      return key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
+    });
+  }
+
   function activeBoard() {
     return state.boards.find(function (b) { return b.id === state.activeBoardId; }) || state.boards[0] || null;
   }
@@ -585,6 +592,7 @@
     wrapResult: wrapResult,
     noop: noop,
     cloneState: cloneState,
+    safePatchKeys: safePatchKeys,
     pushHistory: pushHistory,
     save: save,
     validatePayload: validatePayload,

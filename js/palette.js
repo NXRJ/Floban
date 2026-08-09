@@ -29,6 +29,8 @@
     document.removeEventListener('keydown', onKey);
     KB.Dom.setPageInert(false);
     if (opener && opener.focus) {
+      // The opener may have been removed from the DOM while the palette was
+      // open; focusing a detached element throws a SecurityError.
       try { opener.focus(); } catch (err) {}
     }
     opener = null;
