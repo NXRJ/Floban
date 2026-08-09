@@ -55,6 +55,7 @@ var PRECACHE = [
   './js/core/commands.js',
   './js/dom.js',
   './js/sync.js',
+  './js/multitab.js',
   './js/state.js',
   './js/storage.js',
   './js/state-cards.js',

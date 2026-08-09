@@ -2048,6 +2048,36 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   }));
   check('degraded session keeps working via memory and mirror', degradeState.cardPresent && degradeState.mirrorHolds);
 
+  // ---- Cross-tab guard: a second tab is read-only until it takes over ----
+  const tab2 = await browser.newPage();
+  await tab2.goto(URL, { waitUntil: 'load' });
+  await tab2.waitForFunction(() => document.documentElement.dataset.ready === '1', { timeout: 8000 });
+  check('second tab is read-only with a banner', await tab2.evaluate(() => KB.MultiTab.readOnly() === true && !!document.querySelector('.multitab-banner')));
+  // A mutation in the read-only tab stays in memory and must NOT persist.
+  await tab2.evaluate(() => KB.State.addCard(KB.State.activeBoard().columns[0].id, { title: 'Multi-tab probe' }));
+  await sleep(400);
+  const multiTabNotPersisted = await page.evaluate(() => {
+    const m = JSON.parse(localStorage.getItem('kanban.mirror.v1'));
+    return !m.payload.boards.some(b => b.columns.some(c => c.cards.some(x => x.title === 'Multi-tab probe')));
+  });
+  check('read-only tab cannot persist changes', multiTabNotPersisted === true);
+  // Takeover: the second tab claims the lock, reloads, and becomes the editor.
+  await tab2.evaluate(() => { document.querySelector('.mt-takeover').click(); });
+  await tab2.waitForFunction(() => document.documentElement.dataset.ready === '1' && KB.MultiTab.readOnly() === false, { timeout: 8000 });
+  check('takeover promotes the second tab', await tab2.evaluate(() => !KB.MultiTab.readOnly() && !document.querySelector('.multitab-banner')));
+  // The first tab demotes (broadcast, or its own claim check within ~1s).
+  await waitFor(() => {
+    return window.KB && KB.MultiTab.readOnly() === true && !!document.querySelector('.multitab-banner');
+  }, 6000, 'first tab demotes on takeover');
+  check('first tab demotes on takeover', await page.evaluate(() => KB.MultiTab.readOnly() === true));
+  // Closing the new owner lets the first tab claim the lock again: the claim
+  // goes stale after ~3s, the tab self-promotes and reloads fresh.
+  await tab2.close();
+  await sleep(3500);
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  check('first tab resumes editing after the owner closes', await page.evaluate(() => KB.MultiTab.readOnly() === false && !document.querySelector('.multitab-banner')));
+
   // ---- Reduced motion: palette still opens without animation ----
   const reducedPage = await browser.newPage();
   await reducedPage.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);

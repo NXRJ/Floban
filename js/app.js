@@ -861,6 +861,9 @@
   }
 
   function init() {
+    // The cross-tab guard must know whether this tab is read-only before the
+    // first save (e.g. the defaults save on a fresh profile).
+    if (KB.MultiTab) KB.MultiTab.init();
     KB.State.load().then(function () {
       KB.Commands.registerBoardSwitchCommands();
       KB.Workspaces.loadPrefs();

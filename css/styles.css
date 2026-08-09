@@ -1506,6 +1506,30 @@ input[type="search"]::-webkit-search-cancel-button {
   background: var(--success);
 }
 
+/* Cross-tab guard banner: shown in the read-only (secondary) tab. */
+.multitab-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: #3a2f00;
+  border-bottom: 2px solid var(--border-strong);
+  color: var(--text);
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  letter-spacing: 1px;
+  box-shadow: 0 3px 0 var(--shadow-ink);
+}
+
+.multitab-msg {
+  flex: 1;
+  min-width: 0;
+}
+
+.multitab-banner .mt-takeover {
+  flex: none;
+}
+
 .toast.error::before {
   background: var(--danger);
 }
