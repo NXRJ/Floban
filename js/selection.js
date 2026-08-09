@@ -39,10 +39,6 @@
     renderToolbar();
   }
 
-  function clearAndRender() {
-    clear();
-  }
-
   function syncCardClasses(boardId, cardId) {
     var el = KB.el('board').querySelector('.card[data-id="' + cardId + '"]');
     if (el) el.classList.toggle('selected', selected.has(keyFor(boardId, cardId)));
@@ -442,7 +438,6 @@
     clear: clear,
     syncAll: syncAll,
     renderToolbar: renderToolbar,
-    wire: wireSelection,
-    clearAndRender: clearAndRender
+    wire: wireSelection
   };
 })(window.KB = window.KB || {});

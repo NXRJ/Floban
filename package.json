@@ -1,7 +1,7 @@
 {
   "name": "kanban",
   "version": "0.1.0",
-  "description": "A personal Kanban board with the 8-Bit Atelier look: vanilla HTML/CSS/JS, no build step, localStorage persistence.",
+  "description": "A personal Kanban board with the 8-Bit Atelier look: vanilla HTML/CSS/JS, no build step, IndexedDB persistence with a localStorage crash mirror, offline PWA.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -20,6 +20,7 @@
     "test:e2e": "node tests/kanban-smoke.js",
     "test": "npm run test:unit && npm run test:e2e",
     "serve": "node serve.js",
-    "icons": "node scripts/gen-icons.js"
+    "icons": "node scripts/gen-icons.js",
+    "fonts": "node scripts/fetch-fonts.js"
   }
 }

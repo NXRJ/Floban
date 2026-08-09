@@ -20,7 +20,11 @@
   // harmless no-op when storage or the channel is unavailable (file://).
 
   var OWNER_KEY = 'kanban.owner.v1';
-  var STALE_MS = 3000;
+  // Long enough that a briefly hidden owner is not evicted (browsers throttle
+  // hidden-tab timers), short enough that a dead owner's lock is retaken
+  // promptly. The claim is also refreshed the moment the tab hides, so the
+  // window measures real idle time, not throttled timer drift.
+  var STALE_MS = 15000;
   var BEAT_MS = 1200;
   var CHECK_MS = 1000;
 
@@ -89,12 +93,16 @@
       take.textContent = 'Take over';
       take.addEventListener('click', function () {
         // Claim the lock, tell the other tab to demote, then reload so the
-        // state here starts from the owner's latest writes.
+        // state here starts from the owner's latest writes. The short settle
+        // delay lets the owner process the demotion message BEFORE we reload:
+        // a queued owner heartbeat re-asserting its claim in between could
+        // otherwise make this tab boot read-only too (both tabs waiting out
+        // the lease). The stale window covers the residual race either way.
         writeClaim();
         if (channel) {
           try { channel.postMessage({ type: 'takeover', id: tabId }); } catch (err) {}
         }
-        location.reload();
+        setTimeout(function () { location.reload(); }, 250);
       });
       banner.appendChild(msg);
       banner.appendChild(take);
@@ -162,6 +170,11 @@
       if (!readOnly) writeClaim();
     }, BEAT_MS);
     setInterval(check, CHECK_MS);
+    // Refresh the claim the instant the tab hides: a throttled hidden timer
+    // must not let a live owner's lease expire mid-idle.
+    document.addEventListener('visibilitychange', function () {
+      if (!readOnly && document.visibilityState === 'hidden') writeClaim();
+    });
   }
 
   KB.MultiTab = {

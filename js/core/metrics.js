@@ -255,68 +255,62 @@
       var score = null;
 
       var manualBlocked = card.flow && card.flow.state === 'blocked';
+      // Each reason bumps the review score to its rank when no stronger
+      // reason exists yet.
+      function addReason(rank, text) {
+        reasons.push({ rank: rank, text: text });
+        if (score === null || score > rank) score = rank;
+      }
+
       if (manualBlocked) {
         var blockedDays = Lifecycle.currentFlowDuration(card, now) / MS_PER_DAY;
-        reasons.push({ rank: 1, text: 'Blocked for ' + fmtDays(blockedDays) });
-        score = score === null || score > 1 ? 1 : score;
+        addReason(1, 'Blocked for ' + fmtDays(blockedDays));
       }
 
       var unresolved = options.unresolved ? options.unresolved(ref) : Relations.getUnresolvedBlockers(state, ref);
       if (unresolved.length > 0) {
         var depDays = (now - (card.movedAt || card.createdAt || now)) / MS_PER_DAY;
-        reasons.push({
-          rank: 2,
-          text: 'Dependency blocked — ' + unresolved.length + ' unresolved blocker' + (unresolved.length === 1 ? '' : 's') + ' for ' + fmtDays(depDays)
-        });
-        if (score === null || score > 2) score = 2;
+        addReason(2, 'Dependency blocked — ' + unresolved.length + ' unresolved blocker' + (unresolved.length === 1 ? '' : 's') + ' for ' + fmtDays(depDays));
       }
 
       var waiting = card.flow && card.flow.state === 'waiting';
       if (waiting) {
         var waitingDays = Lifecycle.currentFlowDuration(card, now) / MS_PER_DAY;
-        reasons.push({ rank: 3, text: 'Waiting for ' + fmtDays(waitingDays) });
-        if (score === null || score > 3) score = 3;
+        addReason(3, 'Waiting for ' + fmtDays(waitingDays));
       }
 
       if (options.sleDays !== null && options.sleDays > 0) {
         var age = Lifecycle.workItemAgeDays(card, now);
         if (age !== null && age > options.sleDays) {
-          reasons.push({ rank: 4, text: 'Beyond SLE of ' + Math.round(options.sleDays) + ' days (' + Math.round(age) + ' days old)' });
-          if (score === null || score > 4) score = 4;
+          addReason(4, 'Beyond SLE of ' + Math.round(options.sleDays) + ' days (' + Math.round(age) + ' days old)');
         }
       }
 
       var wip = Policies.wipStatus(column);
       if (wip.over) {
-        reasons.push({ rank: 5, text: 'In an over-WIP column' });
-        if (score === null || score > 5) score = 5;
+        addReason(5, 'In an over-WIP column');
       }
 
       if (card.due && TODAY_ISO_RE.test(card.due) && card.due < options.today) {
-        reasons.push({ rank: 6, text: 'Overdue' });
-        if (score === null || score > 6) score = 6;
+        addReason(6, 'Overdue');
       }
 
       var staleMs = (now - (card.updatedAt || card.createdAt || now)) / MS_PER_DAY;
       if (staleMs > options.staleAfterDays && column.role !== 'done') {
-        reasons.push({ rank: 7, text: 'Stale — no update for ' + Math.round(staleMs) + ' days' });
-        if (score === null || score > 7) score = 7;
+        addReason(7, 'Stale — no update for ' + Math.round(staleMs) + ' days');
       }
 
       if ((card.checklist || []).length > options.oversizedThreshold) {
-        reasons.push({ rank: 8, text: (card.checklist || []).length + ' checklist items' });
-        if (score === null || score > 8) score = 8;
+        addReason(8, (card.checklist || []).length + ' checklist items');
       }
 
       var paused = card.flow && card.flow.state === 'paused';
       if (paused) {
-        reasons.push({ rank: 9, text: 'Paused for review' });
-        if (score === null || score > 9) score = 9;
+        addReason(9, 'Paused for review');
       }
 
       if (typeof card.completedAt === 'number' && (now - card.completedAt) / MS_PER_DAY > options.completedReviewAfterDays) {
-        reasons.push({ rank: 10, text: 'Completed — ready to archive' });
-        if (score === null || score > 10) score = 10;
+        addReason(10, 'Completed — ready to archive');
       }
 
       return {

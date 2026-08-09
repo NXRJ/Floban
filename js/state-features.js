@@ -20,30 +20,45 @@
     });
   }
 
+  // Shared update/delete for the app's entity lists (recurrences, lenses):
+  // deep-diff the patch against the current value, bump updatedAt, splice
+  // on delete. Returns { changed } plus the entity on success.
+  function patchEntity(list, id, patch, notFoundReason) {
+    var entity = list.find(function (r) { return r.id === id; });
+    if (!entity) return { changed: false, reason: notFoundReason };
+    var changed = false;
+    Object.keys(patch || {}).forEach(function (key) {
+      if (JSON.stringify(entity[key]) !== JSON.stringify(patch[key])) {
+        entity[key] = patch[key];
+        changed = true;
+      }
+    });
+    if (!changed) return { changed: false, reason: 'no-change' };
+    entity.updatedAt = now();
+    return { changed: true, entity: entity };
+  }
+
+  function removeEntity(list, id, notFoundReason) {
+    var index = list.findIndex(function (r) { return r.id === id; });
+    if (index === -1) return { changed: false, reason: notFoundReason };
+    list.splice(index, 1);
+    return { changed: true };
+  }
+
   function updateRecurrence(recurrenceId, patch) {
     return commit(function (current) {
       var next = JSON.parse(JSON.stringify(current));
-      var recurrence = next.recurrences.find(function (r) { return r.id === recurrenceId; });
-      if (!recurrence) return { changed: false, state: current, value: null, reason: 'not-found' };
-      var changed = false;
-      Object.keys(patch || {}).forEach(function (key) {
-        if (JSON.stringify(recurrence[key]) !== JSON.stringify(patch[key])) {
-          recurrence[key] = patch[key];
-          changed = true;
-        }
-      });
-      if (!changed) return { changed: false, state: current, value: null, reason: 'no-change' };
-      recurrence.updatedAt = now();
-      return { changed: true, state: next, value: recurrence };
+      var result = patchEntity(next.recurrences, recurrenceId, patch, 'not-found');
+      if (!result.changed) return { changed: false, state: current, value: null, reason: result.reason };
+      return { changed: true, state: next, value: result.entity };
     });
   }
 
   function deleteRecurrence(recurrenceId) {
     return commit(function (current) {
       var next = JSON.parse(JSON.stringify(current));
-      var index = next.recurrences.findIndex(function (r) { return r.id === recurrenceId; });
-      if (index === -1) return { changed: false, state: current, value: null, reason: 'not-found' };
-      next.recurrences.splice(index, 1);
+      var result = removeEntity(next.recurrences, recurrenceId, 'not-found');
+      if (!result.changed) return { changed: false, state: current, value: null, reason: result.reason };
       return { changed: true, state: next, value: true };
     });
   }
@@ -71,11 +86,7 @@
       var next = JSON.parse(JSON.stringify(current));
       var recurrence = next.recurrences.find(function (r) { return r.id === recurrenceId; });
       if (!recurrence) return { changed: false, state: current, value: null, reason: 'not-found' };
-      if (recurrence.nextRunAt === null) {
-        recurrence.nextRunAt = KB.Core.Recurrence.computeNextRun(recurrence, now());
-      } else {
-        recurrence.nextRunAt = KB.Core.Recurrence.computeNextRun(recurrence, recurrence.nextRunAt);
-      }
+      recurrence.nextRunAt = KB.Core.Recurrence.computeNextRun(recurrence, recurrence.nextRunAt === null ? now() : recurrence.nextRunAt);
       recurrence.updatedAt = now();
       return { changed: true, state: next, value: recurrence };
     });
@@ -157,27 +168,17 @@
   function updateLens(lensId, patch) {
     return commit(function (current) {
       var next = JSON.parse(JSON.stringify(current));
-      var lens = next.lenses.find(function (l) { return l.id === lensId; });
-      if (!lens) return { changed: false, state: current, value: null, reason: 'not-found' };
-      var changed = false;
-      Object.keys(patch || {}).forEach(function (key) {
-        if (JSON.stringify(lens[key]) !== JSON.stringify(patch[key])) {
-          lens[key] = patch[key];
-          changed = true;
-        }
-      });
-      if (!changed) return { changed: false, state: current, value: null, reason: 'no-change' };
-      lens.updatedAt = now();
-      return { changed: true, state: next, value: lens };
+      var result = patchEntity(next.lenses, lensId, patch, 'not-found');
+      if (!result.changed) return { changed: false, state: current, value: null, reason: result.reason };
+      return { changed: true, state: next, value: result.entity };
     });
   }
 
   function deleteLens(lensId) {
     return commit(function (current) {
       var next = JSON.parse(JSON.stringify(current));
-      var index = next.lenses.findIndex(function (l) { return l.id === lensId; });
-      if (index === -1) return { changed: false, state: current, value: null, reason: 'not-found' };
-      next.lenses.splice(index, 1);
+      var result = removeEntity(next.lenses, lensId, 'not-found');
+      if (!result.changed) return { changed: false, state: current, value: null, reason: result.reason };
       return { changed: true, state: next, value: true };
     });
   }

@@ -41,9 +41,8 @@
     //      are comparable. A newer mirror that fails validation falls
     //      through to the primary instead of shadowing it;
     //   2. rotating backups, newest first;
-    //   3. the legacy localStorage payload (first-run migration — the mirror
-    //      key doubles as the legacy key, so this step only applies when the
-    //      savedAt marker is absent or the mirror failed validation);
+    //   3. the legacy localStorage payload (first-run migration from
+    //      pre-envelope builds — `kanban.board.v1`);
     //   4. the caller-supplied defaults.
     // A corrupt record is skipped, never fatal.
     //
@@ -129,11 +128,16 @@
         });
       }
 
+      // Newest-first by createdAt, never mutating the caller's array.
+      function sortNewestFirst(records) {
+        return (records || []).slice().sort(function (a, b) {
+          return (b.createdAt || 0) - (a.createdAt || 0);
+        });
+      }
+
       function pruneBackups() {
         return backend.getAll('backups').then(function (backups) {
-          var sorted = (backups || []).slice().sort(function (a, b) {
-            return (b.createdAt || 0) - (a.createdAt || 0);
-          });
+          var sorted = sortNewestFirst(backups);
           var excess = sorted.slice(maxBackups);
           return Promise.all(excess.map(function (record) {
             return backend.delete('backups', record.id);
@@ -166,36 +170,34 @@
           if (mirrorNewer) {
             var mirrorResult = validateWith(tryParse(mirror.payload), loadOpts.validate);
             if (mirrorResult.ok) {
-              return { state: mirrorResult.state, source: 'mirror', needsRepair: 'mirror' };
+              return { state: mirrorResult.state, source: 'mirror' };
             }
           }
           var primaryResult = validateWith(tryParse(primaryPayload), loadOpts.validate);
           if (primaryResult.ok) {
-            return { state: primaryResult.state, source: 'primary', needsRepair: null };
+            return { state: primaryResult.state, source: 'primary' };
           }
 
           // The primary is corrupt or missing — fall back to backups, then to
           // the legacy localStorage payload, then to defaults.
           return backend.getAll('backups').then(function (backups) {
-            var sorted = (backups || []).slice().sort(function (a, b) {
-              return (b.createdAt || 0) - (a.createdAt || 0);
-            });
+            var sorted = sortNewestFirst(backups);
             for (var i = 0; i < sorted.length; i++) {
               var parsed = tryParse(sorted[i].payload);
               var backupResult = validateWith(parsed, loadOpts.validate);
               if (backupResult.ok) {
-                return { state: backupResult.state, source: 'backup', backupId: sorted[i].id, needsRepair: 'backup' };
+                return { state: backupResult.state, source: 'backup', backupId: sorted[i].id };
               }
             }
             if (loadOpts.legacy !== undefined && loadOpts.legacy !== null) {
               var legacyParsed = tryParse(loadOpts.legacy);
               var legacyResult = validateWith(legacyParsed, loadOpts.validate);
               if (legacyResult.ok) {
-                return { state: legacyResult.state, source: 'legacy', needsRepair: 'legacy' };
+                return { state: legacyResult.state, source: 'legacy' };
               }
             }
             if (typeof loadOpts.defaults === 'function') {
-              return { state: loadOpts.defaults(), source: 'defaults', needsRepair: 'defaults' };
+              return { state: loadOpts.defaults(), source: 'defaults' };
             }
             return { state: null, source: 'none' };
           });
@@ -210,8 +212,10 @@
         // write lands. The boot-time mirror comparison (load) is only sound
         // if both timestamps measure the same moment: a mutation whose mirror
         // write happened but whose IDB write never landed must make the
-        // mirror look newer than the last LANDED write.
-        var savedAt = now();
+        // mirror look newer than the last LANDED write. The adapter may pass
+        // its own stamp (captured once, shared with the envelope) so the two
+        // Date.now() calls cannot land in different milliseconds.
+        var savedAt = saveOpts.savedAt !== undefined && saveOpts.savedAt !== null ? saveOpts.savedAt : now();
         return enqueue(function () {
           return ensureReady().then(function () {
             return backend.put('state', PRIMARY_KEY, payload);
@@ -245,11 +249,9 @@
         return ensureReady().then(function () {
           return backend.getAll('backups');
         }).then(function (backups) {
-          return (backups || []).map(function (record) {
+          return sortNewestFirst((backups || []).map(function (record) {
             return { id: record.id, createdAt: record.createdAt, reason: record.reason };
-          }).sort(function (a, b) {
-            return (b.createdAt || 0) - (a.createdAt || 0);
-          });
+          }));
         });
       }
 

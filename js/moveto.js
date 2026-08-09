@@ -57,40 +57,31 @@
     });
   }
 
-  function moveLeft() {
+  function moveColumn(delta) {
     var columns = visibleColumns();
-    if (moveMode.columnIndex > 0) {
-      moveMode.columnIndex -= 1;
-      moveMode.columnEl = columns[moveMode.columnIndex];
-      moveMode.position = Math.min(moveMode.position, Math.max(0, moveMode.columnEl.querySelectorAll('.card').length - 1));
-    }
+    var next = moveMode.columnIndex + delta;
+    if (next < 0 || next >= columns.length) return;
+    moveMode.columnIndex = next;
+    moveMode.columnEl = columns[next];
+    moveMode.position = Math.min(moveMode.position, Math.max(0, moveMode.columnEl.querySelectorAll('.card').length - 1));
     updateHighlight();
     announce(moveTargetDescription(moveMode.columnEl, moveMode.position));
   }
 
-  function moveRight() {
-    var columns = visibleColumns();
-    if (moveMode.columnIndex < columns.length - 1) {
-      moveMode.columnIndex += 1;
-      moveMode.columnEl = columns[moveMode.columnIndex];
-      moveMode.position = Math.min(moveMode.position, Math.max(0, moveMode.columnEl.querySelectorAll('.card').length - 1));
-    }
-    updateHighlight();
-    announce(moveTargetDescription(moveMode.columnEl, moveMode.position));
-  }
-
-  function moveUp() {
-    moveMode.position = Math.max(0, moveMode.position - 1);
-    updateHighlight();
-    announce(moveTargetDescription(moveMode.columnEl, moveMode.position));
-  }
-
-  function moveDown() {
+  function movePosition(delta) {
     var maxPosition = Math.max(0, moveMode.columnEl.querySelectorAll('.card').length - 1);
-    moveMode.position = Math.min(maxPosition, moveMode.position + 1);
+    moveMode.position = Math.min(maxPosition, Math.max(0, moveMode.position + delta));
     updateHighlight();
     announce(moveTargetDescription(moveMode.columnEl, moveMode.position));
   }
+
+  function moveLeft() { moveColumn(-1); }
+
+  function moveRight() { moveColumn(1); }
+
+  function moveUp() { movePosition(-1); }
+
+  function moveDown() { movePosition(1); }
 
   function cancelMoveMode() {
     clearHighlight();

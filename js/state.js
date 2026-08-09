@@ -220,12 +220,6 @@
     return board.labels.find(function (l) { return l.id === id; }) || null;
   }
 
-  function anyCardUsesLabel(labelId) {
-    var board = activeBoard();
-    if (!board) return false;
-    return KB.Core.Operations.labelInUse(board, labelId);
-  }
-
   function addColumn(title, isDone, skipHistory, role) {
     if (!skipHistory) pushHistory();
     var column = freshColumn({ title: title, isDone: Boolean(isDone), role: role || (isDone ? 'done' : 'queue') });
@@ -290,7 +284,9 @@
   }
 
   function labelInUse(labelId) {
-    return anyCardUsesLabel(labelId);
+    var board = activeBoard();
+    if (!board) return false;
+    return KB.Core.Operations.labelInUse(board, labelId);
   }
 
   function mapLabelsAcrossBoards(sourceBoardId, card, targetBoard) {

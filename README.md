@@ -286,10 +286,10 @@ Your current workspace is remembered across reloads.
   (built-ins are code-defined), and deleting a board trims lens scopes safely.
 
 ### Backup & recovery
-- Application data lives in **IndexedDB** (primary). Every save also writes a
-  synchronous localStorage mirror (`kanban.board.v1`) so a tab that closes
-  mid-write can never lose work — on the next boot the newer mirror wins and
-  repairs the store.
+- Application data lives in **IndexedDB** (primary). Every save also writes an
+  atomic localStorage crash-mirror envelope (`kanban.mirror.v1`) so a tab that
+  closes mid-write can never lose work — on the next boot the newer valid
+  mirror wins and repairs the store.
 - **Automatic rotating backups**: up to 10 snapshots are kept in IndexedDB (at
   most one per minute), plus an explicit backup before migrations and imports.
   Load order on boot: primary → mirror (if newer) → newest valid backup →
@@ -357,9 +357,12 @@ that use them.
 | Core | `js/core/commands.js` | Command registry: register/search/filter/shortcut lookup/dispatch with contexts and availability. Powers the palette, shortcuts, menus and sheets. |
 | Browser | `index.html` | Page skeleton: workspace nav, filter bar, board + pager, workspace sections, archive panel, mobile tabs, modal/palette/sheet/toast/live-region roots. |
 | Browser | `css/styles.css` | All styling. Theming via CSS custom properties; components (columns, cards, chips, popups, modal, palette, sheets, toasts, workspaces, mobile pager/tabs, bulk toolbar) are styled there. |
-| Browser | `js/state.js` | State service: owns the live state, persistence routing (IndexedDB + mirror via `KB.Storage`), undo/redo integration, the sync observer emission, and the `KB.State` API (board-aware card ops, recurrence/inbox/lens/bulk wrappers). |
-| Browser | `js/storage.js` | IndexedDB adapter for the storage engine plus the synchronous localStorage crash mirror and the boot-time recovery wiring. |
-| Browser | `js/sync.js` | Mutation observer (`KB.Sync.subscribe`): the seam a future optional CRDT sync layer hooks into. No-op today. |
+| Browser | `js/state.js` | State service: owns the live state, persistence routing (IndexedDB + mirror via `KB.Storage`), undo/redo integration, the sync observer emission, and the `KB.State` API surface. |
+| Browser | `js/state-cards.js` | Card-focused `KB.State` operations (create/edit/archive, checklist, labels, assignee, due, flow, dependencies). |
+| Browser | `js/state-features.js` | Feature-state `KB.State` operations (boards, columns, labels, templates, recurrences, inbox, lenses, bulk). |
+| Browser | `js/storage.js` | IndexedDB adapter for the storage engine plus the atomic localStorage crash-mirror envelope and the boot-time recovery wiring. |
+| Browser | `js/sync.js` | Mutation observer (`KB.Sync.subscribe`): the seam a future optional CRDT sync layer hooks into. No-op today. Contract in `docs/SYNC.md`. |
+| Browser | `js/multitab.js` | Cross-tab guard: a localStorage edit lock makes a second tab read-only with a takeover banner (prevents last-writer-wins loss). |
 | Browser | `js/commands.js` | The app's command definitions (single source of truth for the palette, shortcuts, app menu, action sheets). |
 | Browser | `js/palette.js` | Ctrl/Cmd+K command palette overlay: filter, keyboard navigation, combobox/listbox semantics, focus trap. |
 | Browser | `js/actionsheet.js` | Bottom action sheets for cards, columns and the app menu. |
@@ -373,6 +376,9 @@ that use them.
 | Browser | `js/workspaces.js` | Workspace switching, My Desk / Inbox / Review rendering, lens bar, UI preference persistence. |
 | Browser | `js/render.js` | Rendering: board → columns → cards (priority/size/flow/dependency/recurrence badges, SLE-aware aging), filter bar, quick-add rows, archive panel, empty states. |
 | Browser | `js/app.js` | Bootstrapping and wiring: header actions, workspace events, policy-gated moves, recurrence triggers (boot/focus/visibility/timer), quick-add, toasts, shortcuts. |
+| Browser | `sw.js` | Service worker: offline precache, network-first app shell, consent-gated update flow, `kanban-`-scoped cache cleanup. |
+| Browser | `manifest.webmanifest` | Installable-PWA manifest (name, theme, icons, `start_url`). |
+| Browser | `serve.js` | Zero-dependency static file server for local development and PWA testing (`npm run serve`). |
 
 `js/core/` contains deterministic application logic shared by the browser
 and the Node test suite. Core files never touch `window`, `document`,
@@ -382,8 +388,9 @@ receive an ID factory — this is what makes the unit tests deterministic.
 
 ### Data model
 
-State **version 3** (persisted to IndexedDB; the legacy key `kanban.board.v1`
-is kept as the synchronous crash-recovery mirror):
+State **version 3** (persisted to IndexedDB; an atomic localStorage envelope
+`kanban.mirror.v1` holds the crash-recovery copy, and the legacy key
+`kanban.board.v1` feeds the first-run migration from pre-envelope builds):
 
 ```js
 {
@@ -421,13 +428,13 @@ Cards carry: `priority`, `size`, `startedAt`, `completedAt`,
 `transitions` log.
 
 Everything is saved to **IndexedDB** (`kanban-store` database) after every
-mutation through a serialized write queue, with a synchronous localStorage
-mirror under `kanban.board.v1` for crash recovery and up to 10 rotating
-automatic backups. Data saved by older versions (v1, v2) is migrated
-automatically on first load; corrupt or malformed payloads are repaired rather
-than crashing; the boot recovery chain is primary → newer mirror → newest valid
-backup → legacy payload → fresh default board. Derived data (review queues,
-lens results, ready state) is never persisted.
+mutation through a serialized write queue, with an atomic localStorage
+crash-mirror envelope (`kanban.mirror.v1`) and up to 10 rotating automatic
+backups. Data saved by older versions (v1, v2) is migrated automatically on
+first load; corrupt or malformed payloads are repaired rather than crashing;
+the boot recovery chain is primary → newer valid mirror → newest valid backup →
+legacy payload → fresh default board. Derived data (review queues, lens
+results, ready state) is never persisted.
 
 ## Testing
 

@@ -20,7 +20,7 @@ An extremely high-end frontend showcase and stress test: the UI itself is the st
 
 ## Operating Context
 
-Opened as a local file or served statically; works offline and without a build step today. Data persists per-browser in localStorage under `kanban.board.v1`. Mouse and keyboard are both used; drag-and-drop is mouse-driven. The user evaluates it both as a daily task tool and as a reference-quality frontend artifact, including via the e2e/headless test workflow already in place.
+Opened as a local file or served statically; works offline and without a build step today. Data persists per-browser in IndexedDB, with an atomic localStorage crash-mirror envelope (`kanban.mirror.v1`) and rotating automatic backups. Mouse and keyboard are both used; drag-and-drop is mouse-driven. The user evaluates it both as a daily task tool and as a reference-quality frontend artifact, including via the e2e/headless test workflow already in place.
 
 ## Capabilities and Constraints
 

@@ -119,6 +119,10 @@
     var snapNowBtn = h('button', { type: 'button', class: 'btn sm' });
     snapNowBtn.textContent = 'Snapshot now';
     snapNowBtn.addEventListener('click', function () {
+      if (KB.MultiTab && KB.MultiTab.readOnly()) {
+        KB.UI.toast('Read-only — Kanban is open in another tab', 'error');
+        return;
+      }
       if (!KB.Storage.status().idbAvailable) {
         KB.UI.toast('Storage unavailable — snapshot not saved', 'error');
         return;
@@ -160,6 +164,10 @@
           var restoreBtn = h('button', { type: 'button', class: 'btn ghost sm' });
           restoreBtn.textContent = 'Restore';
           restoreBtn.addEventListener('click', function () {
+            if (KB.MultiTab && KB.MultiTab.readOnly()) {
+              KB.UI.toast('Read-only — Kanban is open in another tab', 'error');
+              return;
+            }
             if (!KB.Storage.status().idbAvailable) {
               KB.UI.toast('Storage unavailable — restore not possible', 'error');
               return;

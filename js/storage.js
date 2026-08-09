@@ -125,9 +125,16 @@
     }
   }
 
-  function mirror(state) {
+  function mirror(state, savedAt) {
+    // A read-only tab's in-memory state is stale by design; its mirror write
+    // would pair a stale payload with a fresh savedAt and could win boot
+    // recovery over the owner's real data.
+    if (KB.MultiTab && KB.MultiTab.readOnly()) return;
     try {
-      localStorage.setItem(MIRROR_KEY, JSON.stringify({ savedAt: Date.now(), payload: state }));
+      localStorage.setItem(MIRROR_KEY, JSON.stringify({
+        savedAt: savedAt === undefined ? Date.now() : savedAt,
+        payload: state
+      }));
     } catch (err) {
       // Quota exceeded or storage disabled — the mirror is best-effort.
     }
@@ -145,10 +152,10 @@
     loadResult = result;
     if (result.degraded) idbOk = false;
     // Repair the primary store so IDB is authoritative again as soon as
-    // possible — but never during a degraded boot: IndexedDB just failed,
-    // so the repair would be one wasted retry (and the failure path is
-    // already caught).
-    if (!result.degraded && (result.source === 'mirror' || result.source === 'legacy' || result.source === 'backup')) {
+    // possible — but never during a degraded boot (IndexedDB just failed,
+    // so the repair would be one wasted retry), and never from a read-only
+    // tab (its recovered state must not race the owner's writes).
+    if (!result.degraded && !(KB.MultiTab && KB.MultiTab.readOnly()) && (result.source === 'mirror' || result.source === 'legacy' || result.source === 'backup')) {
       // Migrations from legacy first snapshot the incoming payload into the
       // rotating backups so the original data is never overwritten
       // irrecoverably.
@@ -161,10 +168,26 @@
     return result;
   }
 
+  // A backend that is always empty: the degraded boot reuses the engine's
+  // recovery cascade (valid mirror -> valid legacy -> defaults) without
+  // IndexedDB, so the two recovery chains can never drift apart.
+  function emptyBackend() {
+    return {
+      open: function () { return Promise.resolve(); },
+      get: function () { return Promise.resolve(undefined); },
+      put: function () { return Promise.resolve(); },
+      delete: function () { return Promise.resolve(); },
+      getAll: function () { return Promise.resolve([]); },
+      clear: function () { return Promise.resolve(); },
+      close: function () { return Promise.resolve(); }
+    };
+  }
+
   function load(opts) {
     var mirrorData = readMirror();
+    var legacy = opts.legacy !== undefined ? opts.legacy : readLegacy();
     return engine.load({
-      legacy: opts.legacy !== undefined ? opts.legacy : readLegacy(),
+      legacy: legacy,
       validate: opts.validate,
       defaults: opts.defaults,
       mirror: {
@@ -178,60 +201,57 @@
       // below — afterLoad must not run twice.
       idbOk = false;
       console.warn('IndexedDB unavailable, using localStorage fallback', err);
-      // The current crash-mirror envelope is the freshest copy there is: it
-      // must win over a stale legacy payload (or defaults) when IDB cannot
-      // even open. Valid mirror -> valid legacy -> defaults.
-      if (mirrorData.payload !== null && mirrorData.payload !== undefined) {
-        try {
-          var mirrorParsed = typeof mirrorData.payload === 'string' ? JSON.parse(mirrorData.payload) : mirrorData.payload;
-          var mirrorResult = opts.validate(mirrorParsed);
-          if (mirrorResult && mirrorResult.ok) {
-            return { state: mirrorResult.state, source: 'mirror', degraded: true };
-          }
-        } catch (parseErr) {}
-      }
-      var payload = opts.legacy !== undefined ? opts.legacy : readLegacy();
-      if (payload !== null && typeof payload === 'string') {
-        try {
-          var parsed = JSON.parse(payload);
-          var result = opts.validate(parsed);
-          if (result && result.ok) {
-            return { state: result.state, source: 'legacy', degraded: true };
-          }
-        } catch (parseErr) {}
-      }
-      return { state: opts.defaults(), source: 'defaults', degraded: true };
+      return KB.Core.Store.createEngine({ backend: emptyBackend() }).load({
+        legacy: legacy,
+        validate: opts.validate,
+        defaults: opts.defaults,
+        mirror: {
+          payload: mirrorData.payload,
+          savedAt: mirrorData.savedAt
+        }
+      }).then(function (result) {
+        return { state: result.state, source: result.source, degraded: true };
+      });
     }).then(afterLoad);
   }
 
+  // Mid-session IndexedDB failure: flip the flag once, warn, and let the
+  // caller fall back to its localStorage/memory path.
+  function degrade(action, err) {
+    if (idbOk) {
+      idbOk = false;
+      console.warn('IndexedDB ' + action + ' failed — continuing with the localStorage mirror', err);
+    }
+  }
+
   function save(state, source) {
-    mirror(state);
     if (!idbOk) return Promise.resolve(null);
-    var write = engine.save(state, { reason: source || 'change', backup: 'auto' });
+    // One timestamp per save, shared by the crash-mirror envelope and the
+    // engine's meta stamp: two separate Date.now() calls can land in
+    // different milliseconds, and an equal-stamp comparison at boot could
+    // then prefer a stale primary over a mirror holding the newer state.
+    var stamp = Date.now();
+    mirror(state, stamp);
+    var write = engine.save(state, { reason: source || 'change', backup: 'auto', savedAt: stamp });
     // Every app save is fire-and-forget; surface IDB write failures by
     // degrading to the localStorage-only session instead of leaving an
     // unhandled rejection on every mutation. The mirror above already holds
     // this exact state, so the degrade is safe.
     write.catch(function (err) {
-      if (idbOk) {
-        idbOk = false;
-        console.warn('IndexedDB write failed — continuing with the localStorage mirror', err);
-      }
+      degrade('write', err);
     });
     return write;
   }
 
   function backup(state, reason) {
-    mirror(state);
+    mirror(state); // no-op when read-only
+    if (KB.MultiTab && KB.MultiTab.readOnly()) return Promise.resolve(null);
     if (!idbOk) return Promise.resolve(null);
     return engine.backup(state, reason || 'manual').catch(function (err) {
       // A mid-session IndexedDB failure must not surface as an unhandled
       // rejection from a fire-and-forget snapshot call — degrade like save()
       // does; the mirror above already holds the state.
-      if (idbOk) {
-        idbOk = false;
-        console.warn('IndexedDB backup failed — continuing with the localStorage mirror', err);
-      }
+      degrade('backup', err);
       return null;
     });
   }
@@ -239,10 +259,7 @@
   function listBackups() {
     if (!idbOk) return Promise.resolve([]);
     return engine.listBackups().catch(function (err) {
-      if (idbOk) {
-        idbOk = false;
-        console.warn('IndexedDB read failed — continuing with the localStorage mirror', err);
-      }
+      degrade('read', err);
       return [];
     });
   }
@@ -250,15 +267,14 @@
   function restore(backupId) {
     if (!idbOk) return Promise.resolve(null);
     return engine.restore(backupId).catch(function (err) {
-      if (idbOk) {
-        idbOk = false;
-        console.warn('IndexedDB read failed — continuing with the localStorage mirror', err);
-      }
+      degrade('read', err);
       return null;
     });
   }
 
   function clearAll() {
+    // A read-only tab must not be able to wipe shared storage.
+    if (KB.MultiTab && KB.MultiTab.readOnly()) return Promise.resolve();
     loadResult = null;
     // A factory reset must not resurrect the previous session's crash mirror
     // (or its pre-upgrade legacy payload) on the next boot.

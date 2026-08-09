@@ -17,7 +17,10 @@
           activeLensId = parsed.lens;
         }
       }
-    } catch (err) {}
+    } catch (err) {
+      // Corrupt prefs are indistinguishable from 'no prefs' — start from the
+      // defaults rather than failing the boot.
+    }
   }
 
   function savePrefs() {
@@ -35,13 +38,12 @@
   }
 
   function set(name) {
-    if (!isValidWorkspace(name) || name === workspace) {
-      if (name === workspace) {
-        KB.App.refresh();
-      }
+    if (!isValidWorkspace(name)) return;
+    if (name === workspace) {
+      KB.App.refresh();
       return;
     }
-    if (workspace === 'board' && KB.Select) KB.Select.clearAndRender();
+    if (workspace === 'board' && KB.Select) KB.Select.clear();
     workspace = name;
     savePrefs();
     KB.App.refresh();
@@ -49,13 +51,6 @@
 
   function openCard(boardId, columnId, card) {
     KB.Modal.cardEditor(columnId, card, null, boardId);
-  }
-
-  function fmtShortDate(iso) {
-    var parts = String(iso).split('-');
-    if (parts.length !== 3) return iso;
-    var date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }).toUpperCase();
   }
 
   function compactCard(boardId, column, card) {
@@ -76,7 +71,7 @@
     }
     if (card.due) {
       var due = h('span', { class: 'chip chip-static due' });
-      due.textContent = fmtShortDate(card.due);
+      due.textContent = KB.Dom.fmtShortDate(card.due);
       meta.appendChild(due);
     }
     var blockers = (card.dependencies && card.dependencies.blockers) || [];

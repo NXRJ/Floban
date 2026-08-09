@@ -93,6 +93,11 @@
       }
     }
 
+    function completionDelayDays(recurrence) {
+      var delay = recurrence.schedule.delayAfterCompletionDays;
+      return typeof delay === 'number' && delay > 0 ? delay : 1;
+    }
+
     function createOccurrence(state, recurrence, deps) {
       var d = resolveDeps(deps);
       if (typeof recurrence.remainingOccurrences === 'number' && recurrence.remainingOccurrences <= 0) {
@@ -127,8 +132,7 @@
       recurrence.policyBlocked = false;
       if (typeof created.completedAt === 'number') {
         if (recurrence.mode === 'after-completion') {
-          var delay = recurrence.schedule.delayAfterCompletionDays;
-          var delayDays = typeof delay === 'number' && delay > 0 ? delay : 1;
+          var delayDays = completionDelayDays(recurrence);
           recurrence.lastCompletedAt = created.completedAt;
           recurrence.nextRunAt = startOfDay(created.completedAt) + delayDays * MS_PER_DAY;
           recurrence.lastRunAt = null;
@@ -150,36 +154,31 @@
       return { changed: true, state: state, value: created, reason: null };
     }
 
-    function activeCardIsOpen(state, recurrence) {
+    // The column role of a recurrence's active card, or null when the card
+    // is missing (archived/deleted).
+    function activeCardColumnRole(state, recurrence) {
       var ref = recurrence.activeCardRef;
-      if (!ref) return false;
+      if (!ref) return null;
       var board = state.boards.find(function (b) { return b.id === ref.boardId; });
-      if (!board) return false;
+      if (!board) return null;
       for (var i = 0; i < board.columns.length; i++) {
         var column = board.columns[i];
         for (var j = 0; j < column.cards.length; j++) {
           if (column.cards[j].id === ref.cardId) {
-            return column.role !== 'done';
+            return column.role;
           }
         }
       }
-      return false;
+      return null;
+    }
+
+    function activeCardIsOpen(state, recurrence) {
+      var role = activeCardColumnRole(state, recurrence);
+      return role !== null && role !== 'done';
     }
 
     function activeCardIsDone(state, recurrence) {
-      var ref = recurrence.activeCardRef;
-      if (!ref) return false;
-      var board = state.boards.find(function (b) { return b.id === ref.boardId; });
-      if (!board) return false;
-      for (var i = 0; i < board.columns.length; i++) {
-        var column = board.columns[i];
-        for (var j = 0; j < column.cards.length; j++) {
-          if (column.cards[j].id === ref.cardId) {
-            return column.role === 'done';
-          }
-        }
-      }
-      return false;
+      return activeCardColumnRole(state, recurrence) === 'done';
     }
 
     function occurrencesMissedSince(recurrence, now) {
@@ -325,8 +324,7 @@
       if (recurrence.mode === 'after-completion') {
         if (recurrence.nextRunAt === null || recurrence.nextRunAt <= completedAt) {
           recurrence.lastCompletedAt = completedAt;
-          var delay = recurrence.schedule.delayAfterCompletionDays;
-          var delayDays = typeof delay === 'number' && delay > 0 ? delay : 1;
+          var delayDays = completionDelayDays(recurrence);
           recurrence.nextRunAt = startOfDay(completedAt) + delayDays * MS_PER_DAY;
           recurrence.lastRunAt = null;
           changed = true;
@@ -386,9 +384,7 @@
         return { changed: false, state: state, reason: 'single-active' };
       }
       if (recurrence.mode === 'after-completion' && recurrence.lastCompletedAt !== null) {
-        var delay2 = recurrence.schedule.delayAfterCompletionDays;
-        var delayDays2 = typeof delay2 === 'number' && delay2 > 0 ? delay2 : 1;
-        if (recurrence.lastCompletedAt + delayDays2 * MS_PER_DAY > d.now()) {
+        if (recurrence.lastCompletedAt + completionDelayDays(recurrence) * MS_PER_DAY > d.now()) {
           return { changed: false, state: state, reason: 'too-early' };
         }
       }

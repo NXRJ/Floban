@@ -2061,6 +2061,18 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     return !m.payload.boards.some(b => b.columns.some(c => c.cards.some(x => x.title === 'Multi-tab probe')));
   });
   check('read-only tab cannot persist changes', multiTabNotPersisted === true);
+  // The backup dialog's write actions are gated too: a read-only tab must
+  // not push stale snapshots into the shared mirror or backup rotation.
+  await tab2.evaluate(() => { KB.Modal.backupModal(); });
+  await tab2.waitForFunction(() => document.querySelectorAll('.snapshot-row').length >= 1, { timeout: 5000 });
+  const backupsBefore = await tab2.evaluate(() => KB.Storage.listBackups().then(b => b.length));
+  const mirrorBefore = await page.evaluate(() => localStorage.getItem('kanban.mirror.v1'));
+  await tab2.evaluate(() => { document.querySelector('.snapshot-actions .btn').click(); });
+  await tab2.waitForFunction(() => [...document.querySelectorAll('.toast')].some(t => t.textContent.indexOf('Read-only') !== -1), { timeout: 3000 });
+  const backupsAfter = await tab2.evaluate(() => KB.Storage.listBackups().then(b => b.length));
+  const mirrorAfter = await page.evaluate(() => localStorage.getItem('kanban.mirror.v1'));
+  check('read-only tab cannot create snapshots', backupsAfter === backupsBefore && mirrorAfter === mirrorBefore);
+  await tab2.keyboard.press('Escape');
   // Takeover: the second tab claims the lock, reloads, and becomes the editor.
   await tab2.evaluate(() => { document.querySelector('.mt-takeover').click(); });
   await tab2.waitForFunction(() => document.documentElement.dataset.ready === '1' && KB.MultiTab.readOnly() === false, { timeout: 8000 });
@@ -2070,11 +2082,15 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     return window.KB && KB.MultiTab.readOnly() === true && !!document.querySelector('.multitab-banner');
   }, 6000, 'first tab demotes on takeover');
   check('first tab demotes on takeover', await page.evaluate(() => KB.MultiTab.readOnly() === true));
-  // Closing the new owner lets the first tab claim the lock again: the claim
-  // goes stale after ~3s, the tab self-promotes and reloads fresh.
+  // Closing the new owner lets the first tab claim the lock again. The stale
+  // window is 15s by design, so the test expires the lease deterministically
+  // instead of sleeping: remove the owner claim; the first tab's check loop
+  // promotes it and reloads fresh within ~1s.
   await tab2.close();
-  await sleep(3500);
-  await page.goto(URL, { waitUntil: 'load' });
+  await page.evaluate(() => localStorage.removeItem('kanban.owner.v1'));
+  await waitFor(() => {
+    return window.KB && KB.MultiTab.readOnly() === false && !document.querySelector('.multitab-banner');
+  }, 6000, 'first tab resumes editing');
   await waitBoard();
   check('first tab resumes editing after the owner closes', await page.evaluate(() => KB.MultiTab.readOnly() === false && !document.querySelector('.multitab-banner')));
 

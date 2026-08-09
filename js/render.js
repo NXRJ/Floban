@@ -52,13 +52,6 @@
     return KB.Core.Markdown.renderMarkdownLite(text);
   }
 
-  function fmtShortDate(iso) {
-    var parts = String(iso).split('-');
-    if (parts.length !== 3) return iso;
-    var date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }).toUpperCase();
-  }
-
   function dueChip(card, isDone) {
     if (!card.due) return null;
     var today = KB.Filters.todayISO();
@@ -70,8 +63,8 @@
       if (state === 'overdue') chip.classList.add('overdue');
       else if (state === 'soon') chip.classList.add('soon');
     }
-    chip.appendChild(document.createTextNode(fmtShortDate(card.due)));
-    chip.title = 'Due ' + fmtShortDate(card.due);
+    chip.appendChild(document.createTextNode(KB.Dom.fmtShortDate(card.due)));
+    chip.title = 'Due ' + KB.Dom.fmtShortDate(card.due);
     return chip;
   }
 
@@ -503,55 +496,36 @@
       datalist.appendChild(new Option(name, name));
     });
 
+    // Every filter select follows the same dance: save the current value,
+    // repopulate, restore it. options are [value, label] pairs; valueExpr
+    // lets a caller override what is considered the "current" value (the
+    // sort select falls back to the saved sort mode when empty).
+    function rebuildSelect(selectEl, options, valueExpr) {
+      var previous = valueExpr ? valueExpr() : selectEl.value;
+      selectEl.innerHTML = '';
+      options.forEach(function (pair) {
+        selectEl.appendChild(new Option(pair[1], pair[0]));
+      });
+      selectEl.value = previous;
+    }
+
     var select = KB.el('assignee-filter');
-    var previous = select.value;
-    select.innerHTML = '';
-    select.appendChild(new Option('All assignees', ''));
-    select.appendChild(new Option('Unassigned', KB.Filters.UNASSIGNED));
-    KB.State.assignees().forEach(function (name) {
-      select.appendChild(new Option(name, name));
-    });
-    select.value = previous;
+    rebuildSelect(select, [['', 'All assignees'], [KB.Filters.UNASSIGNED, 'Unassigned']].concat(KB.State.assignees().map(function (name) { return [name, name]; })));
 
     var due = KB.el('due-filter');
-    var prevDue = due.value;
-    due.innerHTML = '';
-    [['', 'Any due date'], ['overdue', 'Overdue'], ['today', 'Due today'], ['week', 'Due this week'], ['none', 'No due date']].forEach(function (pair) {
-      due.appendChild(new Option(pair[1], pair[0]));
-    });
-    due.value = prevDue;
+    rebuildSelect(due, [['', 'Any due date'], ['overdue', 'Overdue'], ['today', 'Due today'], ['week', 'Due this week'], ['none', 'No due date']]);
 
     var priority = KB.el('priority-filter');
-    var prevPriority = priority.value;
-    priority.innerHTML = '';
-    KB.Filters.PRIORITY_OPTIONS.forEach(function (pair) {
-      priority.appendChild(new Option(pair[1], pair[0]));
-    });
-    priority.value = prevPriority;
+    rebuildSelect(priority, KB.Filters.PRIORITY_OPTIONS);
 
     var size = KB.el('size-filter');
-    var prevSize = size.value;
-    size.innerHTML = '';
-    KB.Filters.SIZE_OPTIONS.forEach(function (pair) {
-      size.appendChild(new Option(pair[1], pair[0]));
-    });
-    size.value = prevSize;
+    rebuildSelect(size, KB.Filters.SIZE_OPTIONS);
 
     var flow = KB.el('flow-filter');
-    var prevFlow = flow.value;
-    flow.innerHTML = '';
-    [['', 'Any flow state'], ['blocked', 'Blocked'], ['waiting', 'Waiting'], ['paused', 'Paused']].forEach(function (pair) {
-      flow.appendChild(new Option(pair[1], pair[0]));
-    });
-    flow.value = prevFlow;
+    rebuildSelect(flow, [['', 'Any flow state'], ['blocked', 'Blocked'], ['waiting', 'Waiting'], ['paused', 'Paused']]);
 
     var sort = KB.el('sort-select');
-    var prevSort = sort.value || KB.Filters.sortModeValue();
-    sort.innerHTML = '';
-    KB.Filters.SORT_OPTIONS.forEach(function (option) {
-      sort.appendChild(new Option(option.label, option.value));
-    });
-    sort.value = prevSort;
+    rebuildSelect(sort, KB.Filters.SORT_OPTIONS.map(function (option) { return [option.value, option.label]; }), function () { return sort.value || KB.Filters.sortModeValue(); });
 
     KB.el('clear-filters').classList.toggle('show', KB.Filters.active(filters));
   }

@@ -140,26 +140,24 @@
         return null;
       }
 
+      function isAvailable(command, ctx) {
+        try {
+          return command.available(ctx || null) !== false;
+        } catch (err) {
+          return false;
+        }
+      }
+
       function availableIn(ctx) {
         return list().filter(function (command) {
-          try {
-            return command.available(ctx || null) !== false;
-          } catch (err) {
-            return false;
-          }
+          return isAvailable(command, ctx);
         });
       }
 
       function run(id, ctx) {
         var command = byId[id];
         if (!command) return { ok: false, reason: 'not-found' };
-        var canRun = true;
-        try {
-          canRun = command.available(ctx || null) !== false;
-        } catch (err) {
-          canRun = false;
-        }
-        if (!canRun) return { ok: false, reason: 'unavailable' };
+        if (!isAvailable(command, ctx)) return { ok: false, reason: 'unavailable' };
         try {
           command.run(ctx || null);
           return { ok: true };

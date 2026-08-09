@@ -7,7 +7,7 @@
 
   var registry = KB.Core.Commands.createRegistry();
   var C = {
-    register: function (command) { return registry.register(command); },
+    register: registry.register,
     unregister: registry.unregister,
     get: registry.get,
     all: registry.all,
@@ -551,7 +551,7 @@
   KB.Commands = C;
   KB.Commands.registerBoardSwitchCommands = registerBoardSwitchCommands;
   KB.Commands.isMobile = isMobile;
-  KB.Commands.helpModal = function () {
+  KB.Commands.showHelp = function () {
     var h = KB.Dom.h;
     var items = C.list().filter(function (command) {
       return command.shortcut;
@@ -581,7 +581,6 @@
     form.appendChild(actions);
     KB.Modal.open(form);
   };
-  KB.Commands.showHelp = KB.Commands.helpModal;
 
   // Dynamic board commands refresh once boards are loaded and whenever the
   // board list changes; app.js calls this after the initial state load.
