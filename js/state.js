@@ -129,6 +129,11 @@
   }
 
   function save(source) {
+    // A read-only tab (another tab holds the edit lock) must never persist:
+    // its in-memory state may be stale, and a full-state write would erase
+    // the owner's changes. Mutations still apply in memory; the banner tells
+    // the user nothing is saved until they take over.
+    if (KB.MultiTab && KB.MultiTab.readOnly()) return;
     KB.Storage.save(state, source || 'change');
     KB.Sync.emit({ source: source || 'change', at: now(), state: state });
   }

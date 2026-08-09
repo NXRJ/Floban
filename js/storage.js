@@ -144,11 +144,14 @@
   function afterLoad(result) {
     loadResult = result;
     if (result.degraded) idbOk = false;
-    if (result.source === 'mirror' || result.source === 'legacy' || result.source === 'backup') {
-      // The mirror/legacy/backup payload wins this boot: repair the primary
-      // store so IDB is authoritative again as soon as possible. Migrations
-      // from legacy first snapshot the incoming payload into the rotating
-      // backups so the original data is never overwritten irrecoverably.
+    // Repair the primary store so IDB is authoritative again as soon as
+    // possible — but never during a degraded boot: IndexedDB just failed,
+    // so the repair would be one wasted retry (and the failure path is
+    // already caught).
+    if (!result.degraded && (result.source === 'mirror' || result.source === 'legacy' || result.source === 'backup')) {
+      // Migrations from legacy first snapshot the incoming payload into the
+      // rotating backups so the original data is never overwritten
+      // irrecoverably.
       if (result.source === 'legacy' || result.source === 'mirror') {
         engine.backup(result.state, result.source === 'legacy' ? 'legacy-migrated' : 'mirror-recovered')
           .catch(function () { /* backup is best-effort; boot continues */ });
