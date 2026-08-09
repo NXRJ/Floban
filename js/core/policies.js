@@ -75,20 +75,26 @@
       return wipViolation(column, { atLimit: false });
     }
 
+    // Every policy answer has the same shape; blocking always mirrors
+    // requiresOverride.
+    function policyResult(allowed, requiresOverride, requiresConfirmation, needsReason, violations) {
+      return {
+        allowed: allowed,
+        requiresOverride: requiresOverride,
+        requiresConfirmation: requiresConfirmation,
+        blocking: requiresOverride,
+        needsReason: needsReason,
+        violations: violations
+      };
+    }
+
     function evaluateMovePolicy(state, cardRef, targetColumnRef, opts) {
       var options = opts || {};
       var sourceColumn = options.sourceColumn || null;
       var board = findBoard(state, cardRef.boardId);
       var target = findColumn(state, targetColumnRef.boardId, targetColumnRef.columnId);
       if (!board || !target) {
-        return {
-          allowed: false,
-          requiresOverride: false,
-          requiresConfirmation: false,
-          blocking: false,
-          needsReason: false,
-          violations: [{ code: 'column-not-found', message: 'Target column not found.' }]
-        };
+        return policyResult(false, false, false, false, [{ code: 'column-not-found', message: 'Target column not found.' }]);
       }
 
       var violations = [];
@@ -96,14 +102,7 @@
       var requiresConfirmation = false;
 
       if (sourceColumn && target && sourceColumn.id === target.id) {
-        return {
-          allowed: true,
-          requiresOverride: false,
-          requiresConfirmation: false,
-          blocking: false,
-          needsReason: false,
-          violations: []
-        };
+        return policyResult(true, false, false, false, []);
       }
 
       var wip = wipViolation(target, { pendingCount: options.pendingCount, wouldHold: true });
@@ -147,14 +146,7 @@
 
       var allowed = requiresOverride ? (confirmed && validReason) : true;
 
-      return {
-        allowed: allowed,
-        requiresOverride: requiresOverride,
-        requiresConfirmation: requiresConfirmation,
-        blocking: requiresOverride,
-        needsReason: needsReason,
-        violations: violations
-      };
+      return policyResult(allowed, requiresOverride, requiresConfirmation, needsReason, violations);
     }
 
     function canEnterColumn(state, cardRef, columnRef) {
@@ -169,20 +161,13 @@
         if (found) source = found.column;
       }
       if (!source) {
-        return { allowed: true, requiresOverride: false, requiresConfirmation: false, blocking: false, needsReason: false, violations: [] };
+        return policyResult(true, false, false, false, []);
       }
       var policy = source.policy || {};
       if (!Array.isArray(policy.exitCriteria) || policy.exitCriteria.length === 0) {
-        return { allowed: true, requiresOverride: false, requiresConfirmation: false, blocking: false, needsReason: false, violations: [] };
+        return policyResult(true, false, false, false, []);
       }
-      return {
-        allowed: false,
-        requiresOverride: true,
-        requiresConfirmation: true,
-        blocking: true,
-        needsReason: false,
-        violations: [{ code: 'exit-criteria', message: 'Exit criteria for "' + source.title + '" need confirming.' }]
-      };
+      return policyResult(false, true, true, false, [{ code: 'exit-criteria', message: 'Exit criteria for "' + source.title + '" need confirming.' }]);
     }
 
     function applyEntryDefaults(card, column) {

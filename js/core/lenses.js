@@ -192,10 +192,7 @@
     }
 
     function isoToday(now) {
-      var d = new Date(now);
-      var m = String(d.getMonth() + 1).padStart(2, '0');
-      var day = String(d.getDate()).padStart(2, '0');
-      return d.getFullYear() + '-' + m + '-' + day;
+      return isoDaysFrom(now, 0);
     }
 
     function isoDaysFrom(now, offset) {

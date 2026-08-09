@@ -142,24 +142,30 @@
       });
     }
 
+    // Iterate every card in a board — live columns first, then archive —
+    // calling fn(card, column); column is null for directly archived cards
+    // and the archive column entry for archived column cards.
+    function forEachCard(board, fn) {
+      board.columns.forEach(function (column) {
+        column.cards.forEach(function (card) { fn(card, column); });
+      });
+      (board.archive.cards || []).forEach(function (card) { fn(card, null); });
+      board.archive.columns.forEach(function (entry) {
+        (entry.cards || []).forEach(function (card) { fn(card, entry); });
+      });
+    }
+
     function getCardsBlockedBy(state, blockerRef) {
       var blocked = [];
       if (!validRef(blockerRef)) return blocked;
       state.boards.forEach(function (board) {
-        var scan = function (column, card) {
+        forEachCard(board, function (card, column) {
           var deps = card.dependencies;
           if (!deps || !Array.isArray(deps.blockers)) return;
           var has = deps.blockers.some(function (b) {
             return b && b.boardId === blockerRef.boardId && b.cardId === blockerRef.cardId;
           });
           if (has) blocked.push({ boardId: board.id, columnId: column ? column.id : null, cardId: card.id });
-        };
-        board.columns.forEach(function (column) {
-          column.cards.forEach(function (card) { scan(column, card); });
-        });
-        board.archive.cards.forEach(function (card) { scan(null, card); });
-        board.archive.columns.forEach(function (entry) {
-          entry.cards.forEach(function (card) { scan(entry, card); });
         });
       });
       return blocked;
@@ -285,7 +291,7 @@
         if (validRef(ref)) keys[ref.boardId + ':' + ref.cardId] = true;
       });
       next.boards.forEach(function (board) {
-        var scan = function (card) {
+        forEachCard(board, function (card) {
           if (!card || !card.dependencies || typeof card.dependencies !== 'object') return;
           card.dependencies.blockers = (card.dependencies.blockers || []).filter(function (b) {
             return !(b && keys[b.boardId + ':' + b.cardId]);
@@ -293,10 +299,7 @@
           card.dependencies.related = (card.dependencies.related || []).filter(function (r) {
             return !(r && keys[r.boardId + ':' + r.cardId]);
           });
-        };
-        board.columns.forEach(function (column) { (column.cards || []).forEach(scan); });
-        (board.archive.cards || []).forEach(scan);
-        (board.archive.columns || []).forEach(function (entry) { (entry.cards || []).forEach(scan); });
+        });
       });
       next.recurrences = (next.recurrences || []).map(function (rec) {
         if (rec.activeCardRef && keys[rec.activeCardRef.boardId + ':' + rec.activeCardRef.cardId]) {
@@ -331,17 +334,14 @@
       var next = cloneState(state);
       next.boards.forEach(function (board) {
         if (board.id === deletedBoardId) return;
-        var scan = function (card) {
+        forEachCard(board, function (card) {
           card.dependencies.blockers = (card.dependencies.blockers || []).filter(function (b) {
             return b.boardId !== deletedBoardId;
           });
           card.dependencies.related = (card.dependencies.related || []).filter(function (r) {
             return r.boardId !== deletedBoardId;
           });
-        };
-        board.columns.forEach(function (column) { column.cards.forEach(scan); });
-        board.archive.cards.forEach(scan);
-        board.archive.columns.forEach(function (entry) { entry.cards.forEach(scan); });
+        });
       });
       next.recurrences = (next.recurrences || []).map(function (rec) {
         if (rec.target && rec.target.boardId === deletedBoardId) {

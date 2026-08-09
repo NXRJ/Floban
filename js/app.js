@@ -346,6 +346,12 @@
     finish(added, added === 0, lines.join('\n'));
   }
 
+  function announceMove(toColumnId, toIndex) {
+    if (!KB.MoveTo.announce) return;
+    var target = KB.State.findColumn(toColumnId);
+    KB.MoveTo.announce('Moved to ' + (target ? target.title : '') + ', position ' + ((toIndex || 0) + 1) + '.');
+  }
+
   function requestMove(fromColumnId, cardId, toColumnId, toIndex, onDone) {
     var evaluation = KB.State.evaluateMove(fromColumnId, cardId, toColumnId);
     if (!evaluation) {
@@ -355,20 +361,14 @@
     if (evaluation.allowed && !evaluation.requiresConfirmation) {
       var moved = KB.State.moveCardChecked(fromColumnId, cardId, toColumnId, toIndex);
       afterCardMove(moved);
-      if (moved && moved.ok && KB.MoveTo.announce) {
-        var target = KB.State.findColumn(toColumnId);
-        KB.MoveTo.announce('Moved to ' + (target ? target.title : '') + ', position ' + ((toIndex || 0) + 1) + '.');
-      }
+      if (moved && moved.ok) announceMove(toColumnId, toIndex);
       if (onDone) onDone(moved);
       return;
     }
     KB.Modal.moveConfirmModal('Move requires confirmation', evaluation, '', function (reason) {
       var moved = KB.State.moveCardChecked(fromColumnId, cardId, toColumnId, toIndex, { confirmed: true, overrideReason: reason });
       afterCardMove(moved);
-      if (moved && moved.ok && KB.MoveTo.announce) {
-        var target = KB.State.findColumn(toColumnId);
-        KB.MoveTo.announce('Moved to ' + (target ? target.title : '') + ', position ' + ((toIndex || 0) + 1) + '.');
-      }
+      if (moved && moved.ok) announceMove(toColumnId, toIndex);
       if (onDone) onDone(moved);
     });
   }
@@ -801,17 +801,26 @@
       ];
     }
 
+    function appendBootLine(log, line, withCaret) {
+      var p = document.createElement('p');
+      var span = document.createElement('span');
+      span.className = 'c-' + line.c;
+      span.textContent = line.t;
+      p.appendChild(span);
+      if (withCaret) {
+        var caret = document.createElement('span');
+        caret.className = 'hs-caret';
+        p.appendChild(caret);
+      }
+      log.appendChild(p);
+    }
+
     function bootSequence() {
       var log = KB.el('hs-boot');
       var lines = bootLines();
       if (reduced) {
         lines.forEach(function (line) {
-          var p = document.createElement('p');
-          var span = document.createElement('span');
-          span.className = 'c-' + line.c;
-          span.textContent = line.t;
-          p.appendChild(span);
-          log.appendChild(p);
+          appendBootLine(log, line);
         });
         setTimeout(function () { overlay.classList.add('booted'); }, 120);
         return;
@@ -822,18 +831,7 @@
           setTimeout(function () { overlay.classList.add('booted'); }, 260);
           return;
         }
-        var line = lines[i];
-        var p = document.createElement('p');
-        var span = document.createElement('span');
-        span.className = 'c-' + line.c;
-        span.textContent = line.t;
-        p.appendChild(span);
-        if (i === lines.length - 1) {
-          var caret = document.createElement('span');
-          caret.className = 'hs-caret';
-          p.appendChild(caret);
-        }
-        log.appendChild(p);
+        appendBootLine(log, lines[i], i === lines.length - 1);
         i++;
         setTimeout(next, 210);
       }

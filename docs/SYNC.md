@@ -60,14 +60,17 @@ any id migration.
 - Transport (WebSocket, WebRTC, server, …) — a later experiment.
 - Conflict resolution policy beyond CRDT merge semantics — decide when sync is
   designed.
-- Multi-tab same-device editing — NOT supported. Each tab runs its own
-  serialized write queue, so two tabs editing the same board overwrite each
-  other: both load state A, tab 1 saves B, tab 2 saves C from stale A, and
-  the full-state write C replaces B (last-writer-wins data loss). Before
-  public release, add at least one of: detect other open tabs and warn;
-  make secondary tabs read-only; rebroadcast committed snapshots over
-  BroadcastChannel; or check revisions/conflicts before replacing the
-  primary state. A CRDT layer is not required to solve this.
+- Multi-tab same-device editing — protected, not synchronized. Each tab runs
+  its own serialized write queue, so simultaneous full-state writes would
+  overwrite each other (last-writer-wins data loss). `js/multitab.js` ships
+  the guard: the first tab to claim the localStorage edit lock is the editor;
+  later tabs run read-only with a takeover banner (their saves are dropped,
+  including backup/snapshot/import writes), and takeover or owner-departure
+  reloads the surviving tab from storage so it never saves a stale in-memory
+  state. Limitations: ownership is time-based (a dead owner's lock is retaken
+  after ~15s), and a broadcast-aware takeover settles within a beat — none of
+  this is conflict-free multi-writer sync. A future CRDT layer could lift
+  these limits without touching the guard's UX.
 
 ## Testing the seam today
 

@@ -132,6 +132,13 @@
     return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
+  function fmtShortDate(iso) {
+    var parts = String(iso).split('-');
+    if (parts.length !== 3) return iso;
+    var date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }).toUpperCase();
+  }
+
   function isoToday() {
     return KB.Core.Date.isoDate(new Date());
   }
@@ -199,7 +206,7 @@
   // clickable nor announced to screen readers. Overlay roots are excluded.
   function setPageInert(inert) {
     Array.prototype.forEach.call(document.body.children, function (el) {
-      if (el.id === 'palette-root' || el.id === 'sheet-root') return;
+      if (el.id === 'palette-root' || el.id === 'sheet-root' || el.id === 'modal-root') return;
       if (inert && !el.hasAttribute('inert')) {
         el.setAttribute('inert', '');
         el.setAttribute('aria-hidden', 'true');
@@ -220,6 +227,7 @@
     h: h,
     icon: icon,
     fmtDate: fmtDate,
+    fmtShortDate: fmtShortDate,
     inkOn: inkOn,
     paintChip: paintChip,
     uid: uid,

@@ -3,6 +3,7 @@
   var icon = KB.Dom.icon;
 
   var overlay = null;
+  var panel = null;
   var trigger = null;
   // Fired once by close() after teardown so a modal can react to being
   // dismissed through ANY path (Cancel button, Escape, backdrop click).
@@ -12,6 +13,11 @@
 
   function onKey(e) {
     if (e.key === 'Escape') close();
+    else if (e.key === 'Tab') {
+      // trapKey only intercepts at the wrap boundaries; mid-form Tab keeps
+      // the browser's default movement.
+      KB.Dom.trapKey(e, panel);
+    }
   }
 
   function open(content, opener, onClose) {
@@ -20,10 +26,13 @@
     trigger = opener || null;
     closeHook = onClose || null;
     overlay = h('div', { class: 'modal-backdrop' });
-    var panel = h('div', { class: 'modal-panel', role: 'dialog', 'aria-modal': 'true' });
+    panel = h('div', { class: 'modal-panel', role: 'dialog', 'aria-modal': 'true' });
     panel.appendChild(content);
     overlay.appendChild(panel);
     KB.el('modal-root').appendChild(overlay);
+    // Same containment the palette and action sheets enforce: the page
+    // behind an aria-modal dialog must be inert and Tab must not escape it.
+    KB.Dom.setPageInert(true);
     overlay.addEventListener('mousedown', function (e) {
       if (e.target === overlay) close();
     });
@@ -36,7 +45,9 @@
     if (!overlay) return;
     overlay.remove();
     overlay = null;
+    panel = null;
     document.removeEventListener('keydown', onKey);
+    KB.Dom.setPageInert(false);
     var hook = closeHook;
     closeHook = null;
     if (trigger) trigger.focus();

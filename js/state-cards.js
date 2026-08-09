@@ -74,20 +74,51 @@
     return { board: board, column: column, card: card };
   }
 
+  // Board/column/card resolution for card ops that need the card's INDEX
+  // (archive, duplicate): prefers the explicit boardId when it actually
+  // holds the column, otherwise scans every board. Returns
+  // { board, column, index } or { error: 'column-not-found' | 'card-not-found' }.
+  function locateColumnCard(current, columnId, cardId, boardId) {
+    var board = null;
+    if (boardId) {
+      var candidate = current.boards.find(function (b) { return b.id === boardId; });
+      if (candidate && candidate.columns.some(function (c) { return c.id === columnId; })) board = candidate;
+    }
+    if (!board) {
+      for (var i = 0; i < current.boards.length; i++) {
+        if (current.boards[i].columns.some(function (c) { return c.id === columnId; })) {
+          board = current.boards[i];
+          break;
+        }
+      }
+    }
+    if (!board) return { error: 'column-not-found' };
+    var column = board.columns.find(function (c) { return c.id === columnId; });
+    var index = column ? column.cards.findIndex(function (c) { return c.id === cardId; }) : -1;
+    if (index === -1) return { error: 'card-not-found' };
+    return { board: board, column: column, index: index };
+  }
+
+  // Deep-clone the state and reach the located card inside the clone.
+  function cloneLocated(current, located) {
+    var next = JSON.parse(JSON.stringify(current));
+    var nextBoard = next.boards.find(function (b) { return b.id === located.board.id; });
+    var nextColumn = nextBoard.columns.find(function (c) { return c.id === located.column.id; });
+    var nextCard = nextColumn.cards.find(function (c) { return c.id === located.card.id; });
+    return { next: next, nextBoard: nextBoard, nextColumn: nextColumn, nextCard: nextCard };
+  }
+
   function setFlowState(columnId, cardId, nextState, reason, boardId) {
     return commit(function (current) {
       var located = locateCard(current, columnId, cardId, boardId);
       if (!located) return { changed: false, state: current, value: null, reason: 'card-not-found' };
       var result = KB.Core.Lifecycle.setFlowState(located.card, nextState, reason || '', now());
       if (!result.changed) return { changed: false, state: current, value: null, reason: result.reason };
-      var next = JSON.parse(JSON.stringify(current));
-      var nextBoard = next.boards.find(function (b) { return b.id === located.board.id; });
-      var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
-      var nextCard = nextColumn.cards.find(function (c) { return c.id === cardId; });
+      var cloned = cloneLocated(current, located);
       var updated = result.card;
-      nextCard.flow = updated.flow;
-      nextCard.updatedAt = updated.updatedAt;
-      return { changed: true, state: next, value: nextCard.flow };
+      cloned.nextCard.flow = updated.flow;
+      cloned.nextCard.updatedAt = updated.updatedAt;
+      return { changed: true, state: cloned.next, value: cloned.nextCard.flow };
     });
   }
 
@@ -95,10 +126,7 @@
     return commit(function (current) {
       var located = locateCard(current, columnId, cardId, boardId);
       if (!located) return { changed: false, state: current, value: null, reason: 'card-not-found' };
-      var next = JSON.parse(JSON.stringify(current));
-      var nextBoard = next.boards.find(function (b) { return b.id === located.board.id; });
-      var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
-      var nextCard = nextColumn.cards.find(function (c) { return c.id === cardId; });
+      var cloned = cloneLocated(current, located);
       var changed = false;
       var flowResult = null;
       if (flowState) {
@@ -107,20 +135,23 @@
         if (flowState !== prevState || (flowState !== 'normal' && flowReason !== prevReason)) {
           flowResult = KB.Core.Lifecycle.setFlowState(located.card, flowState, flowReason || '', now());
           if (flowResult.changed) {
-            nextCard.flow = flowResult.card.flow;
+            cloned.nextCard.flow = flowResult.card.flow;
             changed = true;
           }
         }
       }
+      // Same prototype-pollution hygiene as updateCard: patch keys must not
+      // touch __proto__/constructor/prototype.
       Object.keys(patch || {}).forEach(function (key) {
-        if (nextCard[key] !== patch[key]) {
-          nextCard[key] = patch[key];
+        if (key === '__proto__' || key === 'constructor' || key === 'prototype') return;
+        if (cloned.nextCard[key] !== patch[key]) {
+          cloned.nextCard[key] = patch[key];
           changed = true;
         }
       });
       if (!changed) return { changed: false, state: current, value: null, reason: 'no-change' };
-      nextCard.updatedAt = now();
-      return { changed: true, state: next, value: nextCard };
+      cloned.nextCard.updatedAt = now();
+      return { changed: true, state: cloned.next, value: cloned.nextCard };
     });
   }
 
@@ -273,29 +304,14 @@
 
   function archiveCard(columnId, cardId, boardId) {
     return commit(function (current) {
-      var board = null;
-      if (boardId) {
-        var candidate = current.boards.find(function (b) { return b.id === boardId; });
-        if (candidate && candidate.columns.some(function (c) { return c.id === columnId; })) board = candidate;
-      }
-      if (!board) {
-        for (var i = 0; i < current.boards.length; i++) {
-          if (current.boards[i].columns.some(function (c) { return c.id === columnId; })) {
-            board = current.boards[i];
-            break;
-          }
-        }
-      }
-      if (!board) return { changed: false, state: current, value: null, reason: 'column-not-found' };
-      var column = board.columns.find(function (c) { return c.id === columnId; });
-      var index = column.cards.findIndex(function (c) { return c.id === cardId; });
-      if (index === -1) return { changed: false, state: current, value: null, reason: 'card-not-found' };
+      var located = locateColumnCard(current, columnId, cardId, boardId);
+      if (located.error) return { changed: false, state: current, value: null, reason: located.error };
       var next = JSON.parse(JSON.stringify(current));
-      var nextBoard = next.boards.find(function (b) { return b.id === board.id; });
+      var nextBoard = next.boards.find(function (b) { return b.id === located.board.id; });
       var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
-      var nextCard = nextColumn.cards.splice(index, 1)[0];
+      var nextCard = nextColumn.cards.splice(located.index, 1)[0];
       nextCard.archivedAt = now();
-      nextCard.fromColumn = column.title;
+      nextCard.fromColumn = located.column.title;
       nextBoard.archive.cards.push(nextCard);
       return { changed: true, state: next, value: nextCard };
     });
@@ -303,27 +319,12 @@
 
   function duplicateCard(columnId, cardId, boardId) {
     return commit(function (current) {
-      var board = null;
-      if (boardId) {
-        var candidate = current.boards.find(function (b) { return b.id === boardId; });
-        if (candidate && candidate.columns.some(function (c) { return c.id === columnId; })) board = candidate;
-      }
-      if (!board) {
-        for (var i = 0; i < current.boards.length; i++) {
-          if (current.boards[i].columns.some(function (c) { return c.id === columnId; })) {
-            board = current.boards[i];
-            break;
-          }
-        }
-      }
-      if (!board) return { changed: false, state: current, value: null, reason: 'column-not-found' };
-      var column = board.columns.find(function (c) { return c.id === columnId; });
-      var index = column.cards.findIndex(function (c) { return c.id === cardId; });
-      if (index === -1) return { changed: false, state: current, value: null, reason: 'card-not-found' };
+      var located = locateColumnCard(current, columnId, cardId, boardId);
+      if (located.error) return { changed: false, state: current, value: null, reason: located.error };
       var next = JSON.parse(JSON.stringify(current));
-      var nextBoard = next.boards.find(function (b) { return b.id === board.id; });
+      var nextBoard = next.boards.find(function (b) { return b.id === located.board.id; });
       var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
-      var card = nextColumn.cards[index];
+      var card = nextColumn.cards[located.index];
       var copy = KB.Core.Model.createCard(columnId, Object.assign({}, card, {
         id: uid(),
         title: 'Copy of ' + card.title,
@@ -343,7 +344,7 @@
         recurrenceId: null,
         transitions: []
       }), deps());
-      nextColumn.cards.splice(index + 1, 0, copy);
+      nextColumn.cards.splice(located.index + 1, 0, copy);
       return { changed: true, state: next, value: copy };
     });
   }

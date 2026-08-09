@@ -365,8 +365,8 @@
           density: pickIn(['comfortable', 'compact'], displaySource.density, 'comfortable'),
           groupBy: pickIn(['board', 'column', 'priority', 'assignee', 'none'], displaySource.groupBy, 'board')
         },
-        createdAt: toNumberOrNull(lens.createdAt) === null ? now : toNumberOrNull(lens.createdAt),
-        updatedAt: toNumberOrNull(lens.updatedAt) === null ? now : toNumberOrNull(lens.updatedAt)
+        createdAt: orNow(lens.createdAt, now),
+        updatedAt: orNow(lens.updatedAt, now)
       };
     }
 
@@ -417,8 +417,8 @@
         needsAttention: Boolean(recurrence.needsAttention),
         policyBlocked: Boolean(recurrence.policyBlocked),
         pausedReason: typeof recurrence.pausedReason === 'string' ? recurrence.pausedReason : '',
-        createdAt: toNumberOrNull(recurrence.createdAt) === null ? now : toNumberOrNull(recurrence.createdAt),
-        updatedAt: toNumberOrNull(recurrence.updatedAt) === null ? now : toNumberOrNull(recurrence.updatedAt)
+        createdAt: orNow(recurrence.createdAt, now),
+        updatedAt: orNow(recurrence.updatedAt, now)
       };
     }
 
@@ -445,14 +445,25 @@
       return index;
     }
 
+    // Timestamps default to "now" when missing or malformed.
+    function orNow(value, now) {
+      var n = toNumberOrNull(value);
+      return n === null ? now : n;
+    }
+
+    // Every card in a board: live columns, then archive cards and entries.
+    function boardCards(board) {
+      var allCards = [];
+      board.columns.forEach(function (c) { allCards.push.apply(allCards, c.cards); });
+      allCards.push.apply(allCards, board.archive.cards);
+      board.archive.columns.forEach(function (entry) { allCards.push.apply(allCards, entry.cards); });
+      return allCards;
+    }
+
     function repairDependencies(state) {
       var locations = locationIndex(state);
       state.boards.forEach(function (board) {
-        var allCards = [];
-        board.columns.forEach(function (c) { allCards.push.apply(allCards, c.cards); });
-        allCards.push.apply(allCards, board.archive.cards);
-        board.archive.columns.forEach(function (entry) { allCards.push.apply(allCards, entry.cards); });
-        allCards.forEach(function (card) {
+        boardCards(board).forEach(function (card) {
           ['blockers', 'related'].forEach(function (side) {
             var list = card.dependencies[side];
             if (!Array.isArray(list)) list = [];
@@ -620,10 +631,7 @@
         });
         return kept;
       };
-      var allCards = [];
-      board.columns.forEach(function (c) { allCards.push.apply(allCards, c.cards); });
-      allCards.push.apply(allCards, board.archive.cards);
-      board.archive.columns.forEach(function (entry) { allCards.push.apply(allCards, entry.cards); });
+      var allCards = boardCards(board);
       allCards.forEach(function (card) {
         card.dependencies.blockers = rewriteList(card.dependencies.blockers);
         card.dependencies.related = rewriteList(card.dependencies.related);

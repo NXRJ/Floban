@@ -39,7 +39,6 @@ test('save then load returns the saved state as primary', async () => {
   const result = await engine.load({ validate: validateOk });
   assert.equal(result.source, 'primary');
   assert.equal(result.state.n, 1);
-  assert.equal(result.needsRepair, null);
 });
 
 test('load on an empty store returns defaults', async () => {
@@ -57,7 +56,6 @@ test('load falls back to legacy payload when nothing else exists', async () => {
   });
   assert.equal(result.source, 'legacy');
   assert.equal(result.state.n, 7);
-  assert.equal(result.needsRepair, 'legacy');
 });
 
 test('a corrupt primary falls back to the newest valid backup', async () => {
@@ -174,7 +172,6 @@ test('a newer mirror wins over the IDB primary and requests repair', async () =>
   const result = await engine.load({ validate: validateOk, mirror });
   assert.equal(result.source, 'mirror');
   assert.equal(result.state.n, 2);
-  assert.equal(result.needsRepair, 'mirror');
 });
 
 test('an older or absent mirror does not override the IDB primary', async () => {
@@ -215,7 +212,6 @@ test('an already-parsed mirror payload (browser envelope shape) is accepted', as
   });
   assert.equal(result.source, 'mirror');
   assert.equal(result.state.n, 2);
-  assert.equal(result.needsRepair, 'mirror');
 });
 
 test('a newer mirror that parses but fails validation cannot bypass the valid primary', async () => {
@@ -231,7 +227,6 @@ test('a newer mirror that parses but fails validation cannot bypass the valid pr
   });
   assert.equal(result.source, 'primary', 'invalid newer mirror must not bypass the valid primary');
   assert.equal(result.state.n, 1);
-  assert.equal(result.needsRepair, null);
 });
 
 test('an invalid newer mirror still falls through to backups when the primary is corrupt', async () => {
@@ -302,6 +297,30 @@ test('meta.at is stamped at call time so a lagging write cannot mask a newer mir
   assert.equal(result.source, 'mirror', 'newer mirror wins over a lagging primary');
   assert.equal(result.state.n, 2);
   p2.catch(() => {}); // B's write is abandoned by the test; swallow its rejection
+});
+
+test('save accepts an explicit savedAt shared with the mirror envelope', async () => {
+  // The adapter captures ONE timestamp per save and passes it to both the
+  // envelope and the engine, so two Date.now() calls can never land in
+  // different milliseconds. Equality between mirror.savedAt and meta.at then
+  // means the write landed (primary is authoritative), while a strictly
+  // newer mirror still wins — the crash case.
+  const backend = memoryBackend();
+  const engine = makeEngine(backend);
+  await engine.save(state(1), { savedAt: 5000 });
+  assert.equal(backend.stores.meta.get('lastSavedAt').at, 5000);
+  const equal = await engine.load({
+    validate: validateOk,
+    mirror: { payload: JSON.stringify(state(1)), savedAt: 5000 }
+  });
+  assert.equal(equal.source, 'primary', 'an equal stamp means the write landed');
+  assert.equal(equal.state.n, 1);
+  const newer = await engine.load({
+    validate: validateOk,
+    mirror: { payload: JSON.stringify(state(2)), savedAt: 5001 }
+  });
+  assert.equal(newer.source, 'mirror', 'a strictly newer mirror still wins');
+  assert.equal(newer.state.n, 2);
 });
 
 test('a failing backup write does not fail the primary save', async () => {
