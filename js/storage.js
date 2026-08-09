@@ -175,6 +175,18 @@
       // below — afterLoad must not run twice.
       idbOk = false;
       console.warn('IndexedDB unavailable, using localStorage fallback', err);
+      // The current crash-mirror envelope is the freshest copy there is: it
+      // must win over a stale legacy payload (or defaults) when IDB cannot
+      // even open. Valid mirror -> valid legacy -> defaults.
+      if (mirrorData.payload !== null && mirrorData.payload !== undefined) {
+        try {
+          var mirrorParsed = typeof mirrorData.payload === 'string' ? JSON.parse(mirrorData.payload) : mirrorData.payload;
+          var mirrorResult = opts.validate(mirrorParsed);
+          if (mirrorResult && mirrorResult.ok) {
+            return { state: mirrorResult.state, source: 'mirror', degraded: true };
+          }
+        } catch (parseErr) {}
+      }
       var payload = opts.legacy !== undefined ? opts.legacy : readLegacy();
       if (payload !== null && typeof payload === 'string') {
         try {

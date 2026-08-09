@@ -96,6 +96,11 @@
 
       function tryParse(text) {
         if (text === undefined || text === null) return null;
+        // Accept already-parsed values as well as serialized strings: the
+        // browser adapter stores the crash-mirror envelope with the state as
+        // a nested object, and JSON.parse would coerce that object to
+        // "[object Object]" and throw.
+        if (typeof text !== 'string') return text;
         try {
           return parse(text);
         } catch (err) {

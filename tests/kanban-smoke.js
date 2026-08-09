@@ -1728,6 +1728,66 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   }));
   check('recovery falls back to a backup', recovered.source === 'backup' && typeof recovered.boardName === 'string');
 
+  // ---- A valid, newer mirror envelope wins over a corrupt primary ----
+  await page.evaluate(async () => {
+    // The crash-mirror envelope holds the live state; the IDB primary is
+    // then corrupted. The boot must prefer the envelope (it is both newer
+    // and valid) instead of skipping it for backups.
+    localStorage.setItem('kanban.mirror.v1', JSON.stringify({ savedAt: Date.now() + 1000, payload: KB.State.data() }));
+    const req = indexedDB.open('kanban-store', 1);
+    return new Promise((resolve) => {
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('state', 'readwrite');
+        tx.objectStore('state').put('{not json', 'current');
+        tx.oncomplete = () => { db.close(); resolve(true); };
+        tx.onerror = () => resolve(false);
+      };
+      req.onerror = () => resolve(false);
+    });
+  });
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  const mirrorWon = await page.evaluate(() => ({
+    source: KB.Storage.status().source,
+    boardName: KB.State.activeBoard().name
+  }));
+  check('a valid newer mirror recovers over a corrupt primary', mirrorWon.source === 'mirror' && typeof mirrorWon.boardName === 'string');
+
+  // ---- Degraded boot (IndexedDB cannot open) still recovers the mirror ----
+  await page.evaluate(() => {
+    localStorage.setItem('kanban.mirror.v1', JSON.stringify({ savedAt: Date.now() + 2000, payload: KB.State.data() }));
+    localStorage.removeItem('kanban.board.v1');
+    sessionStorage.setItem('__degradeNextBoot', '1');
+  });
+  await page.evaluateOnNewDocument(() => {
+    // Once (sessionStorage flag survives the navigation, then is cleared):
+    // break indexedDB.open so the next boot degrades to localStorage.
+    if (sessionStorage.getItem('__degradeNextBoot') === '1') {
+      sessionStorage.removeItem('__degradeNextBoot');
+      indexedDB.open = function () {
+        const fake = {
+          onupgradeneeded: null, onsuccess: null, onerror: null, onblocked: null,
+          result: null, error: new DOMException('Blocked', 'NotAllowedError')
+        };
+        setTimeout(() => { if (fake.onerror) fake.onerror({ target: fake }); }, 0);
+        return fake;
+      };
+    }
+  });
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  const degradedRecovered = await page.evaluate(() => ({
+    source: KB.Storage.status().source,
+    degraded: KB.Storage.status().degraded,
+    idbAvailable: KB.Storage.status().idbAvailable,
+    boardName: KB.State.activeBoard().name
+  }));
+  check('degraded boot recovers the mirror envelope', degradedRecovered.source === 'mirror' && degradedRecovered.degraded === true && degradedRecovered.idbAvailable === false && typeof degradedRecovered.boardName === 'string');
+  // Restore a healthy page (fresh IndexedDB connection) for the tests below.
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+
   // ---- Serialized writes land in order ----
   const writeOrder = await page.evaluate(async () => {
     const writes = [];
@@ -1903,6 +1963,45 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   }));
   check('filter drawer closes', drawerClosed === true);
 
+  // Breakpoint cross re-renders cards: the mobile label cap must engage and
+  // disengage from the matchMedia change listener alone (no manual refresh).
+  await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    ['l-cap-1', 'l-cap-2', 'l-cap-3', 'l-cap-4', 'l-cap-5'].forEach((id) => {
+      if (!board.labels.some(l => l.id === id)) {
+        board.labels.push({ id, name: 'Cap ' + id, color: '#3fd7e0' });
+      }
+    });
+    KB.State.addCard(col.id, { title: 'Label cap probe', labels: ['l-cap-1', 'l-cap-2', 'l-cap-3', 'l-cap-4', 'l-cap-5'] });
+    KB.App.refresh();
+  });
+  await waitFor(() => {
+    const card = [...document.querySelectorAll('.card')].find(c => c.textContent.includes('Label cap probe'));
+    return card && card.querySelector('.more-labels');
+  }, 3000, 'mobile label cap engages');
+  check('mobile caps labels at three with +N', await page.evaluate(() => {
+    const card = [...document.querySelectorAll('.card')].find(c => c.textContent.includes('Label cap probe'));
+    return card.querySelector('.more-labels') && card.querySelector('.more-labels').textContent === '+2';
+  }));
+  await page.setViewport({ width: 1440, height: 900, isMobile: false });
+  await waitFor(() => {
+    const card = [...document.querySelectorAll('.card')].find(c => c.textContent.includes('Label cap probe'));
+    return card && card.querySelectorAll('.chip').length >= 5 && !card.querySelector('.more-labels');
+  }, 3000, 'desktop re-render after breakpoint');
+  check('desktop shows every label after the breakpoint cross', await page.evaluate(() => {
+    const card = [...document.querySelectorAll('.card')].find(c => c.textContent.includes('Label cap probe'));
+    return card.querySelectorAll('.chip').length >= 5 && card.querySelector('.more-labels') === null;
+  }));
+  // Clean up the probe card so later sections see the board as they expect.
+  await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    const card = col.cards.find(c => c.title === 'Label cap probe');
+    if (card) KB.State.archiveCard(col.id, card.id, board.id);
+    KB.App.refresh();
+  });
+
   await page.keyboard.press('Escape');
   await page.setViewport({ width: 1440, height: 900, isMobile: false });
   await waitBoard();
@@ -1913,8 +2012,17 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const snapCountBefore = await page.$$eval('.snapshot-row', els => els.length);
   check('snapshots listed in backup dialog', snapCountBefore >= 1);
   await page.evaluate(() => { document.querySelector('.snapshot-actions .btn').click(); }); // Snapshot now
-  await waitFor((before) => document.querySelectorAll('.snapshot-row').length >= before + 1, 6000, 'snapshot grows', snapCountBefore);
-  check('snapshot now adds a row', await page.$$eval('.snapshot-row', els => els.length) >= snapCountBefore + 1);
+  // The store rotates to maxBackups, so the list may stop growing; the
+  // observable contract is a confirmation toast and a fresh manual snapshot.
+  await waitFor(() => [...document.querySelectorAll('.toast')].some(t => t.textContent.includes('Snapshot saved')), 3000, 'snapshot toast');
+  check('snapshot now saves a manual snapshot', await page.evaluate(async () => {
+    const backups = await KB.Storage.listBackups();
+    return backups.some(b => b.reason === 'manual');
+  }));
+  check('snapshot row reflects the new snapshot', await page.evaluate(() => {
+    const row = document.querySelector('.snapshot-row');
+    return row && row.querySelector('.snapshot-reason') && row.querySelector('.snapshot-reason').textContent.indexOf('Manual') !== -1;
+  }));
   await page.evaluate(() => { window.confirm = () => true; });
   await page.evaluate(() => { document.querySelector('.snapshot-row .btn').click(); }); // Restore newest
   await waitFor(() => [...document.querySelectorAll('.toast')].some(t => t.textContent.includes('Snapshot restored')), 3000, 'snapshot restore toast');
