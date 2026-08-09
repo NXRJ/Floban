@@ -161,6 +161,11 @@
       return evaluateMovePolicy(state, cardRef, columnRef, { sourceColumn: null });
     }
 
+    // The all-clear policy answer.
+    function allowResult() {
+      return { allowed: true, requiresOverride: false, requiresConfirmation: false, blocking: false, needsReason: false, violations: [] };
+    }
+
     function canLeaveColumn(state, cardRef) {
       var source = null;
       var board = findBoard(state, cardRef.boardId);
@@ -169,25 +174,11 @@
         if (found) source = found.column;
       }
       if (!source) {
-        return {
-          allowed: true,
-          requiresOverride: false,
-          requiresConfirmation: false,
-          blocking: false,
-          needsReason: false,
-          violations: []
-        };
+        return allowResult();
       }
       var policy = source.policy || {};
       if (!Array.isArray(policy.exitCriteria) || policy.exitCriteria.length === 0) {
-        return {
-          allowed: true,
-          requiresOverride: false,
-          requiresConfirmation: false,
-          blocking: false,
-          needsReason: false,
-          violations: []
-        };
+        return allowResult();
       }
       return {
         allowed: false,

@@ -353,7 +353,7 @@ that use them.
 | Core | `js/core/history.js` | Undo/redo stack mechanics (record, undo, redo, clear, limits). |
 | Core | `js/core/operations.js` | High-risk state mutations (move, duplicate, archive, restore, delete column, board duplicate/delete, label removal) returning `{ changed, state, value }` results. |
 | Core | `js/core/markdown.js` | HTML escaping and the light markdown renderer, with explicit safe-link handling. |
-| Core | `js/core/store.js` | Storage engine over an injectable promise backend: serialized writes, rotating backups with throttling, and the boot recovery chain (newer valid mirror → primary → backups → legacy → defaults). Pure logic; the IndexedDB backend is injected. |
+| Core | `js/core/store.js` | Storage engine over an injectable promise backend: serialized writes, rotating backups with throttling, and the boot recovery chain (newer valid mirror → primary → newest valid backup → legacy → defaults). Pure logic; the IndexedDB backend is injected. |
 | Core | `js/core/commands.js` | Command registry: register/search/filter/shortcut lookup/dispatch with contexts and availability. Powers the palette, shortcuts, menus and sheets. |
 | Browser | `index.html` | Page skeleton: workspace nav, filter bar, board + pager, workspace sections, archive panel, mobile tabs, modal/palette/sheet/toast/live-region roots. |
 | Browser | `css/styles.css` | All styling. Theming via CSS custom properties; components (columns, cards, chips, popups, modal, palette, sheets, toasts, workspaces, mobile pager/tabs, bulk toolbar) are styled there. |

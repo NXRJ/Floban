@@ -7,6 +7,7 @@
   var wrapResult = internal.wrapResult;
   var noop = internal.noop;
   var cloneState = internal.cloneState;
+  var safePatchKeys = internal.safePatchKeys;
   function processRecurrences() {
     return wrapResult(function (current) {
       return KB.Core.Recurrence.processDueRecurrences(current, now(), deps());
@@ -30,7 +31,7 @@
     if (!entity) return { changed: false, reason: notFoundReason };
     var changed = false;
     // Same prototype-pollution hygiene as updateCard / updateCardWithFlow.
-    internal.safePatchKeys(patch).forEach(function (key) {
+    safePatchKeys(patch).forEach(function (key) {
       if (JSON.stringify(entity[key]) !== JSON.stringify(patch[key])) {
         entity[key] = patch[key];
         changed = true;

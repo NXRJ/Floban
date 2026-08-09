@@ -451,6 +451,20 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   check('editor saves priority and size', editedMeta.priority === 'high' && editedMeta.size === 'm');
 
+  // An unchanged save must not dirty history or bump updatedAt (array-valued
+  // patch fields used to trip a plain !== comparison).
+  const unchangedSave = await page.evaluate(async () => {
+    const board = KB.State.activeBoard();
+    const card = board.columns[0].cards[0];
+    const before = { undo: KB.State.canUndo(), updatedAt: card.updatedAt };
+    KB.Modal.cardEditor(board.columns[0].id, card, null, board.id);
+    document.querySelector('.modal-actions .btn.primary').click();
+    await new Promise((r) => setTimeout(r, 120));
+    const after = { undo: KB.State.canUndo(), updatedAt: card.updatedAt };
+    return { same: before.undo === after.undo && before.updatedAt === after.updatedAt };
+  });
+  check('unchanged editor save is a no-op', unchangedSave.same === true);
+
   // ---- Column roles ----
   check('role badge renders on columns', await page.$$eval('.col-role', els => els.length) === 3);
   await page.click('.column:nth-child(2) .column-header [data-action="col-menu"]');
@@ -1815,17 +1829,14 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   // ---- Sync events fire for every mutation with the right source ----
   const syncEvents = await page.evaluate(async () => {
-    // Deterministic baseline: the mutations below must be the only history
-    // entries, and the theme flip must always change something, or undo/redo
-    // and the second 'change' event could silently not fire.
-    while (KB.State.canUndo()) KB.State.undo();
-    while (KB.State.canRedo()) KB.State.redo();
     window.__syncEvents = [];
     KB.Sync.subscribe((change) => window.__syncEvents.push(change.source));
     const board = KB.State.activeBoard();
     const col = board.columns[0];
     KB.State.addCard(col.id, { title: 'Sync event probe' }); // change
-    KB.State.setTheme(KB.State.data().theme === 'dark' ? 'light' : 'dark'); // change
+    // Flip the theme unconditionally so the second 'change' event always
+    // fires (a no-op setTheme saves nothing).
+    KB.State.setTheme(KB.State.data().theme === 'dark' ? 'light' : 'dark');
     KB.State.undo(); // undo
     KB.State.redo(); // redo
     KB.State.importAll(KB.State.exportAll()); // import

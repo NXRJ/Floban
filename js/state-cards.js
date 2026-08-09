@@ -50,6 +50,13 @@
     var board = boardForColumn(columnId);
     var card = findCardInBoard(board, columnId, cardId);
     if (!card) return false;
+    // Deep-compare: array fields (checklist, labels) are fresh references on
+    // every save, so a plain !== would mark an unchanged save as dirty.
+    var changed = false;
+    safePatchKeys(patch).forEach(function (key) {
+      if (JSON.stringify(card[key]) !== JSON.stringify(patch[key])) changed = true;
+    });
+    if (!changed) return true;
     pushHistory();
     var safePatch = {};
     safePatchKeys(patch).forEach(function (key) {
@@ -146,7 +153,9 @@
       // Same prototype-pollution hygiene as updateCard: patch keys must not
       // touch __proto__/constructor/prototype. Values are deep-compared —
       // array fields (checklist, labels) get fresh references on every modal
-      // save, so a plain !== would mark an unchanged save as dirty.
+      // save, so a plain !== would mark an unchanged save as dirty. Key
+      // order within a value is significant; the editor's collect() emits
+      // keys in a stable order, which is all this comparison relies on.
       safePatchKeys(patch).forEach(function (key) {
         if (JSON.stringify(cloned.nextCard[key]) !== JSON.stringify(patch[key])) {
           cloned.nextCard[key] = patch[key];

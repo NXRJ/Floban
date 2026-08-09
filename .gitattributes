@@ -1,0 +1,8 @@
+# Normalize all text to LF on checkout (matches .editorconfig end_of_line=lf).
+* text=auto eol=lf
+
+# Binary assets must never be normalized.
+*.png binary
+*.woff2 binary
+*.webp binary
+*.ico binary

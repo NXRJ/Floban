@@ -249,7 +249,10 @@
     var column = findColumn(id);
     if (!column) return false;
 
-    var normalized = Object.assign({}, patch);
+    var normalized = {};
+    safePatchKeys(patch).forEach(function (key) {
+      normalized[key] = patch[key];
+    });
     if (patch.role && patch.role !== column.role) {
       normalized.isDone = patch.role === 'done';
     } else if (typeof patch.isDone === 'boolean' && patch.isDone !== column.isDone) {

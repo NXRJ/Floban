@@ -104,14 +104,7 @@ const tests = {
       JSON: 'readonly'
     }
   },
-  rules: {
-    'no-unused-vars': ['error', { args: 'after-used', vars: 'all', caughtErrors: 'none' }],
-    'no-undef': 'error',
-    'no-constant-condition': 'error',
-    'no-dupe-keys': 'error',
-    'no-cond-assign': ['error', 'except-parens'],
-    'no-unreachable': 'error'
-  }
+  rules: coreRules
 };
 
 const smoke = {
@@ -153,16 +146,7 @@ const nodeTools = {
       URL: 'readonly'
     }
   },
-  rules: {
-    'no-unused-vars': ['error', { args: 'after-used', vars: 'all', caughtErrors: 'none' }],
-    'no-undef': 'error',
-    'no-constant-condition': 'error',
-    'no-dupe-keys': 'error',
-    'no-dupe-args': 'error',
-    'no-cond-assign': ['error', 'except-parens'],
-    'no-func-assign': 'error',
-    'no-unreachable': 'error'
-  }
+  rules: coreRules
 };
 
 const sw = {
@@ -180,16 +164,7 @@ const sw = {
       console: 'readonly'
     }
   },
-  rules: {
-    'no-unused-vars': ['error', { args: 'after-used', vars: 'all', caughtErrors: 'none' }],
-    'no-undef': 'error',
-    'no-constant-condition': 'error',
-    'no-dupe-keys': 'error',
-    'no-dupe-args': 'error',
-    'no-cond-assign': ['error', 'except-parens'],
-    'no-func-assign': 'error',
-    'no-unreachable': 'error'
-  }
+  rules: coreRules
 };
 
 // The config file itself must lint cleanly (the lint script includes it).
