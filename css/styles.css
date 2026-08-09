@@ -2165,15 +2165,22 @@ input[type="search"]::-webkit-search-cancel-button {
 #board-pager { display: none; }
 
 @media (max-width: 640px) {
-  html { --header-h: 48px; }
+  /* viewport-fit=cover on iOS overlays the status bar on the header; the
+     drawer offset must track the header's real height including the inset. */
+  html { --header-h: calc(48px + env(safe-area-inset-top)); }
 
   body { -webkit-tap-highlight-color: transparent; }
 
+  /* Card information hierarchy: the description is the tallest card element
+     and the least glanceable on a phone — it lives in the card editor, so
+     cards stay scannable. */
+  .card-desc { display: none; }
+
   /* --- Header: logo, board switch, palette, menu, theme --- */
-  .app-header { padding: 6px 8px; gap: 6px; }
+  .app-header { padding: 6px 8px; gap: 6px; padding-top: calc(6px + env(safe-area-inset-top)); }
   .workspace-nav { display: none; }
   #add-column, #manage-labels, #toggle-archive, #open-recurrences { display: none; }
-  #board-switch { max-width: 42vw; }
+  #board-switch { max-width: 42vw; min-width: 0; flex: 1 1 auto; }
   .board-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #palette-btn, #app-menu { flex: none; }
 

@@ -572,8 +572,13 @@
       var actionEl = e.target.closest('[data-action]');
       if (!actionEl) {
         // Mobile: tapping a card opens its action sheet (selection clicks
-        // with modifiers are left alone).
+        // with modifiers are left alone). Taps on links or controls inside a
+        // card — e.g. a markdown link in the description — must not hijack
+        // into the sheet.
         var tappedCard = e.target.closest('.card');
+        if (tappedCard && e.target.closest('a, button, input, select, textarea')) {
+          tappedCard = null;
+        }
         if (tappedCard && KB.Commands.isMobile() && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
           var columnEl = tappedCard.closest('.column');
           var columnId = columnEl ? columnEl.dataset.id : null;

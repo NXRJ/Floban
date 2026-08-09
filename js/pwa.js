@@ -57,6 +57,14 @@
     injectPwaLinks();
 
     navigator.serviceWorker.register('sw.js').then(function (registration) {
+      // A new version may already be waiting when this page boots (an
+      // update landed in a previous session and the toast was never
+      // acknowledged). Surface the update immediately; a waiting worker only
+      // exists when an older worker controls the page, so this cannot fire
+      // on a first install.
+      if (registration.waiting) {
+        KB.UI.toast('Update ready', 'info', 'Reload', requestUpdateReload);
+      }
       registration.addEventListener('updatefound', function () {
         var next = registration.installing;
         if (!next) return;

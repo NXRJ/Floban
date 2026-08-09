@@ -14,11 +14,20 @@
   <link rel="stylesheet" href="css/styles.css">
   <script>
     (function () {
+      // The crash-mirror envelope holds the most recent state; pre-upgrade
+      // builds wrote the plain state under kanban.board.v1. Read both so the
+      // boot theme matches what the board will load.
       try {
-        var raw = localStorage.getItem('kanban.board.v1');
-        if (raw) {
-          var parsed = JSON.parse(raw);
-          if (parsed && parsed.theme) document.documentElement.dataset.theme = parsed.theme;
+        var raw = localStorage.getItem('kanban.mirror.v1');
+        var parsed = raw ? JSON.parse(raw) : null;
+        if (parsed && parsed.payload && parsed.payload.theme) {
+          document.documentElement.dataset.theme = parsed.payload.theme;
+        } else {
+          var legacyRaw = localStorage.getItem('kanban.board.v1');
+          var legacyParsed = legacyRaw ? JSON.parse(legacyRaw) : null;
+          if (legacyParsed && legacyParsed.theme) {
+            document.documentElement.dataset.theme = legacyParsed.theme;
+          }
         }
       } catch (err) {}
     })();

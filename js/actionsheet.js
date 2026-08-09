@@ -43,7 +43,9 @@
       return;
     }
     if (e.key === 'Tab') {
-      e.preventDefault();
+      // No caller-side preventDefault: trapKey only intercepts at the wrap
+      // boundaries (or when focus escapes the panel); mid-list Tab must keep
+      // the browser's default movement.
       KB.Dom.trapKey(e, panel);
     }
   }

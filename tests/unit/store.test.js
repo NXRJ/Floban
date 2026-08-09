@@ -200,6 +200,35 @@ test('an invalid mirror is ignored in favor of the primary', async () => {
   assert.equal(result.source, 'primary');
 });
 
+test('a newer mirror that parses but fails validation cannot bypass the valid primary', async () => {
+  // The recovery rule is "newest VALID copy wins". A mirror that JSON-parses
+  // but fails the app validator (e.g. { version: 3, boards: [] }) must fall
+  // through to the valid IDB primary, not skip it on the way to backups.
+  const backend = memoryBackend();
+  const engine = makeEngine(backend);
+  await engine.save(state(1), {}); // valid primary at t=0
+  const result = await engine.load({
+    validate: validateOk,
+    mirror: { payload: JSON.stringify({ version: 3, boards: [] }), savedAt: engine.now() + 1000 }
+  });
+  assert.equal(result.source, 'primary', 'invalid newer mirror must not bypass the valid primary');
+  assert.equal(result.state.n, 1);
+  assert.equal(result.needsRepair, null);
+});
+
+test('an invalid newer mirror still falls through to backups when the primary is corrupt', async () => {
+  const backend = memoryBackend();
+  const engine = makeEngine(backend);
+  await engine.save(state(2), { backup: true }); // primary and one backup hold state(2)
+  backend.stores.state.set('current', '{not json'); // primary now corrupt
+  const result = await engine.load({
+    validate: validateOk,
+    mirror: { payload: JSON.stringify({ version: 3, boards: [] }), savedAt: engine.now() + 1000 }
+  });
+  assert.equal(result.source, 'backup');
+  assert.equal(result.state.n, 2);
+});
+
 test('clearAll empties every store', async () => {
   const backend = memoryBackend();
   const engine = makeEngine(backend);

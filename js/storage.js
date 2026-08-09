@@ -1,8 +1,10 @@
 (function (KB) {
-  // Browser persistence adapter: IndexedDB is the primary store, a
-  // synchronous localStorage mirror covers crash recovery (a tab can close
-  // before an async IDB write lands) and the boot-time theme read, and the
-  // legacy localStorage payload feeds the first-run migration.
+  // Browser persistence adapter: IndexedDB is the primary store, an atomic
+  // localStorage envelope (kanban.mirror.v1 = { savedAt, payload }, one
+  // setItem) covers crash recovery — a tab can close before an async IDB
+  // write lands, and the single-key envelope keeps state and timestamp from
+  // ever diverging. kanban.board.v1 remains as the pre-upgrade legacy
+  // payload for first-run migration and the synchronous boot-theme read.
   //
   // All mutation paths in the app call KB.State.save(), which funnels into
   // KB.Storage.save() — serialized writes, throttled auto-backups, and the
@@ -11,8 +13,14 @@
   var DB_NAME = 'kanban-store';
   var DB_VERSION = 1;
   var STORES = ['state', 'backups', 'meta'];
+  // Pre-upgrade legacy payload (v1/v2 localStorage). Read-only once the
+  // current version has written an envelope — kept for first-run migration
+  // and the synchronous boot-theme read.
   var STORAGE_KEY = 'kanban.board.v1';
-  var SAVED_AT_KEY = 'kanban.savedAt.v1';
+  // Atomic crash mirror: { savedAt, payload } written in a single setItem so
+  // state and timestamp can never diverge (a crash between two keys could
+  // pair a new state with an old stamp and mislead recovery).
+  var MIRROR_KEY = 'kanban.mirror.v1';
 
   var loadResult = null;
   var idbOk = true;
@@ -55,9 +63,23 @@
       return open().then(function (database) {
         return new Promise(function (resolve, reject) {
           var transaction = database.transaction(store, mode);
+          var result;
           var request = fn(transaction.objectStore(store));
-          request.onsuccess = function () { resolve(request.result); };
-          request.onerror = function () { reject(request.error || new Error('IndexedDB transaction failed')); };
+          // A request can succeed and its transaction still abort afterwards
+          // (e.g. quota), so persistence is only guaranteed when the whole
+          // transaction commits. Resolve from oncomplete, reject on
+          // request/transaction error or abort.
+          request.onsuccess = function () { result = request.result; };
+          request.onerror = function () {
+            reject(request.error || new Error('IndexedDB request failed'));
+          };
+          transaction.oncomplete = function () { resolve(result); };
+          transaction.onerror = function () {
+            reject(transaction.error || new Error('IndexedDB transaction failed'));
+          };
+          transaction.onabort = function () {
+            reject(transaction.error || new Error('IndexedDB transaction aborted'));
+          };
         });
       });
     }
@@ -91,9 +113,13 @@
 
   function readMirror() {
     try {
-      var payload = localStorage.getItem(STORAGE_KEY);
-      var savedAt = Number(localStorage.getItem(SAVED_AT_KEY)) || 0;
-      return { payload: payload, savedAt: savedAt };
+      var raw = localStorage.getItem(MIRROR_KEY);
+      if (!raw) return { payload: null, savedAt: 0 };
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed.savedAt !== 'number' || parsed.payload === undefined) {
+        return { payload: null, savedAt: 0 };
+      }
+      return { payload: parsed.payload, savedAt: parsed.savedAt };
     } catch (err) {
       return { payload: null, savedAt: 0 };
     }
@@ -101,8 +127,7 @@
 
   function mirror(state) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      localStorage.setItem(SAVED_AT_KEY, String(Date.now()));
+      localStorage.setItem(MIRROR_KEY, JSON.stringify({ savedAt: Date.now(), payload: state }));
     } catch (err) {
       // Quota exceeded or storage disabled — the mirror is best-effort.
     }
@@ -145,7 +170,9 @@
       }
     }).catch(function (err) {
       // IndexedDB is unavailable (private mode, blocked, or storage
-      // disabled). Degrade to a localStorage-only session.
+      // disabled). Degrade to a localStorage-only session. The recovery
+      // result is returned here and handled by the single .then(afterLoad)
+      // below — afterLoad must not run twice.
       idbOk = false;
       console.warn('IndexedDB unavailable, using localStorage fallback', err);
       var payload = opts.legacy !== undefined ? opts.legacy : readLegacy();
@@ -154,11 +181,11 @@
           var parsed = JSON.parse(payload);
           var result = opts.validate(parsed);
           if (result && result.ok) {
-            return afterLoad({ state: result.state, source: 'legacy', degraded: true });
+            return { state: result.state, source: 'legacy', degraded: true };
           }
         } catch (parseErr) {}
       }
-      return afterLoad({ state: opts.defaults(), source: 'defaults', degraded: true });
+      return { state: opts.defaults(), source: 'defaults', degraded: true };
     }).then(afterLoad);
   }
 
@@ -182,21 +209,48 @@
   function backup(state, reason) {
     mirror(state);
     if (!idbOk) return Promise.resolve(null);
-    return engine.backup(state, reason || 'manual');
+    return engine.backup(state, reason || 'manual').catch(function (err) {
+      // A mid-session IndexedDB failure must not surface as an unhandled
+      // rejection from a fire-and-forget snapshot call — degrade like save()
+      // does; the mirror above already holds the state.
+      if (idbOk) {
+        idbOk = false;
+        console.warn('IndexedDB backup failed — continuing with the localStorage mirror', err);
+      }
+      return null;
+    });
   }
 
   function listBackups() {
     if (!idbOk) return Promise.resolve([]);
-    return engine.listBackups();
+    return engine.listBackups().catch(function (err) {
+      if (idbOk) {
+        idbOk = false;
+        console.warn('IndexedDB read failed — continuing with the localStorage mirror', err);
+      }
+      return [];
+    });
   }
 
   function restore(backupId) {
     if (!idbOk) return Promise.resolve(null);
-    return engine.restore(backupId);
+    return engine.restore(backupId).catch(function (err) {
+      if (idbOk) {
+        idbOk = false;
+        console.warn('IndexedDB read failed — continuing with the localStorage mirror', err);
+      }
+      return null;
+    });
   }
 
   function clearAll() {
     loadResult = null;
+    // A factory reset must not resurrect the previous session's crash mirror
+    // (or its pre-upgrade legacy payload) on the next boot.
+    try {
+      localStorage.removeItem(MIRROR_KEY);
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (err) {}
     if (!idbOk) return Promise.resolve();
     return engine.clearAll();
   }
@@ -216,7 +270,7 @@
       idbAvailable: idbOk,
       source: loadResult ? loadResult.source : null,
       degraded: loadResult ? Boolean(loadResult.degraded) : false,
-      lastSavedAt: Number(localStorage.getItem(SAVED_AT_KEY)) || null
+      lastSavedAt: readMirror().savedAt || null
     };
   }
 
