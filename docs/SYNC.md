@@ -68,9 +68,9 @@ any id migration.
   including backup/snapshot/import writes), and takeover or owner-departure
   reloads the surviving tab from storage so it never saves a stale in-memory
   state. Limitations: ownership is time-based (a dead owner's lock is retaken
-  after ~15s), and a broadcast-aware takeover settles within a beat — none of
-  this is conflict-free multi-writer sync. A future CRDT layer could lift
-  these limits without touching the guard's UX.
+  after ~15s), and takeover settles with a short fixed delay before the
+  reload — none of this is conflict-free multi-writer sync. A future CRDT
+  layer could lift these limits without touching the guard's UX.
 
 ## Testing the seam today
 

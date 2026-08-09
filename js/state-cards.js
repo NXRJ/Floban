@@ -7,6 +7,9 @@
   var uid = internal.uid;
   var data = internal.data;
   var commit = internal.commit;
+  var wrapResult = internal.wrapResult;
+  var noop = internal.noop;
+  var cloneState = internal.cloneState;
   var pushHistory = internal.pushHistory;
   var save = internal.save;
   var activeBoard = internal.activeBoard;
@@ -42,14 +45,20 @@
     });
   }
 
+  // Patch keys that could pollute the object prototype must never be merged.
+  function safePatchKeys(patch) {
+    return Object.keys(patch || {}).filter(function (key) {
+      return key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
+    });
+  }
+
   function updateCard(columnId, cardId, patch) {
     var board = boardForColumn(columnId);
     var card = findCardInBoard(board, columnId, cardId);
     if (!card) return false;
     pushHistory();
     var safePatch = {};
-    Object.keys(patch || {}).forEach(function (key) {
-      if (key === '__proto__' || key === 'constructor' || key === 'prototype') return;
+    safePatchKeys(patch).forEach(function (key) {
       safePatch[key] = patch[key];
     });
     Object.assign(card, safePatch, { updatedAt: now() });
@@ -101,7 +110,7 @@
 
   // Deep-clone the state and reach the located card inside the clone.
   function cloneLocated(current, located) {
-    var next = JSON.parse(JSON.stringify(current));
+    var next = cloneState(current);
     var nextBoard = next.boards.find(function (b) { return b.id === located.board.id; });
     var nextColumn = nextBoard.columns.find(function (c) { return c.id === located.column.id; });
     var nextCard = nextColumn.cards.find(function (c) { return c.id === located.card.id; });
@@ -111,9 +120,9 @@
   function setFlowState(columnId, cardId, nextState, reason, boardId) {
     return commit(function (current) {
       var located = locateCard(current, columnId, cardId, boardId);
-      if (!located) return { changed: false, state: current, value: null, reason: 'card-not-found' };
+      if (!located) return noop(current, 'card-not-found');
       var result = KB.Core.Lifecycle.setFlowState(located.card, nextState, reason || '', now());
-      if (!result.changed) return { changed: false, state: current, value: null, reason: result.reason };
+      if (!result.changed) return noop(current, result.reason);
       var cloned = cloneLocated(current, located);
       var updated = result.card;
       cloned.nextCard.flow = updated.flow;
@@ -125,7 +134,7 @@
   function updateCardWithFlow(columnId, cardId, patch, flowState, flowReason, boardId) {
     return commit(function (current) {
       var located = locateCard(current, columnId, cardId, boardId);
-      if (!located) return { changed: false, state: current, value: null, reason: 'card-not-found' };
+      if (!located) return noop(current, 'card-not-found');
       var cloned = cloneLocated(current, located);
       var changed = false;
       var flowResult = null;
@@ -142,14 +151,13 @@
       }
       // Same prototype-pollution hygiene as updateCard: patch keys must not
       // touch __proto__/constructor/prototype.
-      Object.keys(patch || {}).forEach(function (key) {
-        if (key === '__proto__' || key === 'constructor' || key === 'prototype') return;
+      safePatchKeys(patch).forEach(function (key) {
         if (cloned.nextCard[key] !== patch[key]) {
           cloned.nextCard[key] = patch[key];
           changed = true;
         }
       });
-      if (!changed) return { changed: false, state: current, value: null, reason: 'no-change' };
+      if (!changed) return noop(current, 'no-change');
       cloned.nextCard.updatedAt = now();
       return { changed: true, state: cloned.next, value: cloned.nextCard };
     });
@@ -190,36 +198,35 @@
     return { ok: true, value: value };
   }
 
+  // Find a board and the column that holds a card (cross-board moves). Both
+  // fields can be null independently so callers keep their reason strings.
+  function locateBoardCard(current, boardId, cardId) {
+    var board = current.boards.find(function (b) { return b.id === boardId; });
+    if (!board) return { board: null, source: null };
+    var source = board.columns.find(function (c) {
+      return c.cards.some(function (card) { return card.id === cardId; });
+    });
+    return { board: board, source: source || null };
+  }
+
   function evaluateMoveTo(boardId, cardId, targetBoardId, targetColumnId, opts) {
     var current = data();
-    var board = null;
-    var targetBoard = null;
-    var source = null;
-    for (var i = 0; i < current.boards.length; i++) {
-      if (current.boards[i].id === boardId) {
-        board = current.boards[i];
-        source = board.columns.find(function (c) {
-          return c.cards.some(function (card) { return card.id === cardId; });
-        });
-      }
-      if (current.boards[i].id === targetBoardId) targetBoard = current.boards[i];
-    }
-    if (!board || !targetBoard || !source) return null;
+    var located = locateBoardCard(current, boardId, cardId);
+    var targetBoard = current.boards.find(function (b) { return b.id === targetBoardId; });
+    if (!located.board || !located.source || !targetBoard) return null;
     var target = targetBoard.columns.find(function (c) { return c.id === targetColumnId; });
     if (!target) return null;
     return KB.Core.Policies.evaluateMovePolicy(current, { boardId: boardId, cardId: cardId }, { boardId: targetBoardId, columnId: targetColumnId }, {
-      sourceColumn: source,
+      sourceColumn: located.source,
       confirmed: opts && opts.confirmed,
       overrideReason: opts && opts.overrideReason
     });
   }
 
   function moveCardTo(boardId, cardId, targetBoardId, targetColumnId, toIndex, opts) {
-    var result = null;
-    commit(function (current) {
-      result = moveCardToCommit(current, boardId, cardId, targetBoardId, targetColumnId, toIndex, opts);
-      return result;
-    });
+    var result = wrapResult(function (current) {
+      return moveCardToCommit(current, boardId, cardId, targetBoardId, targetColumnId, toIndex, opts);
+    })();
     if (!result || !result.changed) {
       return { ok: false, reason: (result && result.reason) || 'move-failed', evaluation: result && result.evaluation };
     }
@@ -227,22 +234,13 @@
   }
 
   function moveCardToCommit(current, boardId, cardId, targetBoardId, targetColumnId, toIndex, opts) {
-    var board = null;
-    for (var i = 0; i < current.boards.length; i++) {
-      if (current.boards[i].id === boardId) { board = current.boards[i]; break; }
-    }
-    var targetBoard = null;
-    for (var j = 0; j < current.boards.length; j++) {
-      if (current.boards[j].id === targetBoardId) { targetBoard = current.boards[j]; break; }
-    }
-    if (!board || !targetBoard) return { changed: false, state: current, value: null, reason: 'board-not-found' };
-    var source = board.columns.find(function (c) {
-      return c.cards.some(function (card) { return card.id === cardId; });
-    });
-    if (!source) return { changed: false, state: current, value: null, reason: 'card-not-found' };
+    var located = locateBoardCard(current, boardId, cardId);
+    var targetBoard = current.boards.find(function (b) { return b.id === targetBoardId; });
+    if (!located.board || !targetBoard) return noop(current, 'board-not-found');
+    if (!located.source) return noop(current, 'card-not-found');
     var target = targetBoard.columns.find(function (c) { return c.id === targetColumnId; });
-    if (!target) return { changed: false, state: current, value: null, reason: 'column-not-found' };
-    var next = JSON.parse(JSON.stringify(current));
+    if (!target) return noop(current, 'column-not-found');
+    var next = cloneState(current);
     var nextBoard = next.boards.find(function (b) { return b.id === boardId; });
     var nextTargetBoard = next.boards.find(function (b) { return b.id === targetBoardId; });
     var nextSource = nextBoard.columns.find(function (c) {
@@ -305,8 +303,8 @@
   function archiveCard(columnId, cardId, boardId) {
     return commit(function (current) {
       var located = locateColumnCard(current, columnId, cardId, boardId);
-      if (located.error) return { changed: false, state: current, value: null, reason: located.error };
-      var next = JSON.parse(JSON.stringify(current));
+      if (located.error) return noop(current, located.error);
+      var next = cloneState(current);
       var nextBoard = next.boards.find(function (b) { return b.id === located.board.id; });
       var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
       var nextCard = nextColumn.cards.splice(located.index, 1)[0];
@@ -320,8 +318,8 @@
   function duplicateCard(columnId, cardId, boardId) {
     return commit(function (current) {
       var located = locateColumnCard(current, columnId, cardId, boardId);
-      if (located.error) return { changed: false, state: current, value: null, reason: located.error };
-      var next = JSON.parse(JSON.stringify(current));
+      if (located.error) return noop(current, located.error);
+      var next = cloneState(current);
       var nextBoard = next.boards.find(function (b) { return b.id === located.board.id; });
       var nextColumn = nextBoard.columns.find(function (c) { return c.id === columnId; });
       var card = nextColumn.cards[located.index];

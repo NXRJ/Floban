@@ -186,22 +186,10 @@
   function load(opts) {
     var mirrorData = readMirror();
     var legacy = opts.legacy !== undefined ? opts.legacy : readLegacy();
-    return engine.load({
-      legacy: legacy,
-      validate: opts.validate,
-      defaults: opts.defaults,
-      mirror: {
-        payload: mirrorData.payload,
-        savedAt: mirrorData.savedAt
-      }
-    }).catch(function (err) {
-      // IndexedDB is unavailable (private mode, blocked, or storage
-      // disabled). Degrade to a localStorage-only session. The recovery
-      // result is returned here and handled by the single .then(afterLoad)
-      // below — afterLoad must not run twice.
-      idbOk = false;
-      console.warn('IndexedDB unavailable, using localStorage fallback', err);
-      return KB.Core.Store.createEngine({ backend: emptyBackend() }).load({
+    // One cascade invocation for both backends so the normal and degraded
+    // recovery chains can never drift apart.
+    function loadWith(engineInstance) {
+      return engineInstance.load({
         legacy: legacy,
         validate: opts.validate,
         defaults: opts.defaults,
@@ -209,7 +197,16 @@
           payload: mirrorData.payload,
           savedAt: mirrorData.savedAt
         }
-      }).then(function (result) {
+      });
+    }
+    return loadWith(engine).catch(function (err) {
+      // IndexedDB is unavailable (private mode, blocked, or storage
+      // disabled). Degrade to a localStorage-only session. The recovery
+      // result is returned here and handled by the single .then(afterLoad)
+      // below — afterLoad must not run twice.
+      idbOk = false;
+      console.warn('IndexedDB unavailable, using localStorage fallback', err);
+      return loadWith(KB.Core.Store.createEngine({ backend: emptyBackend() })).then(function (result) {
         return { state: result.state, source: result.source, degraded: true };
       });
     }).then(afterLoad);
@@ -225,13 +222,17 @@
   }
 
   function save(state, source) {
-    if (!idbOk) return Promise.resolve(null);
     // One timestamp per save, shared by the crash-mirror envelope and the
     // engine's meta stamp: two separate Date.now() calls can land in
     // different milliseconds, and an equal-stamp comparison at boot could
     // then prefer a stale primary over a mirror holding the newer state.
+    // The mirror is written BEFORE the degraded-session early return: a
+    // localStorage-only session (idbOk false) must still keep the envelope
+    // current, or every in-session edit would be lost on reload. mirror()
+    // is a no-op in read-only tabs, so this does not weaken the lock gate.
     var stamp = Date.now();
     mirror(state, stamp);
+    if (!idbOk) return Promise.resolve(null);
     var write = engine.save(state, { reason: source || 'change', backup: 'auto', savedAt: stamp });
     // Every app save is fire-and-forget; surface IDB write failures by
     // degrading to the localStorage-only session instead of leaving an

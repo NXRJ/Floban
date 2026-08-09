@@ -21,10 +21,15 @@
 
   function requestUpdateReload() {
     reloadingForUpdate = true;
-    // If SKIP_WAITING never activates the worker, reset the flag so a later,
-    // unrelated controllerchange (from a future update) cannot trigger a
-    // surprise reload.
-    setTimeout(function () { reloadingForUpdate = false; }, 10000);
+    // If SKIP_WAITING never activates the worker, release the flag so a
+    // later, unrelated controllerchange (from a future update) cannot
+    // trigger a surprise reload. A worker that HAS activated is mid-reload —
+    // keep the flag until its controllerchange arrives.
+    setTimeout(function () {
+      navigator.serviceWorker.getRegistration().then(function (registration) {
+        if (!registration || registration.waiting) reloadingForUpdate = false;
+      });
+    }, 10000);
     navigator.serviceWorker.getRegistration().then(function (registration) {
       if (registration && registration.waiting) {
         registration.waiting.postMessage({ type: 'SKIP_WAITING' });

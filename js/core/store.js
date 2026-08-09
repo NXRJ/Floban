@@ -215,7 +215,7 @@
         // mirror look newer than the last LANDED write. The adapter may pass
         // its own stamp (captured once, shared with the envelope) so the two
         // Date.now() calls cannot land in different milliseconds.
-        var savedAt = saveOpts.savedAt !== undefined && saveOpts.savedAt !== null ? saveOpts.savedAt : now();
+        var savedAt = saveOpts.savedAt != null ? saveOpts.savedAt : now();
         return enqueue(function () {
           return ensureReady().then(function () {
             return backend.put('state', PRIMARY_KEY, payload);

@@ -183,6 +183,16 @@
     };
   }
 
+  // Standard "unchanged" result for commit operations.
+  function noop(current, reason) {
+    return { changed: false, state: current, value: null, reason: reason };
+  }
+
+  // Deep clone for operations that mutate a copy of the state.
+  function cloneState(state) {
+    return JSON.parse(JSON.stringify(state));
+  }
+
   function activeBoard() {
     return state.boards.find(function (b) { return b.id === state.activeBoardId; }) || state.boards[0] || null;
   }
@@ -573,6 +583,8 @@
     data: data,
     commit: commit,
     wrapResult: wrapResult,
+    noop: noop,
+    cloneState: cloneState,
     pushHistory: pushHistory,
     save: save,
     validatePayload: validatePayload,

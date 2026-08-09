@@ -231,6 +231,12 @@
       var file = fileInput.files && fileInput.files[0];
       fileInput.value = '';
       if (!file) return;
+      // A read-only tab's import would apply in memory only and vanish on
+      // the next reload — say so instead of claiming success.
+      if (KB.MultiTab && KB.MultiTab.readOnly()) {
+        KB.UI.toast('Read-only — Kanban is open in another tab', 'error');
+        return;
+      }
       if (!confirm('Importing a full backup replaces ALL boards; a single-board export is added as a new board. Continue?')) return;
       var reader = new FileReader();
       reader.onload = function () {

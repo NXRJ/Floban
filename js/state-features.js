@@ -5,6 +5,8 @@
   var uid = internal.uid;
   var commit = internal.commit;
   var wrapResult = internal.wrapResult;
+  var noop = internal.noop;
+  var cloneState = internal.cloneState;
   function processRecurrences() {
     return wrapResult(function (current) {
       return KB.Core.Recurrence.processDueRecurrences(current, now(), deps());
@@ -13,7 +15,7 @@
 
   function addRecurrence(definition) {
     return commit(function (current) {
-      var next = JSON.parse(JSON.stringify(current));
+      var next = cloneState(current);
       var recurrence = KB.Core.Model.createRecurrence(definition, deps());
       next.recurrences.push(recurrence);
       return { changed: true, state: next, value: recurrence };
@@ -28,6 +30,8 @@
     if (!entity) return { changed: false, reason: notFoundReason };
     var changed = false;
     Object.keys(patch || {}).forEach(function (key) {
+      // Same prototype-pollution hygiene as updateCard / updateCardWithFlow.
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') return;
       if (JSON.stringify(entity[key]) !== JSON.stringify(patch[key])) {
         entity[key] = patch[key];
         changed = true;
@@ -47,18 +51,18 @@
 
   function updateRecurrence(recurrenceId, patch) {
     return commit(function (current) {
-      var next = JSON.parse(JSON.stringify(current));
+      var next = cloneState(current);
       var result = patchEntity(next.recurrences, recurrenceId, patch, 'not-found');
-      if (!result.changed) return { changed: false, state: current, value: null, reason: result.reason };
+      if (!result.changed) return noop(current, result.reason);
       return { changed: true, state: next, value: result.entity };
     });
   }
 
   function deleteRecurrence(recurrenceId) {
     return commit(function (current) {
-      var next = JSON.parse(JSON.stringify(current));
+      var next = cloneState(current);
       var result = removeEntity(next.recurrences, recurrenceId, 'not-found');
-      if (!result.changed) return { changed: false, state: current, value: null, reason: result.reason };
+      if (!result.changed) return noop(current, result.reason);
       return { changed: true, state: next, value: true };
     });
   }
@@ -83,9 +87,9 @@
 
   function skipRecurrenceNext(recurrenceId) {
     return commit(function (current) {
-      var next = JSON.parse(JSON.stringify(current));
+      var next = cloneState(current);
       var recurrence = next.recurrences.find(function (r) { return r.id === recurrenceId; });
-      if (!recurrence) return { changed: false, state: current, value: null, reason: 'not-found' };
+      if (!recurrence) return noop(current, 'not-found');
       recurrence.nextRunAt = KB.Core.Recurrence.computeNextRun(recurrence, recurrence.nextRunAt === null ? now() : recurrence.nextRunAt);
       recurrence.updatedAt = now();
       return { changed: true, state: next, value: recurrence };
@@ -94,10 +98,10 @@
 
   function endRecurrence(recurrenceId) {
     return commit(function (current) {
-      var next = JSON.parse(JSON.stringify(current));
+      var next = cloneState(current);
       var recurrence = next.recurrences.find(function (r) { return r.id === recurrenceId; });
-      if (!recurrence) return { changed: false, state: current, value: null, reason: 'not-found' };
-      if (recurrence.endAt !== null) return { changed: false, state: current, value: null, reason: 'already-ended' };
+      if (!recurrence) return noop(current, 'not-found');
+      if (recurrence.endAt !== null) return noop(current, 'already-ended');
       recurrence.endAt = now();
       recurrence.updatedAt = now();
       return { changed: true, state: next, value: recurrence };
@@ -136,10 +140,10 @@
 
   function convertInboxToRecurrence(inboxId, definition) {
     return commit(function (current) {
-      var next = JSON.parse(JSON.stringify(current));
+      var next = cloneState(current);
       var items = next.inbox && Array.isArray(next.inbox.items) ? next.inbox.items : [];
       var index = items.findIndex(function (it) { return it.id === inboxId; });
-      if (index === -1) return { changed: false, state: current, value: null, reason: 'item-not-found' };
+      if (index === -1) return noop(current, 'item-not-found');
       items.splice(index, 1);
       var recurrence = KB.Core.Model.createRecurrence(definition, deps());
       next.recurrences.push(recurrence);
@@ -155,7 +159,7 @@
 
   function addLens(definition) {
     return commit(function (current) {
-      var next = JSON.parse(JSON.stringify(current));
+      var next = cloneState(current);
       var lens = KB.Core.Lenses.normalizeLens(definition, deps());
       lens.id = uid();
       lens.createdAt = now();
@@ -167,18 +171,18 @@
 
   function updateLens(lensId, patch) {
     return commit(function (current) {
-      var next = JSON.parse(JSON.stringify(current));
+      var next = cloneState(current);
       var result = patchEntity(next.lenses, lensId, patch, 'not-found');
-      if (!result.changed) return { changed: false, state: current, value: null, reason: result.reason };
+      if (!result.changed) return noop(current, result.reason);
       return { changed: true, state: next, value: result.entity };
     });
   }
 
   function deleteLens(lensId) {
     return commit(function (current) {
-      var next = JSON.parse(JSON.stringify(current));
+      var next = cloneState(current);
       var result = removeEntity(next.lenses, lensId, 'not-found');
-      if (!result.changed) return { changed: false, state: current, value: null, reason: result.reason };
+      if (!result.changed) return noop(current, result.reason);
       return { changed: true, state: next, value: true };
     });
   }
