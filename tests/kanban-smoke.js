@@ -2047,6 +2047,20 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     mirrorHolds: JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload.boards.some(b => b.columns.some(c => c.cards.some(x => x.title === 'Degrade probe')))
   }));
   check('degraded session keeps working via memory and mirror', degradeState.cardPresent && degradeState.mirrorHolds);
+  // A degraded session must keep writing the mirror for LATER mutations too:
+  // after the first failure flips idbOk, every subsequent save() skips
+  // IndexedDB but still has to keep the envelope current or reloads would
+  // lose all post-degrade edits.
+  await page.evaluate(() => {
+    KB.State.addCard(KB.State.activeBoard().columns[0].id, { title: 'Degrade probe 2' });
+    KB.State.internal.save(KB.State.data(), 'degrade-check');
+  });
+  await sleep(150);
+  const postDegradeMirror = await page.evaluate(() => {
+    const m = JSON.parse(localStorage.getItem('kanban.mirror.v1'));
+    return m.payload.boards.some(b => b.columns.some(c => c.cards.some(x => x.title === 'Degrade probe 2')));
+  });
+  check('post-degrade saves still reach the mirror', postDegradeMirror === true);
 
   // ---- Cross-tab guard: a second tab is read-only until it takes over ----
   const tab2 = await browser.newPage();
@@ -2149,7 +2163,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     // fetches, so the update is triggered by registering a patched worker
     // from a temp file under the same scope (an update by another name).
     const tempSwPath = path.join(__dirname, '..', 'sw-update-test.js');
-    fs.writeFileSync(tempSwPath, fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8').replace(/kanban-v1/g, 'kanban-v2-updated'));
+    fs.writeFileSync(tempSwPath, fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8').replace(/kanban-v2/g, 'kanban-v2-updated'));
     try {
       await pwaPage.evaluate(() => { window.__updateMarker = true; });
       await pwaPage.evaluate(() => navigator.serviceWorker.register('/sw-update-test.js', { scope: './' }));

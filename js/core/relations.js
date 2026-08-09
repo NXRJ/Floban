@@ -147,7 +147,7 @@
     // and the archive column entry for archived column cards.
     function forEachCard(board, fn) {
       board.columns.forEach(function (column) {
-        column.cards.forEach(function (card) { fn(card, column); });
+        (column.cards || []).forEach(function (card) { fn(card, column); });
       });
       (board.archive.cards || []).forEach(function (card) { fn(card, null); });
       board.archive.columns.forEach(function (entry) {

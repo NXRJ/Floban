@@ -60,10 +60,13 @@
   function moveColumn(delta) {
     var columns = visibleColumns();
     var next = moveMode.columnIndex + delta;
-    if (next < 0 || next >= columns.length) return;
-    moveMode.columnIndex = next;
-    moveMode.columnEl = columns[next];
-    moveMode.position = Math.min(moveMode.position, Math.max(0, moveMode.columnEl.querySelectorAll('.card').length - 1));
+    if (next >= 0 && next < columns.length) {
+      moveMode.columnIndex = next;
+      moveMode.columnEl = columns[next];
+      moveMode.position = Math.min(moveMode.position, Math.max(0, moveMode.columnEl.querySelectorAll('.card').length - 1));
+    }
+    // Announce even when clamped at the first/last column, so a screen-reader
+    // user gets feedback that the key was received.
     updateHighlight();
     announce(moveTargetDescription(moveMode.columnEl, moveMode.position));
   }

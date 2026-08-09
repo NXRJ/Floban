@@ -292,9 +292,9 @@ Your current workspace is remembered across reloads.
   mirror wins and repairs the store.
 - **Automatic rotating backups**: up to 10 snapshots are kept in IndexedDB (at
   most one per minute), plus an explicit backup before migrations and imports.
-  Load order on boot: primary → mirror (if newer) → newest valid backup →
-  legacy localStorage → fresh default board. Corrupt data is skipped, never
-  fatal.
+  Load order on boot: newer valid mirror → primary → newest valid backup →
+  legacy localStorage → fresh default board (each candidate validated
+  independently; corrupt data is skipped, never fatal).
 - From the board menu: **Backup / restore** exports all boards (or just the
   current one) to a JSON file, and imports a backup back.
 - Board-only exports include flow settings, roles, policies, dependencies and

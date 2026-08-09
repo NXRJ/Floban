@@ -15,7 +15,7 @@
  */
 'use strict';
 
-var CACHE = 'kanban-v1';
+var CACHE = 'kanban-v2';
 
 var PRECACHE = [
   './',
