@@ -195,10 +195,20 @@
     if (dep) meta.appendChild(dep);
     var rec = recurrenceChip(card);
     if (rec) meta.appendChild(rec);
-    card.labels.forEach(function (id) {
-      var label = KB.State.findLabel(id);
-      if (label) meta.appendChild(staticChip(label));
+    // On mobile the meta wall must stay glanceable: at most three label
+    // chips, with the rest collapsed into a +N chip (the card editor shows
+    // the full set). Desktop renders every label.
+    var validLabels = card.labels.map(function (id) { return KB.State.findLabel(id); }).filter(Boolean);
+    var mobile = KB.Dom.isMobile();
+    var cap = mobile ? 3 : validLabels.length;
+    validLabels.slice(0, cap).forEach(function (label) {
+      meta.appendChild(staticChip(label));
     });
+    if (validLabels.length > cap) {
+      var moreLabels = h('span', { class: 'chip chip-static more-labels', title: (validLabels.length - cap) + ' more label(s)' });
+      moreLabels.textContent = '+' + (validLabels.length - cap);
+      meta.appendChild(moreLabels);
+    }
     if (card.assignee) meta.appendChild(assigneeChip(card.assignee));
     var due = dueChip(card, column.isDone);
     if (due) meta.appendChild(due);

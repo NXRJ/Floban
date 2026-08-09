@@ -36,14 +36,24 @@
   function cardLocation(ctx) {
     // Prefer the card in the exact column the action came from: board
     // imports preserve card ids, so the same id can exist in two boards, and
-    // a cross-board search would hit the wrong instance. The global search is
-    // only a fallback for contexts that carry no column.
+    // a cross-board search would hit the wrong instance. The column is
+    // resolved within the ORIGIN board (ctx.boardId) when the context carries
+    // one — active-board-only lookup would miss cross-board workspaces. The
+    // global search is only a fallback for contexts that carry no column.
     if (ctx && ctx.columnId && ctx.cardId) {
-      var column = KB.State.internal.findColumn(ctx.columnId);
-      var card = KB.State.internal.findCard(ctx.columnId, ctx.cardId);
+      var board = ctx.boardId ? KB.State.internal.boardById(ctx.boardId) : null;
+      var column = null;
+      var card = null;
+      if (board) {
+        column = board.columns.find(function (c) { return c.id === ctx.columnId; }) || null;
+        card = KB.State.internal.findCardInBoard(board, ctx.columnId, ctx.cardId);
+      } else {
+        column = KB.State.internal.findColumn(ctx.columnId);
+        card = KB.State.internal.findCard(ctx.columnId, ctx.cardId);
+      }
       if (column && card) {
         return {
-          board: KB.State.internal.boardForColumn(ctx.columnId) || KB.State.internal.activeBoard(),
+          board: board || KB.State.internal.boardForColumn(ctx.columnId) || KB.State.internal.activeBoard(),
           column: column,
           card: card,
           archived: false
@@ -521,6 +531,22 @@
   });
 
   // ---------- public surface ----------
+
+  // Board identity/name changes — create, rename, delete, import, snapshot
+  // restore — must be reflected in the palette's board-switch commands, which
+  // are built once at boot. Rebuild them lazily whenever the board signature
+  // (ids + names) changes; registration is idempotent and cheap.
+  var lastBoardSignature = '';
+  KB.Sync.subscribe(function (change) {
+    var state = change.state || {};
+    var signature = (state.boards || []).map(function (b) {
+      return b.id + ':' + b.name;
+    }).join('|');
+    if (signature !== lastBoardSignature) {
+      lastBoardSignature = signature;
+      registerBoardSwitchCommands();
+    }
+  });
 
   KB.Commands = C;
   KB.Commands.registerBoardSwitchCommands = registerBoardSwitchCommands;

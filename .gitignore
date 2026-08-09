@@ -36,7 +36,8 @@ node_modules/
 .opencode/
 .impeccable/
 # handoff documents are not tracked
-docs/
+docs/*
+!docs/SYNC.md
 # universal
 .env
 .env.*

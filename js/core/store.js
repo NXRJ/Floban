@@ -35,9 +35,11 @@
     //
     // Recovery order on load() — the newest *valid* copy wins:
     //   1. the IDB primary record, unless a synchronous localStorage mirror
-    //      (see `mirror` below) was written more recently than the last IDB
-    //      save (crash recovery: the tab may have closed mid-write). Both
-    //      stamps are measured at save-call time, so they are comparable;
+    //      (see `mirror` below) is both newer than the last IDB save AND
+    //      passes validation (crash recovery: the tab may have closed
+    //      mid-write). Both stamps are measured at save-call time, so they
+    //      are comparable. A newer mirror that fails validation falls
+    //      through to the primary instead of shadowing it;
     //   2. rotating backups, newest first;
     //   3. the legacy localStorage payload (first-run migration — the mirror
     //      key doubles as the legacy key, so this step only applies when the
@@ -148,28 +150,23 @@
           var meta = results[1] || {};
           var idbSavedAt = typeof meta.at === 'number' ? meta.at : 0;
 
-          // Crash recovery: a synchronous mirror written after the last IDB
-          // save means the tab closed before the async write landed.
+          // Candidates are validated INDEPENDENTLY, so a corrupt newer copy
+          // can never shadow a valid older one: a mirror that parses but
+          // fails application validation falls through to the primary
+          // instead of skipping it. Recovery order is: valid newer mirror,
+          // valid primary, valid backups, valid legacy, defaults.
           var mirror = loadOpts.mirror || null;
-          var candidate = null;
-          var candidateSource = null;
-          if (mirror && typeof mirror.savedAt === 'number' && mirror.savedAt > idbSavedAt && mirror.payload !== undefined) {
-            candidate = tryParse(mirror.payload);
-            candidateSource = 'mirror';
-          }
-          if (candidate === null) {
-            candidate = tryParse(primaryPayload);
-            candidateSource = 'primary';
-          }
-          if (candidate !== null) {
-            var primary = validateWith(candidate, loadOpts.validate);
-            if (primary.ok) {
-              return {
-                state: primary.state,
-                source: candidateSource,
-                needsRepair: candidateSource === 'mirror' ? 'mirror' : null
-              };
+          var mirrorNewer = Boolean(mirror && typeof mirror.savedAt === 'number' &&
+            mirror.savedAt > idbSavedAt && mirror.payload !== undefined);
+          if (mirrorNewer) {
+            var mirrorResult = validateWith(tryParse(mirror.payload), loadOpts.validate);
+            if (mirrorResult.ok) {
+              return { state: mirrorResult.state, source: 'mirror', needsRepair: 'mirror' };
             }
+          }
+          var primaryResult = validateWith(tryParse(primaryPayload), loadOpts.validate);
+          if (primaryResult.ok) {
+            return { state: primaryResult.state, source: 'primary', needsRepair: null };
           }
 
           // The primary is corrupt or missing — fall back to backups, then to

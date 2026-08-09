@@ -90,8 +90,11 @@ self.addEventListener('activate', function (event) {
   event.waitUntil(
     caches.keys().then(function (keys) {
       return Promise.all(
-        keys.filter(function (key) { return key !== CACHE; })
-          .map(function (key) { return caches.delete(key); })
+        keys.filter(function (key) {
+          // Only this app's caches: a shared origin may host other
+          // applications whose caches must never be deleted.
+          return key !== CACHE && key.indexOf('kanban-') === 0;
+        }).map(function (key) { return caches.delete(key); })
       );
     }).then(function () {
       return self.clients.claim();

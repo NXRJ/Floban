@@ -45,14 +45,13 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   }
 
   // Writes a raw payload into the legacy localStorage key and resets
-  // IndexedDB so the next page load treats the payload as the only source of
-  // truth (exercises the first-run migration path). The savedAt marker is
-  // bumped so the crash-recovery mirror comparison prefers this payload.
+  // IndexedDB (and the crash-mirror envelope) so the next page load treats
+  // the payload as the only source of truth — exercising the first-run
+  // migration path from pre-envelope data.
   async function seedLocalStorage(payload) {
     await page.evaluate((json) => {
       const write = () => {
         localStorage.setItem('kanban.board.v1', json);
-        localStorage.setItem('kanban.savedAt.v1', String(Date.now()));
       };
       if (window.KB && KB.Storage) {
         return KB.Storage.clearAll().then(() => { write(); });
@@ -243,7 +242,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   // ---- Filter by due (make dues deterministic in LOCAL time) ----
   const dueSeed = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const d = new Date();
     d.setDate(d.getDate() - 1);
     const y = d.getFullYear();
@@ -286,24 +285,24 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('duplicate adds a card', count === 8);
 
   // ---- Persistence & migration ----
-  const v2 = await page.evaluate(() => JSON.parse(localStorage.getItem('kanban.board.v1')));
+  const v2 = await page.evaluate(() => JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload);
   check('saved state is version 3', v2.version === 3 && Array.isArray(v2.boards));
 
   const v1Seed = await page.evaluate(() => {
-    const old = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const old = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     return { version: 1, theme: 'light', labels: [], columns: old.boards[0].columns.map(c => ({ id: c.id, title: c.title, isDone: c.isDone, cards: c.cards })), archive: { cards: [], columns: [] } };
   });
   await seedLocalStorage(v1Seed);
   await page.goto(URL, { waitUntil: 'load' });
   await waitBoard();
-  const migrated = await page.evaluate(() => JSON.parse(localStorage.getItem('kanban.board.v1')));
+  const migrated = await page.evaluate(() => JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload);
   check('v1 migrates to v3 boards', migrated.version === 3 && migrated.boards.length === 1);
   check('migrated cards normalized', migrated.boards[0].columns.every(c => c.cards.every(card => typeof card.due === 'string' && Array.isArray(card.checklist))));
   check('migrated board renders', await waitCount('.column', 3));
 
   // ---- Corrupt payload resilience ----
   const corruptSeed = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards[0];
     board.labels.push(null, { id: 'l-bad', name: 'Bad', color: 'url(https://example.com/x.png)' });
     board.columns[0].cards[0].labels = 'oops';
@@ -316,7 +315,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await page.goto(URL, { waitUntil: 'load' });
   await waitBoard();
   check('corrupt labels payload still renders', await waitCount('.column', 3));
-  const healed = await page.evaluate(() => JSON.parse(localStorage.getItem('kanban.board.v1')));
+  const healed = await page.evaluate(() => JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload);
   const c0 = healed.boards[0].columns[0];
   check('labels normalized to array', Array.isArray(c0.cards[0].labels) && Array.isArray(c0.cards[1].labels));
   check('assignee coerced to string', c0.cards[1].assignee === '');
@@ -337,7 +336,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   // ---- Markdown + XSS (targets the active board after the import round trip) ----
   const mdSeed = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     board.columns[0].cards[0].description = '**bold** *ital* `code` and a [link](https://example.com)';
     return b;
@@ -351,7 +350,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('markdown renders link', md.includes('href="https://example.com"'));
 
   const xssSeed = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     board.columns[0].cards[0].description = '<img src=x onerror=alert(1)> **b**';
     return b;
@@ -413,7 +412,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   // ---- Priority and size editing + badges + filters ----
   const prioSeed = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     const card = board.columns[0].cards[0];
     card.priority = 'urgent';
@@ -446,7 +445,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await clickByText('.modal-actions .btn', 'Save');
   await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'priority editor closes');
   const editedMeta = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const card = b.boards.find(x => x.id === b.activeBoardId).columns[0].cards[0];
     return { priority: card.priority, size: card.size };
   });
@@ -460,7 +459,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await page.click('.modal-actions .btn.primary');
   await waitFor(() => true, 200, 'role save settle');
   const roleSaved = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     const col = board.columns[1];
     return { role: col.role, isDone: col.isDone };
@@ -480,7 +479,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   }, 3000, 'flow badge');
   check('flow badge shows blocked', await page.$eval('.column:nth-child(1) .card:nth-child(1) .chip.flow', el => el.textContent.includes('BLOCKED')));
   const flowStateSaved = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const card = b.boards.find(x => x.id === b.activeBoardId).columns[0].cards[0];
     return { state: card.flow.state, reason: card.flow.reason, since: card.flow.since };
   });
@@ -494,11 +493,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await blur();
   await pressUndo();
   await waitFor(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     return b.boards.find(x => x.id === b.activeBoardId).columns[0].cards[0].flow.state === 'normal';
   }, 3000, 'flow undo');
   const flowUndone = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     return b.boards.find(x => x.id === b.activeBoardId).columns[0].cards[0].flow.state;
   });
   check('undo restores flow state', flowUndone === 'normal');
@@ -614,7 +613,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('hard WIP without override is denied', hardResult.ok === false && hardResult.reason === 'policy');
 
   const beforeUndo = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     return b.boards.find(x => x.id === b.activeBoardId).columns[0].cards.map(c => c.id);
   });
   const hardConfirmed = await page.evaluate((ids) => {
@@ -626,12 +625,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await blur();
   await pressUndo();
   await waitFor((ids) => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     return board.columns[0].cards.some(c => c.id === ids[0]);
   }, 3000, 'policy undo', beforeUndo);
   const policyAfterUndo = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     return b.boards.find(x => x.id === b.activeBoardId).columns[0].cards.map(c => c.id);
   });
   check('policy move undoes as one entry', JSON.stringify(beforeUndo) === JSON.stringify(policyAfterUndo));
@@ -706,7 +705,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     if (btn) btn.click();
   });
   const softCommitted = await waitFor((ids) => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     return board.columns.find(c => c.id === ids.col2).cards.some(c => c.id === ids.cardId);
   }, 3000, 'soft wip move commits', softWip);
@@ -714,7 +713,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await blur();
   await pressUndo();
   await waitFor((ids) => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     return board.columns.find(c => c.id === ids.col1).cards.some(c => c.id === ids.cardId);
   }, 3000, 'soft wip move undone', softWip);
@@ -729,17 +728,17 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     if (btn) btn.click();
   });
   const softQuickCommitted = await waitFor(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     return board.columns[1].cards.some(c => c.title === 'Soft quick-add probe');
   }, 3000, 'soft quick-add commits');
   check('quick-add commits after confirmation', softQuickCommitted);
 
   await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     board.columns.forEach(col => { col.wipLimit = 0; });
-    localStorage.setItem('kanban.board.v1', JSON.stringify(b));
+    localStorage.setItem('kanban.mirror.v1', JSON.stringify({ savedAt: Date.now(), payload: b }));
   });
   await page.evaluate(() => KB.App.refresh());
 
@@ -756,7 +755,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await page.$eval('.column:nth-child(1) .qa-input', (el) => { el.value = 'Exact A\nExact B'; el.focus(); });
   await page.keyboard.press('Enter');
   const exactLanded = await waitFor(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     const col = board.columns[0];
     return col.cards.some(c => c.title === 'Exact A') && col.cards.some(c => c.title === 'Exact B');
@@ -781,7 +780,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     if (btn) btn.click();
   });
   const atomicAdded = await waitFor(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     const col = board.columns[0];
     return col.cards.some(c => c.title === 'Atomic A') && col.cards.some(c => c.title === 'Atomic B');
@@ -796,7 +795,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     if (btn) btn.click();
   });
   const cancelledOut = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     const input = document.querySelector('.column:nth-child(1) .qa-input');
     return {
@@ -807,16 +806,16 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('cancelled batch adds nothing', cancelledOut.addedCount === 0);
   check('cancelled quick-add keeps the input text', cancelledOut.inputKept === true);
   await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     board.columns.forEach(col => { col.wipLimit = 0; });
-    localStorage.setItem('kanban.board.v1', JSON.stringify(b));
+    localStorage.setItem('kanban.mirror.v1', JSON.stringify({ savedAt: Date.now(), payload: b }));
   });
   await page.evaluate(() => KB.App.refresh());
 
   // ---- Cancelling the create-confirm dialog keeps the typed card ----
   await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     const col1 = board.columns[0];
     KB.State.updateColumn(col1.id, { wipLimit: col1.cards.length, policy: { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '' } });
@@ -861,16 +860,16 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await clickByText('.modal-actions .btn', 'Cancel');
   await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'editor closes');
   const editorCancelled = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     return board.columns[0].cards.some(c => c.title.indexOf('Editor cancel probe') === 0) === false;
   });
   check('no card from cancelled create', editorCancelled === true);
   await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     board.columns.forEach(col => { col.wipLimit = 0; });
-    localStorage.setItem('kanban.board.v1', JSON.stringify(b));
+    localStorage.setItem('kanban.mirror.v1', JSON.stringify({ savedAt: Date.now(), payload: b }));
   });
   await page.evaluate(() => KB.App.refresh());
   await waitFor(() => !!document.querySelector('.column'), 3000, 'back to board after editor cancel');
@@ -888,7 +887,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   // ---- Lifecycle fields follow role-based moves ----
   const lifeSeed = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     board.columns[0].role = 'queue';
     board.columns[1].role = 'active';
@@ -923,12 +922,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const colCount = await page.$$eval('.column', els => els.length);
   check('lifecycle board renders', colCount === 3);
   const lifeCols = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     return b.boards.find(x => x.id === b.activeBoardId).columns.map(c => c.id);
   });
   await page.evaluate((cols) => KB.State.moveCard(cols[0], 'life-1', cols[1], 0), lifeCols);
   const mid = await page.evaluate((cols) => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     const card = board.columns.find(c => c.id === cols[1]).cards.find(c => c.id === 'life-1');
     return { startedAt: card.startedAt, completedAt: card.completedAt, transitions: card.transitions.length };
@@ -939,7 +938,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   await page.evaluate((cols) => KB.State.moveCard(cols[1], 'life-1', cols[2], 0), lifeCols);
   const done = await page.evaluate((cols) => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     const card = board.columns.find(c => c.id === cols[2]).cards.find(c => c.id === 'life-1');
     return { startedAt: card.startedAt, completedAt: card.completedAt, transitions: card.transitions.length };
@@ -950,7 +949,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   await page.evaluate((cols) => KB.State.moveCard(cols[2], 'life-1', cols[0], 0), lifeCols);
   const reopened = await page.evaluate((cols) => {
-    const b = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = b.boards.find(x => x.id === b.activeBoardId);
     const card = board.columns.find(c => c.id === cols[0]).cards.find(c => c.id === 'life-1');
     return { completedAt: card.completedAt };
@@ -958,12 +957,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('reopening a done card clears completedAt', reopened.completedAt === null);
 
   const noopTransitions = await page.evaluate((cols) => {
-    const before = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const before = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = before.boards.find(x => x.id === before.activeBoardId);
     const card = board.columns.find(c => c.id === cols[0]).cards.find(c => c.id === 'life-1');
     const count = card.transitions.length;
     const result = KB.State.moveCard(cols[0], 'life-1', cols[0], 0);
-    const after = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const after = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const afterCard = after.boards.find(x => x.id === after.activeBoardId).columns.find(c => c.id === cols[0]).cards.find(c => c.id === 'life-1');
     return { result, before: count, after: afterCard.transitions.length };
   }, lifeCols);
@@ -993,12 +992,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   // ---- Same-column reorder changes position without a lifecycle transition ----
   const reorderTransitions = await page.evaluate((cols) => {
     KB.State.addCard(cols[0], { title: 'Reorder probe' });
-    const before = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const before = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const board = before.boards.find(x => x.id === before.activeBoardId);
     const card = board.columns.find(c => c.id === cols[0]).cards.find(c => c.id === 'life-1');
     const count = card.transitions.length;
     KB.State.moveCard(cols[0], 'life-1', cols[0], 2);
-    const after = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const after = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const afterBoard = after.boards.find(x => x.id === after.activeBoardId);
     const afterCol = afterBoard.columns.find(c => c.id === cols[0]);
     const afterCard = afterCol.cards.find(c => c.id === 'life-1');
@@ -1016,7 +1015,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     KB.State.updateColumn(col.id, { policy: { wipMode: 'off', defaultLabelIds: labelId ? [labelId] : [], defaultAssignee: 'Sam', entryCriteria: [], exitCriteria: [] } });
     KB.State.addCard(cols[0], { title: 'Defaults reorder probe' });
     KB.State.moveCard(cols[0], 'life-1', cols[0], 0);
-    const after = JSON.parse(localStorage.getItem('kanban.board.v1'));
+    const after = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
     const afterBoard = after.boards.find(x => x.id === after.activeBoardId);
     const afterCol = afterBoard.columns.find(c => c.id === cols[0]);
     const card = afterCol.cards.find(c => c.id === 'life-1');
@@ -1709,8 +1708,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   // ---- Corrupt primary + mirror recovers from a backup ----
   await page.evaluate(() => KB.Storage.backup(KB.State.data(), 'e2e-recovery'));
   const corruptState = await page.evaluate(() => new Promise((resolve) => {
-    localStorage.setItem('kanban.board.v1', '{not json');
-    localStorage.setItem('kanban.savedAt.v1', String(Date.now() + 1000));
+    localStorage.setItem('kanban.mirror.v1', '{not json');
     const req = indexedDB.open('kanban-store', 1);
     req.onsuccess = () => {
       const db = req.result;
@@ -1938,7 +1936,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('write failure degrades to the mirror', degradeResult.degraded === true);
   const degradeState = await page.evaluate(() => ({
     cardPresent: KB.State.activeBoard().columns[0].cards.some(c => c.title === 'Degrade probe'),
-    mirrorHolds: JSON.parse(localStorage.getItem('kanban.board.v1')).boards.some(b => b.columns.some(c => c.cards.some(x => x.title === 'Degrade probe')))
+    mirrorHolds: JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload.boards.some(b => b.columns.some(c => c.cards.some(x => x.title === 'Degrade probe')))
   }));
   check('degraded session keeps working via memory and mirror', degradeState.cardPresent && degradeState.mirrorHolds);
 
