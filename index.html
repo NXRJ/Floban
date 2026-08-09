@@ -2,12 +2,15 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101116">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Kanban">
   <title>Kanban</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect width='16' height='16' fill='%23101116'/%3E%3Crect x='2' y='2' width='5' height='5' fill='%23ff4136'/%3E%3Crect x='9' y='2' width='5' height='5' fill='%23ffd60a'/%3E%3Crect x='2' y='9' width='5' height='5' fill='%233fd7e0'/%3E%3Crect x='9' y='9' width='5' height='5' fill='%238b5cf6'/%3E%3C/svg%3E">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="fonts/fonts.css">
   <link rel="stylesheet" href="css/styles.css">
   <script>
     (function () {
@@ -91,12 +94,18 @@
       <span class="btn-icon"></span><span class="btn-label">Recurring</span>
     </button>
     <span id="clock" class="clock" aria-hidden="true"></span>
+    <button id="palette-btn" class="btn icon" type="button" title="Command palette (Ctrl/Cmd+K)" aria-label="Command palette">
+      <span class="btn-icon"></span>
+    </button>
+    <button id="app-menu" class="btn icon" type="button" title="Menu" aria-label="Menu">
+      <span class="btn-icon"></span>
+    </button>
     <button id="toggle-theme" class="btn icon" type="button" title="Toggle dark / light theme" aria-label="Toggle dark / light theme">
       <span class="icon-sun"></span><span class="icon-moon"></span>
     </button>
   </header>
 
-  <div class="filter-bar">
+  <div class="filter-bar" id="filter-bar">
     <div class="search-box">
       <span class="search-icon"></span>
       <input id="search-input" type="search" placeholder="SEARCH CARDS…  ( / )" aria-label="Search cards">
@@ -124,8 +133,29 @@
       <p class="no-results-text"></p>
       <button type="button" class="btn sm" data-action="clear-filters">Clear filters</button>
     </div>
+    <div id="board-pager" class="board-pager" hidden>
+      <button type="button" id="filter-toggle" class="btn sm filter-toggle" aria-expanded="false" aria-controls="filter-bar">Filters</button>
+      <button type="button" class="bp-prev btn icon sm" aria-label="Previous column" title="Previous column"></button>
+      <div id="bp-dots" class="bp-dots" role="group" aria-label="Column pager"></div>
+      <button type="button" class="bp-next btn icon sm" aria-label="Next column" title="Next column"></button>
+    </div>
     <div id="board" class="board" aria-label="Board"></div>
   </main>
+
+  <nav id="mobile-tabs" class="mobile-tabs" aria-label="Workspaces">
+    <button type="button" class="mt-btn" data-workspace="board">
+      <span class="mt-icon"></span><span class="mt-label">Board</span>
+    </button>
+    <button type="button" class="mt-btn" data-workspace="mydesk">
+      <span class="mt-icon"></span><span class="mt-label">Desk</span>
+    </button>
+    <button type="button" class="mt-btn" data-workspace="inbox">
+      <span class="mt-icon"></span><span class="mt-label">Inbox</span><span id="mt-inbox-badge" class="mt-badge" hidden></span>
+    </button>
+    <button type="button" class="mt-btn" data-workspace="review">
+      <span class="mt-icon"></span><span class="mt-label">Review</span>
+    </button>
+  </nav>
 
   <section id="ws-mydesk" class="workspace" aria-label="My Desk" hidden></section>
   <section id="ws-inbox" class="workspace" aria-label="Inbox" hidden></section>
@@ -135,6 +165,8 @@
   <aside id="archive-panel" class="archive-panel" aria-label="Archive"></aside>
 
   <div id="modal-root"></div>
+  <div id="palette-root"></div>
+  <div id="sheet-root"></div>
   <div id="toast-root"></div>
   <div id="live-region" class="live-region" role="status" aria-live="polite"></div>
 
@@ -154,8 +186,12 @@
   <script src="js/core/history.js"></script>
   <script src="js/core/operations.js"></script>
   <script src="js/core/markdown.js"></script>
+  <script src="js/core/store.js"></script>
+  <script src="js/core/commands.js"></script>
 
   <script src="js/dom.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/storage.js"></script>
   <script src="js/state.js"></script>
   <script src="js/state-cards.js"></script>
   <script src="js/state-features.js"></script>
@@ -171,6 +207,10 @@
   <script src="js/selection.js"></script>
   <script src="js/workspaces.js"></script>
   <script src="js/render.js"></script>
+  <script src="js/commands.js"></script>
+  <script src="js/actionsheet.js"></script>
+  <script src="js/palette.js"></script>
+  <script src="js/pwa.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

@@ -184,7 +184,7 @@ Nine vivid pixel colors (the palette of a classic machine's usable spectrum) car
 - **Label** (400, 11px, 1.5, +1px): the chrome voice on buttons and field names, uppercased by convention.
 
 ### Named Rules
-**The Two-Voice Rule.** Chrome is Press Start 2P at 11px, body is VT323 at 16/18/23px — there is no third face and no middle size between 11 and 16. A size outside the ramp is a defect, not a token.
+**The Two-Voice Rule.** Chrome is Press Start 2P at 11px, body is VT323 at 16/18/23px — there is no third face and no middle size between 11 and 16. A size outside the ramp is a defect, not a token. The one documented exception is **micro-chrome at 9px** — PS2P 9px, letter-spacing 1px — reserved for hint text, shortcut chips, count badges, and pager labels where 11px would crowd the row (palette footer/hints, sheet and palette shortcut chips, bottom-tab labels and badges, snapshot timestamps). Nothing else drops below 11.
 
 ## Layout
 
@@ -241,10 +241,22 @@ Square, everywhere: the system's radius is zero and there is no rounding anywher
 ### Signature Component: The Column Window
 A window with an accent title bar and a file list. Title bars are painted per-column from the nine-pixel palette (deterministic hash of the column id), so the board reads as a wall of colored windows whose colors are stable across reloads. The card list is the window's interior: paper files that drag between windows; dragging cuts a hole (marching ants around the source) and the landing slot blinks a violet pixel line.
 
+### Command Palette (Ctrl/Cmd+K)
+A centered window (`min(560px, 94vw)`) at 12vh, square, 2px strong border, 6px modal cast, `win-in` in four steps. A violet title bar reads `COMMANDS`; beneath it a full-width search field (input face, violet focus ring). Results are `listbox` rows: 16px pixel icon, VT323 18px title, and a PS2P 9px shortcut chip on the right. The selected row inverts to accent fill with white chrome — the same selected-chip state as filters. A PS2P 9px footer shows `↑↓ MOVE · ENTER RUN · ESC CLOSE`. Category labels are PS2P 9px muted chrome. The palette opens above everything except the homescreen (z 75) and closes instantly on Escape or run.
+
+### Action Sheets
+On touch screens, hover-only menus become bottom sheets: a full-width window docked to the bottom edge with a 2px strong top border and a hard 4px upward cast, entering with `sheet-in` in four steps (`translateY(100%) → 0`). The violet title bar carries the sheet's name (card title, `COLUMN`, or `KANBAN MENU`); rows are VT323 18px items with a 16px pixel icon, label, and optional shortcut chip. Rows hover/focus on surface-2 with a strong border and press 2px into the sheet. The sheet sits above modals (z 55) but below toasts; `env(safe-area-inset-bottom)` pads the list so the dock never hides under an iPhone home bar.
+
+### Mobile: The Board Becomes a Pager
+At ≤640px the bench collapses into a single-column pager: each column window is `calc(100% - 24px)` wide with `scroll-snap-align: center`, so the board swipes like a machine dial and always shows one window plus a hint of the next. A pager strip under the header holds the **Filters** toggle (chip, accent-filled while filters are active), ◀ ▶ arrows (disabled at the ends), and one 10px square dot per column — the active dot is accent-filled with a 1px ink shadow, exactly like an active filter chip. Workspace switching moves to a fixed bottom tab bar (Board / Desk / Inbox / Review) with 18px pixel icons and PS2P 9px labels; the active tab inverts to surface-2 with an accent icon. The filter bar becomes a collapsible drawer under the header (max-height steps transition, 52vh at most, internally scrollable). Touch targets grow: cards keep the 23px title but add padding, quick-add becomes 44px tall, and the card's hover actions collapse to a single 34px `⋯` that opens the card's action sheet. No new fonts, sizes outside the 11/16/18/23 ramp, radii, gradients, or blur enter the system on mobile — the pager, tabs, palette, and sheets all use the same chrome, shadows, and steps motion as the desktop.
+
 ### Motion
 - **The one authored moment:** drag-and-drop — marching ants (0.6s, steps(1)) around the cut hole, blinking drop line (0.5s, steps(1)).
 - **Everything else is mechanical:** modal windows pop in at 0.18s in four steps; toasts step in at 0.16s; the archive panel slides in five steps over 0.2s; buttons press instantly. No tweening, no easing curves, no entrance choreography on page load.
-- **Reduced motion:** all steps-based animation is disabled under `prefers-reduced-motion`.
+- **Reduced motion:** all steps-based animation is disabled under
+  `prefers-reduced-motion` — including the palette, action sheets, and the
+  filter-bar drawer (their keyframes are on the same kill-list as the modal
+  and toast).
 
 ## Do's and Don'ts
 

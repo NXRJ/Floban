@@ -75,9 +75,27 @@
     ]),
     chevronDown: pixelIcon([[3, 6, 2, 2], [5, 8, 2, 2], [7, 10, 2, 2], [9, 8, 2, 2], [11, 6, 2, 2]]),
     chevronUp: pixelIcon([[3, 10, 2, 2], [5, 8, 2, 2], [7, 6, 2, 2], [9, 8, 2, 2], [11, 10, 2, 2]]),
+    chevronLeft: pixelIcon([[6, 3, 2, 2], [8, 5, 2, 2], [10, 7, 2, 2], [8, 9, 2, 2], [6, 11, 2, 2]]),
+    chevronRight: pixelIcon([[10, 3, 2, 2], [8, 5, 2, 2], [6, 7, 2, 2], [8, 9, 2, 2], [10, 11, 2, 2]]),
     doc: pixelIcon([
       [4, 1, 8, 2], [3, 3, 10, 2], [2, 5, 12, 10],
       [5, 8, 2, 2], [9, 8, 2, 2], [5, 11, 2, 2], [9, 11, 2, 2]
+    ]),
+    menu: pixelIcon([
+      [2, 3, 12, 2], [2, 7, 12, 2], [2, 11, 12, 2]
+    ]),
+    command: pixelIcon([
+      [2, 2, 2, 2], [6, 2, 2, 2], [10, 2, 2, 2], [14, 2, 2, 2],
+      [2, 6, 2, 2], [6, 6, 2, 2], [10, 6, 2, 2], [14, 6, 2, 2],
+      [2, 10, 2, 2], [6, 10, 2, 2], [10, 10, 2, 2], [14, 10, 2, 2],
+      [2, 14, 2, 2], [6, 14, 2, 2], [10, 14, 2, 2], [14, 14, 2, 2]
+    ]),
+    play: pixelIcon([
+      [4, 2, 2, 12], [6, 4, 2, 8], [8, 6, 2, 4], [10, 8, 2, 2]
+    ]),
+    star: pixelIcon([
+      [7, 2, 2, 2], [6, 4, 2, 2], [8, 4, 2, 2], [5, 6, 2, 2], [9, 6, 2, 2],
+      [4, 8, 2, 2], [10, 8, 2, 2], [3, 10, 10, 2], [4, 12, 8, 2], [6, 14, 4, 2]
     ])
   };
 
@@ -152,5 +170,64 @@
     return document.querySelector(normalized);
   };
 
-  KB.Dom = { h: h, icon: icon, fmtDate: fmtDate, inkOn: inkOn, paintChip: paintChip, uid: uid, isoToday: isoToday, isoDaysFromNow: isoDaysFromNow, plural: plural };
+  // Keeps Tab/Shift+Tab cycling inside an overlay so keyboard users cannot
+  // tab out of a modal palette or action sheet into the page behind it.
+  function trapKey(e, root) {
+    if (e.key !== 'Tab') return;
+    var focusables = root.querySelectorAll('button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])');
+    if (focusables.length === 0) {
+      e.preventDefault();
+      return;
+    }
+    var first = focusables[0];
+    var last = focusables[focusables.length - 1];
+    var active = document.activeElement;
+    var inside = root.contains(active);
+    if (e.shiftKey) {
+      if (!inside || active === first) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else if (!inside || active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  // While an overlay (palette/action sheet) is open, everything else on the
+  // page becomes inert + aria-hidden so background content is neither
+  // clickable nor announced to screen readers. Overlay roots are excluded.
+  function setPageInert(inert) {
+    Array.prototype.forEach.call(document.body.children, function (el) {
+      if (el.id === 'palette-root' || el.id === 'sheet-root') return;
+      if (inert && !el.hasAttribute('inert')) {
+        el.setAttribute('inert', '');
+        el.setAttribute('aria-hidden', 'true');
+      } else if (!inert && el.hasAttribute('inert')) {
+        el.removeAttribute('inert');
+        el.removeAttribute('aria-hidden');
+      }
+    });
+  }
+
+  // The one mobile breakpoint, owned in one place (CSS media queries use the
+  // same 640px value; keep them in sync).
+  function isMobile() {
+    return window.matchMedia && window.matchMedia('(max-width: 640px)').matches;
+  }
+
+  KB.Dom = {
+    h: h,
+    icon: icon,
+    fmtDate: fmtDate,
+    inkOn: inkOn,
+    paintChip: paintChip,
+    uid: uid,
+    isoToday: isoToday,
+    isoDaysFromNow: isoDaysFromNow,
+    plural: plural,
+    trapKey: trapKey,
+    setPageInert: setPageInert,
+    isMobile: isMobile
+  };
 })(window.KB = window.KB || {});

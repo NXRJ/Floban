@@ -151,15 +151,19 @@
   }
 
 
-  function promptModal(title, labelText, initial, onSave) {
+  function buildPromptForm(title, labelText, opts, onSave) {
+    // Shared skeleton for single-line prompt dialogs.
+    // opts: { maxlength, initial, placeholder, required, submitLabel, hint }
+    opts = opts || {};
     var form = h('form', { class: 'card-form' });
     var heading = h('h2');
     heading.textContent = title;
     form.appendChild(heading);
 
-    var input = h('input', { type: 'text', maxlength: 60, 'aria-label': labelText });
-    input.value = initial || '';
-    form.appendChild(fieldBlock(labelText, input, true));
+    var input = h('input', { type: 'text', maxlength: opts.maxlength || 60, 'aria-label': labelText });
+    input.value = opts.initial || '';
+    if (opts.placeholder) input.placeholder = opts.placeholder;
+    form.appendChild(fieldBlock(labelText, input, Boolean(opts.required)));
 
     var actions = h('div', { class: 'modal-actions' });
     actions.appendChild(h('span', { class: 'spacer' }));
@@ -168,15 +172,15 @@
     cancelBtn.addEventListener('click', close);
     actions.appendChild(cancelBtn);
     var saveBtn = h('button', { type: 'submit', class: 'btn primary' });
-    saveBtn.textContent = 'Save';
+    saveBtn.textContent = opts.submitLabel || 'Save';
     actions.appendChild(saveBtn);
     form.appendChild(actions);
 
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       var value = input.value.trim();
-      if (!value) {
-        KB.UI.toast('A name is required', 'error');
+      if (opts.required && !value) {
+        KB.UI.toast(opts.hint || 'A name is required', 'error');
         input.focus();
         return;
       }
@@ -184,7 +188,16 @@
       onSave(value);
     });
 
-    open(form);
+    return form;
+  }
+
+  function promptModal(title, labelText, initial, onSave) {
+    open(buildPromptForm(title, labelText, { maxlength: 60, initial: initial, required: true }, onSave));
+  }
+
+  function promptOptionalModal(title, labelText, placeholder, onSave) {
+    // Like promptModal but the value may be left empty.
+    open(buildPromptForm(title, labelText, { maxlength: 200, placeholder: placeholder, submitLabel: 'OK' }, onSave));
   }
 
   function moveConfirmModal(title, evaluation, targetColumnTitle, onConfirm, onCancel) {
@@ -271,6 +284,7 @@
     readChecklist: readChecklist,
     labelsFor: labelsFor,
     promptModal: promptModal,
+    promptOptionalModal: promptOptionalModal,
     moveConfirmModal: moveConfirmModal,
     isOpen: isOpen
   };

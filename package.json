@@ -15,9 +15,11 @@
     "puppeteer": "^25.5.0"
   },
   "scripts": {
-    "lint": "eslint js tests",
+    "lint": "eslint js tests serve.js scripts sw.js",
     "test:unit": "node --test tests/unit/*.test.js",
     "test:e2e": "node tests/kanban-smoke.js",
-    "test": "npm run test:unit && npm run test:e2e"
+    "test": "npm run test:unit && npm run test:e2e",
+    "serve": "node serve.js",
+    "icons": "node scripts/gen-icons.js"
   }
 }
