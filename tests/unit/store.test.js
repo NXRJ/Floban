@@ -200,6 +200,24 @@ test('an invalid mirror is ignored in favor of the primary', async () => {
   assert.equal(result.source, 'primary');
 });
 
+test('an already-parsed mirror payload (browser envelope shape) is accepted', async () => {
+  // The browser adapter stores the envelope as { savedAt, payload: state }
+  // where payload is a nested OBJECT, not a serialized string. The engine
+  // must accept that shape or the crash mirror can never be the recovery
+  // source (JSON.parse on an object coerces it to "[object Object]").
+  const backend = memoryBackend();
+  const engine = makeEngine(backend);
+  await engine.save(state(1), {}); // IDB primary at t=0
+  engine._clock.advance(100);
+  const result = await engine.load({
+    validate: validateOk,
+    mirror: { payload: state(2), savedAt: engine.now() } // object, newer
+  });
+  assert.equal(result.source, 'mirror');
+  assert.equal(result.state.n, 2);
+  assert.equal(result.needsRepair, 'mirror');
+});
+
 test('a newer mirror that parses but fails validation cannot bypass the valid primary', async () => {
   // The recovery rule is "newest VALID copy wins". A mirror that JSON-parses
   // but fails the app validator (e.g. { version: 3, boards: [] }) must fall

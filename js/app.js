@@ -721,6 +721,16 @@
       updateBoardOverflow();
       KB.Render.boardPager();
     });
+    // Cards decide their information hierarchy (description visibility,
+    // label-chip cap) at render time via KB.Dom.isMobile(). Re-render only
+    // when the mobile breakpoint is actually crossed — not on every resize —
+    // so a desktop->mobile rotation re-caps labels without a manual refresh.
+    var mobileMq = window.matchMedia && window.matchMedia('(max-width: 640px)');
+    if (mobileMq) {
+      var onBreakpointCross = function () { refresh(); };
+      if (mobileMq.addEventListener) mobileMq.addEventListener('change', onBreakpointCross);
+      else if (mobileMq.addListener) mobileMq.addListener(onBreakpointCross); // Safari 13 and older
+    }
     document.addEventListener('keydown', function (e) {
       // Palette and action sheets own their keys while open.
       if (KB.Palette.isOpen() || KB.Sheet.isOpen()) return;

@@ -60,8 +60,14 @@ any id migration.
 - Transport (WebSocket, WebRTC, server, …) — a later experiment.
 - Conflict resolution policy beyond CRDT merge semantics — decide when sync is
   designed.
-- Multi-tab same-device sync — out of scope; the serialized write queue in
-  `js/core/store.js` keeps tabs from corrupting each other's writes today.
+- Multi-tab same-device editing — NOT supported. Each tab runs its own
+  serialized write queue, so two tabs editing the same board overwrite each
+  other: both load state A, tab 1 saves B, tab 2 saves C from stale A, and
+  the full-state write C replaces B (last-writer-wins data loss). Before
+  public release, add at least one of: detect other open tabs and warn;
+  make secondary tabs read-only; rebroadcast committed snapshots over
+  BroadcastChannel; or check revisions/conflicts before replacing the
+  primary state. A CRDT layer is not required to solve this.
 
 ## Testing the seam today
 
