@@ -465,6 +465,30 @@
         KB.UI.toast('Template saved', 'success');
       });
       actions.appendChild(templateBtn);
+
+      var focusBtn = h('button', { type: 'button', class: 'btn ghost', id: 'cf-focus' });
+      var session = KB.State.focusSession();
+      var focusingThis = session && session.cardId === card.id;
+      focusBtn.textContent = focusingThis ? 'STOP FOCUS' : 'START FOCUS';
+      focusBtn.title = focusingThis
+        ? 'End the focus session and log the effort on this card'
+        : 'Run a 25-minute focus session on this card (F to stop)';
+      focusBtn.addEventListener('click', function () {
+        var active = KB.State.focusSession();
+        if (active && active.cardId === card.id) {
+          KB.State.endFocus();
+          KB.UI.toast('Focus logged', 'success', 'Undo', KB.UI.undoAction);
+        } else if (active) {
+          KB.UI.toast('A focus session is already running', 'info');
+          return;
+        } else {
+          KB.State.startFocus(card.id, 'pomodoro');
+          KB.UI.toast('Focus started \u2014 press F to stop', 'success');
+        }
+        KB.App.refresh();
+        close();
+      });
+      actions.appendChild(focusBtn);
     }
     var spacer = h('span', { class: 'spacer' });
     actions.appendChild(spacer);

@@ -100,6 +100,8 @@
       lenses: [],
       recurrences: [],
       dayplans: {},
+      focusDays: {},
+      focusSession: null,
       boards: [board]
     };
   }

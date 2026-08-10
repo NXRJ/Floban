@@ -25,6 +25,19 @@
     return chip;
   }
 
+  function effortChip(card) {
+    var effort = card.effort;
+    if (!effort || ((effort.minutes || 0) === 0 && (effort.pomodoros || 0) === 0)) return null;
+    var chip = h('span', { class: 'chip chip-static effort' });
+    chip.innerHTML = icon('clock');
+    var parts = [];
+    if (effort.minutes) parts.push(KB.Core.Focus.formatEffort(effort.minutes));
+    if (effort.pomodoros) parts.push(effort.pomodoros + ' pomo');
+    chip.appendChild(document.createTextNode(parts.join(' \u00B7 ')));
+    chip.title = 'Focus effort: ' + parts.join(', ');
+    return chip;
+  }
+
   function columnAccent(id) {
     var sum = 0;
     for (var i = 0; i < id.length; i++) sum = (sum * 31 + id.charCodeAt(i)) >>> 0;
@@ -182,6 +195,8 @@
     if (pr) meta.appendChild(pr);
     var sz = sizeChip(card);
     if (sz) meta.appendChild(sz);
+    var ef = effortChip(card);
+    if (ef) meta.appendChild(ef);
     var fl = flowChip(card);
     if (fl) meta.appendChild(fl);
     var dep = dependencyChip(card, column);

@@ -183,6 +183,11 @@
       out.size = pickIn(SIZES, out.size, 'none');
       out.startedAt = toNumberOrNull(out.startedAt);
       out.completedAt = toNumberOrNull(out.completedAt);
+      var effort = out.effort && typeof out.effort === 'object' ? out.effort : {};
+      out.effort = {
+        pomodoros: Math.max(0, toInt(effort.pomodoros, 0)),
+        minutes: Math.max(0, toInt(effort.minutes, 0))
+      };
       out.flow = normalizeFlow(out.flow);
       out.dependencies = normalizeDependencies(out.dependencies);
       out.recurrenceId = typeof out.recurrenceId === 'string' ? out.recurrenceId : null;
@@ -509,6 +514,32 @@
       return state;
     }
 
+    function normalizeFocusDays(value) {
+      var out = {};
+      if (!value || typeof value !== 'object') return out;
+      Object.keys(value).forEach(function (key) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
+        var entry = value[key];
+        if (!entry || typeof entry !== 'object') return;
+        out[key] = {
+          minutes: Math.max(0, toInt(entry.minutes, 0)),
+          pomodoros: Math.max(0, toInt(entry.pomodoros, 0))
+        };
+      });
+      return out;
+    }
+
+    function normalizeFocusSession(value) {
+      if (!value || typeof value !== 'object') return null;
+      if (typeof value.cardId !== 'string' || !value.cardId) return null;
+      if (typeof value.startedAt !== 'number') return null;
+      return {
+        cardId: value.cardId,
+        startedAt: value.startedAt,
+        kind: value.kind === 'stopwatch' ? 'stopwatch' : 'pomodoro'
+      };
+    }
+
     function normalizeDayplans(value) {
       var out = {};
       if (!value || typeof value !== 'object') return out;
@@ -557,6 +588,8 @@
       if (!Array.isArray(out.recurrences)) out.recurrences = [];
       out.recurrences = out.recurrences.map(function (r) { return normalizeRecurrence(r, deps); }).filter(Boolean);
       out.dayplans = normalizeDayplans(out.dayplans);
+      out.focusDays = normalizeFocusDays(out.focusDays);
+      out.focusSession = normalizeFocusSession(out.focusSession);
       repairDependencies(out);
       repairRecurrences(out, deps);
       repairLenses(out);

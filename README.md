@@ -72,7 +72,7 @@ sheets replace hover-only menus. Desktop is untouched.
 
 ## Workspaces
 
-The header switches between five workspaces:
+The header switches between six workspaces:
 
 - **Board** — the classic board experience.
 - **My Desk** — a cross-board focus view with default sections (Blocked, Due
@@ -86,6 +86,14 @@ The header switches between five workspaces:
   walk the grid and Enter opens the day's first card. Press `T` to jump here.
   Mobile renders the same grid; tapping a chip opens the card editor (with
   type-to-snooze) instead of drag.
+- **Work Log** — a copy-ready weekly ledger of completed work (press `L`):
+  day columns of finished cards with label chips and cycle-time notes, a
+  masthead of per-board counts, an **UNSTAMPED** band flagging cards sitting
+  in Done columns that never ran the lifecycle (with a one-key STAMP fix),
+  `‹ ›` steps weeks, `C` copies a paste-ready summary ("WEEK OF AUG 4–10 —
+  12 DONE · TUE · 3: Ship 1.0 release · Fix #42 …") for client updates,
+  invoices and standups, and `P` prints. Pure projection of `completedAt` —
+  no new storage.
 
 Your current workspace is remembered across reloads.
 
@@ -329,6 +337,18 @@ Your current workspace is remembered across reloads.
   guardrail made concrete (never a 50-item "Today" flood, no $200/yr
   planner subscription needed).
 
+### Focus sessions
+- A task-tied timer: **Start focus** from the card editor (or the card action
+  sheet) runs a 25-minute pomodoro; a corner HUD shows the countdown with the
+  card's title. Press `F` to stop, or stop from the HUD.
+- Elapsed time is always `now − startedAt` from timestamps — the HUD is a
+  pure render, so it never drifts, and a running session **survives a
+  reload**. Sub-minute sessions log nothing (no effort noise).
+- A full pomodoro stamps the card (`⏱ 2h05m · 5 pomo` chip) and both minutes
+  and pomodoro count land in the per-day focus log (`state.focusDays`) — the
+  freelancer's timesheet substrate. Starting and stopping are each one atomic,
+  undoable state op.
+
 ### Backup & recovery
 - Application data lives in **IndexedDB** (primary). Every save also writes an
   atomic localStorage crash-mirror envelope (`kanban.mirror.v1`) so a tab that
@@ -373,6 +393,9 @@ shortcuts" lists them from the live registry.
 | Enter / Escape (move mode) | Commit / cancel move |
 | `Ctrl/Cmd+Enter` (card editor) | Save the card |
 | `T` | Open the Date Desk (calendar) |
+| `L` | Open the Work Log |
+| `F` | Stop the running focus session |
+| `C` / `P` (Work Log) | Copy the week's summary / print |
 
 ## Code structure
 
@@ -387,6 +410,8 @@ that use them.
 | Core | `js/core/nlparse.js` | Natural-language capture grammar: deterministic parsing of due dates, priority and labels out of quick-add lines and snooze phrases, with token spans for live preview. No browser access. |
 | Core | `js/core/calendar.js` | Calendar projection: a pure function of (monthKey, cards, now) producing the 6×7 month grid, today/overdue classification and the overdue strip. No browser access. |
 | Core | `js/core/dayplan.js` | Day Sheet rules: candidate ranking (carry-over → overdue → due-today → Review), stamping (bounded slots, dedupe, order), and the end-of-day roll planner (keep/push/drop/archive ops as one atomic list). No browser access. |
+| Core | `js/core/focus.js` | Focus sessions: pure elapsed-time math (timestamps, never ticks), pomodoro thresholds, per-card/per-day effort accounting and totals, effort formatting. No browser access. |
+| Core | `js/core/worklog.js` | Work Log projection: Monday-anchored week ranges, grouping of completed cards by day with per-board/per-label stats, the UNSTAMPED (done-role, never completed) band, and deterministic copy-ready text composition. No browser access. |
 | Core | `js/core/model.js` | Factories for cards, columns, labels, boards, templates, inbox items, lenses and recurrences, with injectable `{ uid, now }` dependencies. |
 | Core | `js/core/migration.js` | Deterministic, idempotent, reference-independent normalization for **state version 3** (v1/v2/v3 loads, board imports, corrupt payloads, cross-board reference repair). |
 | Core | `js/core/lifecycle.js` | Card transitions: role-based `startedAt`/`completedAt`, capped transition log, flow-state periods, durations, cycle time and age. |
@@ -451,6 +476,8 @@ State **version 3** (persisted to IndexedDB; an atomic localStorage envelope
   lenses: [ { id, name, scope, boardIds, query, sort, display, createdAt, updatedAt } ],
   dayplans: { 'YYYY-MM-DD': { dateISO, stampedAt, rolledAt,
               commitments: [ { cardId, order, status } ] } },
+  focusDays: { 'YYYY-MM-DD': { minutes, pomodoros } },
+  focusSession: { cardId, startedAt, kind: 'pomodoro'|'stopwatch' } | null,
   recurrences: [ { id, enabled, mode, schedule, target, template, dueOffsetDays,
                    overlapPolicy, missedPolicy, activeCardRef, nextRunAt,
                    lastRunAt, lastCompletedAt, endAt, remainingOccurrences,
@@ -476,8 +503,8 @@ State **version 3** (persisted to IndexedDB; an atomic localStorage envelope
 
 Cards carry: `priority`, `size`, `startedAt`, `completedAt`,
 `flow: { state, reason, since, periods }`, `dependencies: { blockers, related }`
-(cross-board `{ boardId, cardId }` references), `recurrenceId` and a capped
-`transitions` log.
+(cross-board `{ boardId, cardId }` references), `recurrenceId`,
+`effort: { minutes, pomodoros }` and a capped `transitions` log.
 
 Everything is saved to **IndexedDB** (`kanban-store` database) after every
 mutation through a serialized write queue, with an atomic localStorage

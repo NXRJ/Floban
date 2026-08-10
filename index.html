@@ -67,6 +67,7 @@
       <button type="button" class="ws-btn" data-workspace="inbox">Inbox <span id="inbox-badge" class="ws-badge" hidden></span></button>
       <button type="button" class="ws-btn" data-workspace="review">Review</button>
       <button type="button" class="ws-btn" data-workspace="calendar">Calendar</button>
+      <button type="button" class="ws-btn" data-workspace="log">Log</button>
     </nav>
     <button id="board-switch" class="btn" type="button" title="Switch board">
       <span class="btn-icon"></span><span id="board-name" class="board-name"></span><span class="btn-caret"></span>
@@ -149,12 +150,18 @@
     <button type="button" class="mt-btn" data-workspace="calendar">
       <span class="mt-icon"></span><span class="mt-label">Cal</span>
     </button>
+    <button type="button" class="mt-btn" data-workspace="log">
+      <span class="mt-icon"></span><span class="mt-label">Log</span>
+    </button>
   </nav>
 
   <section id="ws-mydesk" class="workspace" aria-label="My Desk" hidden></section>
   <section id="ws-inbox" class="workspace" aria-label="Inbox" hidden></section>
   <section id="ws-review" class="workspace" aria-label="Review" hidden></section>
   <section id="ws-calendar" class="workspace" aria-label="Calendar" hidden></section>
+  <section id="ws-log" class="workspace" aria-label="Work log" hidden></section>
+
+  <div id="focus-hud" class="focus-hud" hidden></div>
 
   <div id="archive-backdrop" class="archive-backdrop"></div>
   <aside id="archive-panel" class="archive-panel" aria-label="Archive"></aside>
@@ -169,6 +176,8 @@
   <script src="js/core/nlparse.js"></script>
   <script src="js/core/calendar.js"></script>
   <script src="js/core/dayplan.js"></script>
+  <script src="js/core/focus.js"></script>
+  <script src="js/core/worklog.js"></script>
   <script src="js/core/model.js"></script>
   <script src="js/core/migration.js"></script>
   <script src="js/core/lifecycle.js"></script>

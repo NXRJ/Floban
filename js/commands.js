@@ -104,6 +104,54 @@
       KB.Modal.daySheet();
     }
   });
+  C.register({
+    id: 'log.open',
+    title: 'Work Log',
+    keywords: ['log', 'weekly', 'completed', 'ledger', 'report', 'history'],
+    category: 'Workspace',
+    icon: 'doc',
+    shortcut: 'l',
+    order: 1,
+    run: function () {
+      KB.Workspaces.set('log');
+    }
+  });
+  C.register({
+    id: 'focus.start',
+    title: 'Start focus',
+    keywords: ['pomodoro', 'timer', 'focus', 'stopwatch'],
+    category: 'Card',
+    icon: 'clock',
+    scope: 'card',
+    run: function (ctx) {
+      if (!ctx || !ctx.cardId) return;
+      if (KB.State.focusSession()) {
+        KB.UI.toast('A focus session is already running', 'info');
+        return;
+      }
+      KB.State.startFocus(ctx.cardId, 'pomodoro');
+      KB.UI.toast('Focus started \u2014 press F to stop', 'success');
+      KB.App.refresh();
+    }
+  });
+  C.register({
+    id: 'focus.toggle',
+    title: 'Stop focus',
+    keywords: ['pomodoro', 'timer', 'focus', 'stop'],
+    category: 'App',
+    icon: 'clock',
+    shortcut: 'f',
+    order: 5,
+    run: function () {
+      if (KB.State.focusSession()) {
+        var ended = KB.State.endFocus();
+        KB.UI.toast(ended && ended.logged ? 'Focus logged' : 'Focus ended', 'success', 'Undo', KB.UI.undoAction);
+        KB.App.refresh();
+      } else {
+        KB.UI.toast('Pick a card and use Start focus to begin', 'info');
+      }
+    }
+  });
 
   // ---------- Board ----------
 
