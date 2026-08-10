@@ -25,6 +25,19 @@
     return chip;
   }
 
+  function effortChip(card) {
+    var effort = card.effort;
+    if (!effort || ((effort.minutes || 0) === 0 && (effort.pomodoros || 0) === 0)) return null;
+    var chip = h('span', { class: 'chip chip-static effort' });
+    chip.innerHTML = icon('clock');
+    var parts = [];
+    if (effort.minutes) parts.push(KB.Core.Focus.formatEffort(effort.minutes));
+    if (effort.pomodoros) parts.push(effort.pomodoros + ' pomo');
+    chip.appendChild(document.createTextNode(parts.join(' \u00B7 ')));
+    chip.title = 'Focus effort: ' + parts.join(', ');
+    return chip;
+  }
+
   function columnAccent(id) {
     var sum = 0;
     for (var i = 0; i < id.length; i++) sum = (sum * 31 + id.charCodeAt(i)) >>> 0;
@@ -110,6 +123,21 @@
     return chip;
   }
 
+  function pingChip(card) {
+    if (!card.ping || !KB.Core.Ping) return null;
+    var status = KB.Core.Ping.pingStatus(card, Date.now());
+    var chip = h('span', { class: 'chip chip-static ping' + (status.state === 'overdue' ? ' ping-overdue' : '') });
+    chip.innerHTML = icon('clock');
+    if (status.state === 'overdue') {
+      chip.appendChild(document.createTextNode('PING OVERDUE ' + status.daysOverdue + 'D'));
+    } else {
+      chip.appendChild(document.createTextNode('PING +' + status.daysUntil + 'D'));
+    }
+    var contact = card.ping.contact ? 'Waiting on ' + card.ping.contact + ' \u00B7 ' : '';
+    chip.title = contact + 'follow up in ' + status.daysUntil + ' day' + (status.daysUntil === 1 ? '' : 's');
+    return chip;
+  }
+
   function agingChip(card, isDone) {
     if (isDone || !card.movedAt) return null;
     var days = KB.Core.Date.ageInDays(card.movedAt, Date.now());
@@ -156,6 +184,14 @@
 
   function cardEl(card, column) {
     var el = h('article', { class: 'card' + (column.isDone ? ' done' : ''), draggable: 'true', 'data-id': card.id, tabindex: '0' });
+    // POWER METER LOW POWER MODE: dim cards too heavy for the declared band.
+    if (KB.Core.Power && KB.Core.Power.lowPowerActive(KB.State.data())) {
+      var size = String(card.size || 'none').toLowerCase();
+      var demand = KB.Core.Power.SIZE_DEMAND[size] !== undefined ? KB.Core.Power.SIZE_DEMAND[size] : 0.5;
+      var band = (KB.State.data().power && KB.State.data().power.band) || 'mid';
+      var tolerance = KB.Core.Power.BAND_TOLERANCE[band] !== undefined ? KB.Core.Power.BAND_TOLERANCE[band] : 0.75;
+      if (demand > tolerance) el.classList.add('power-dim');
+    }
 
     var top = h('div', { class: 'card-top' });
     var title = h('p', { class: 'card-title' });
@@ -182,8 +218,12 @@
     if (pr) meta.appendChild(pr);
     var sz = sizeChip(card);
     if (sz) meta.appendChild(sz);
+    var ef = effortChip(card);
+    if (ef) meta.appendChild(ef);
     var fl = flowChip(card);
     if (fl) meta.appendChild(fl);
+    var pg = pingChip(card);
+    if (pg) meta.appendChild(pg);
     var dep = dependencyChip(card, column);
     if (dep) meta.appendChild(dep);
     var rec = recurrenceChip(card);
@@ -203,8 +243,13 @@
       meta.appendChild(moreLabels);
     }
     if (card.assignee) meta.appendChild(assigneeChip(card.assignee));
-    var due = dueChip(card, column.isDone);
-    if (due) meta.appendChild(due);
+    var dateChips = KB.Core.When ? KB.Core.When.dueChips(card, KB.Filters.todayISO()) : [];
+    dateChips.forEach(function (dc) {
+      var chip = h('span', { class: 'chip chip-static ' + dc.class, title: dc.title });
+      chip.innerHTML = icon('calendar');
+      chip.appendChild(document.createTextNode(dc.text));
+      meta.appendChild(chip);
+    });
     var aging = agingChip(card, column.isDone);
     if (aging) meta.appendChild(aging);
     el.appendChild(meta);
@@ -260,9 +305,46 @@
       title: 'New card from a template'
     });
     tplBtn.innerHTML = icon('doc');
+    var preview = h('div', { class: 'qa-preview', hidden: true });
     row.appendChild(input);
     row.appendChild(tplBtn);
+    row.appendChild(preview);
     return row;
+  }
+
+  // Live smart-capture preview chips ("fix bug in 3 days p2 #launch" shows
+  // DUE / PRIO / label chips before anything is committed). Returns an array
+  // of { class, text, title } or null when nothing was recognized.
+  function qaPreviewChips(parsed) {
+    var chips = [];
+    if (parsed.when) {
+      chips.push({
+        class: 'qa-when',
+        text: 'DO ' + KB.Dom.fmtShortDate(parsed.when),
+        title: 'Do date: ' + parsed.when
+      });
+    }
+    if (parsed.due) {
+      chips.push({
+        class: 'qa-due',
+        text: 'DUE ' + KB.Dom.fmtShortDate(parsed.due),
+        title: 'Due ' + KB.Dom.fmtShortDate(parsed.due)
+      });
+    }
+    if (parsed.priority) {
+      chips.push({
+        class: 'qa-prio',
+        text: PRIORITY_LABEL[parsed.priority] || parsed.priority.toUpperCase(),
+        title: 'Priority: ' + parsed.priority
+      });
+    }
+    parsed.labelIds.forEach(function (id) {
+      var label = KB.State.findLabel(id);
+      if (label) {
+        chips.push({ class: 'qa-label', text: '#' + label.name, title: 'Label: ' + label.name });
+      }
+    });
+    return chips.length > 0 ? chips : null;
   }
 
   function columnEl(column, filters) {
@@ -380,6 +462,25 @@
       el.appendChild(columnEl(column, filters));
     });
     boardPager();
+
+    // Soft nudge: when today's sheet is not stamped, offer the ritual. Lives
+    // in board-area (outside #board) so the column flex/scroll layout — and
+    // every .column:nth-child() selector — stays untouched.
+    var area = KB.el('board-area');
+    var oldBanner = area.querySelector('.day-banner');
+    if (oldBanner) oldBanner.remove();
+    if (KB.Modal.daySheet && !KB.State.daySheetFor(KB.Core.Date.isoDate(new Date()))) {
+      var banner = h('div', { class: 'day-banner' });
+      var bannerText = h('span');
+      bannerText.textContent = 'TODAY IS UNPLANNED';
+      var bannerBtn = h('button', { type: 'button', class: 'btn primary sm' });
+      bannerBtn.textContent = 'START MY DAY';
+      bannerBtn.addEventListener('click', function () { KB.Modal.daySheet(); });
+      banner.appendChild(bannerText);
+      banner.appendChild(h('span', { class: 'spacer' }));
+      banner.appendChild(bannerBtn);
+      area.insertBefore(banner, area.firstChild);
+    }
   }
 
   function isMobilePager() {
@@ -638,6 +739,7 @@
     boardPager: boardPager,
     updatePagerState: updatePagerState,
     scrollToColumn: scrollToColumn,
-    pagerActiveIndex: pagerActiveIndex
+    pagerActiveIndex: pagerActiveIndex,
+    qaPreviewChips: qaPreviewChips
   };
 })(window.KB = window.KB || {});

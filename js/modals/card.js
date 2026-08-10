@@ -8,6 +8,25 @@
   var checklistEditor = KB.Modal.checklistEditor;
   var readChecklist = KB.Modal.readChecklist;
   var labelsFor = KB.Modal.labelsFor;
+
+  // All cards across boards (live + archived) for the TUNING size hint —
+  // same source as the TUNING workspace and Day Sheet check.
+  function calibrationCardsForEditor() {
+    var state = KB.State.data();
+    var out = [];
+    (state.boards || []).forEach(function (board) {
+      (board.columns || []).forEach(function (column) {
+        (column.cards || []).forEach(function (card) { out.push(card); });
+      });
+      var archive = board.archive || {};
+      (archive.columns || []).forEach(function (ac) {
+        (ac.cards || []).forEach(function (card) { out.push(card); });
+      });
+      (archive.cards || []).forEach(function (card) { out.push(card); });
+    });
+    return out;
+  }
+
   function cardEditor(columnId, card, opener, boardId, prefill) {
     var isEdit = Boolean(card);
     var initial = isEdit ? card : (prefill || {});
@@ -28,7 +47,72 @@
 
     var dueInput = h('input', { type: 'date', id: 'cf-due', 'aria-label': 'Due date' });
     dueInput.value = initial.due || '';
-    form.appendChild(fieldBlock('Due date', dueInput));
+    // Type-to-snooze: "push fri", "snooze 3d", "+1w" reschedule the due date
+    // in one keystroke path, with a live preview chip before it is applied.
+    // Relative offsets move the current due date; absolute references (weekday
+    // names, dates) resolve from today. Nothing is applied until Enter.
+    var snoozeRow = h('div', { class: 'snooze-row' });
+    var snoozeInput = h('input', {
+      type: 'text',
+      id: 'cf-snooze',
+      class: 'snooze-input',
+      maxlength: 40,
+      placeholder: 'push fri · snooze 3d · +1w',
+      'aria-label': 'Reschedule due date by typing (try push fri, snooze 3d, +1w)'
+    });
+    var snoozePreview = h('span', { class: 'chip chip-static qa-preview-chip snooze-preview', hidden: true });
+    snoozeRow.appendChild(snoozeInput);
+    snoozeRow.appendChild(snoozePreview);
+    var dueBlock = fieldBlock('Due date', dueInput);
+    dueBlock.appendChild(snoozeRow);
+    form.appendChild(dueBlock);
+
+    // WHEN/DEADLINE: optional do-date — when you plan to BEGIN, separate from
+    // the hard deadline. A card with only a due date behaves exactly as
+    // before; a card with both plans on `when` and commits on `due`.
+    var whenInput = h('input', { type: 'date', id: 'cf-when', 'aria-label': 'Do date' });
+    whenInput.value = initial.when || '';
+    var whenHint = h('span', { class: 'cf-when-hint' });
+    whenHint.textContent = 'Optional — the day you plan to start. The due date stays the deadline.';
+    var whenBlock = fieldBlock('Do date (start)', whenInput);
+    whenBlock.appendChild(whenHint);
+    form.appendChild(whenBlock);
+
+    function updateSnoozePreview() {
+      var text = snoozeInput.value.trim();
+      if (!text) {
+        snoozePreview.hidden = true;
+        snoozePreview.textContent = '';
+        return;
+      }
+      var parsed = KB.Core.Nlparse.parseDuePhrase(text, { now: Date.now(), baseISO: dueInput.value || '', bareOffsets: true });
+      if (!parsed.due) {
+        snoozePreview.hidden = true;
+        snoozePreview.textContent = '';
+        return;
+      }
+      snoozePreview.textContent = '\u2192 ' + KB.Dom.fmtShortDate(parsed.due);
+      snoozePreview.title = 'Enter to apply: ' + parsed.consumed + ' \u2192 ' + parsed.due;
+      snoozePreview.hidden = false;
+    }
+    function applySnooze() {
+      var text = snoozeInput.value.trim();
+      if (!text) return;
+      var parsed = KB.Core.Nlparse.parseDuePhrase(text, { now: Date.now(), baseISO: dueInput.value || '', bareOffsets: true });
+      if (!parsed.due) return;
+      dueInput.value = parsed.due;
+      snoozeInput.value = '';
+      snoozePreview.hidden = true;
+      snoozePreview.textContent = '';
+      dueInput.focus();
+    }
+    snoozeInput.addEventListener('input', updateSnoozePreview);
+    snoozeInput.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      if (e.ctrlKey || e.metaKey) return; // let Ctrl+Enter reach the form save handler
+      e.preventDefault();
+      applySnooze();
+    });
 
     var priorityInput = h('select', { id: 'cf-priority', 'aria-label': 'Priority' });
     KB.Filters.PRIORITY_OPTIONS.forEach(function (pair) {
@@ -42,7 +126,19 @@
       sizeInput.appendChild(new Option(pair[1], pair[0]));
     });
     sizeInput.value = initial.size || 'none';
-    form.appendChild(fieldBlock('Size', sizeInput));
+    var sizeWrap = fieldBlock('Size', sizeInput);
+    // TUNING: show the user's calibrated actual for the selected size.
+    var sizeHint = h('span', { class: 'cf-size-hint', 'aria-live': 'polite' });
+    function updateSizeHint() {
+      if (!KB.Core.Calibrate) { sizeHint.textContent = ''; return; }
+      var cards = calibrationCardsForEditor();
+      var cal = KB.Core.Calibrate.calibrate(cards, Date.now());
+      sizeHint.textContent = KB.Core.Calibrate.estimateLabel(sizeInput.value, cal);
+    }
+    sizeInput.addEventListener('change', updateSizeHint);
+    sizeWrap.appendChild(sizeHint);
+    form.appendChild(sizeWrap);
+    updateSizeHint();
 
     var descInput = h('textarea', { id: 'cf-desc', rows: 5, placeholder: 'Details, context, notes…  **bold**  *italic*  `code`  [link](url)', 'aria-label': 'Description' });
     descInput.value = initial.description || '';
@@ -71,7 +167,40 @@
 
     flowInput.addEventListener('change', function () {
       flowReasonWrap.classList.toggle('hidden', flowInput.value === 'normal');
+      pingWrap.classList.toggle('hidden', flowInput.value !== 'waiting');
+      if (flowInput.value === 'waiting') {
+        pingContactInput.value = assigneeInput.value || pingContactInput.value || '';
+        if (!pingStatusEl.textContent) updatePingStatus();
+      }
     });
+
+    // PING: when the card is Waiting, offer a follow-up clock.
+    var pingWrap = h('div', { id: 'cf-ping-wrap' });
+    var pingHeading = h('span', { class: 'check-editor-title', textContent: 'PING FOLLOW-UP' });
+    pingWrap.appendChild(pingHeading);
+    var pingContactInput = h('input', {
+      type: 'text',
+      id: 'cf-ping-contact',
+      maxlength: 60,
+      placeholder: 'Who holds the ball?',
+      'aria-label': 'Ping contact (who you are waiting on)'
+    });
+    if (card && card.ping) pingContactInput.value = card.ping.contact || '';
+    var pingContactWrap = fieldBlock('Waiting on', pingContactInput);
+    pingWrap.appendChild(pingContactWrap);
+    var pingStatusEl = h('span', { class: 'cf-size-hint', 'aria-live': 'polite' });
+    function updatePingStatus() {
+      if (card && card.ping) {
+        var st = KB.Core.Ping.pingStatus(card, Date.now());
+        pingStatusEl.textContent = 'Armed \u2014 ' + st.state.toUpperCase() + (st.daysOverdue !== null ? ' ' + st.daysOverdue + 'D OVERDUE' : ' \u00B7 +' + st.daysUntil + 'D') +
+          ' \u00B7 ' + (card.ping.pokedCount || 0) + ' poke' + ((card.ping.pokedCount || 0) === 1 ? '' : 's');
+      } else {
+        pingStatusEl.textContent = '';
+      }
+    }
+    pingWrap.appendChild(pingStatusEl);
+    pingWrap.classList.toggle('hidden', flowState !== 'waiting');
+    form.appendChild(pingWrap);
 
     var relOps = [];
     var selfRef = isEdit && card ? { boardId: editorBoardId, cardId: card.id } : null;
@@ -355,6 +484,7 @@
         title: titleInput.value.trim(),
         assignee: assigneeInput.value.trim(),
         due: dueInput.value || '',
+        when: whenInput.value || '',
         priority: priorityInput.value,
         size: sizeInput.value,
         description: descInput.value.trim(),
@@ -411,6 +541,30 @@
         KB.UI.toast('Template saved', 'success');
       });
       actions.appendChild(templateBtn);
+
+      var focusBtn = h('button', { type: 'button', class: 'btn ghost', id: 'cf-focus' });
+      var session = KB.State.focusSession();
+      var focusingThis = session && session.cardId === card.id;
+      focusBtn.textContent = focusingThis ? 'STOP FOCUS' : 'START FOCUS';
+      focusBtn.title = focusingThis
+        ? 'End the focus session and log the effort on this card'
+        : 'Run a 25-minute focus session on this card (F to stop)';
+      focusBtn.addEventListener('click', function () {
+        var active = KB.State.focusSession();
+        if (active && active.cardId === card.id) {
+          KB.State.endFocus();
+          KB.UI.toast('Focus logged', 'success', 'Undo', KB.UI.undoAction);
+        } else if (active) {
+          KB.UI.toast('A focus session is already running', 'info');
+          return;
+        } else {
+          KB.State.startFocus(card.id, 'pomodoro');
+          KB.UI.toast('Focus started \u2014 press F to stop', 'success');
+        }
+        KB.App.refresh();
+        close();
+      });
+      actions.appendChild(focusBtn);
     }
     var spacer = h('span', { class: 'spacer' });
     actions.appendChild(spacer);
@@ -442,6 +596,16 @@
           }
         });
         KB.State.updateCardWithFlow(columnId, card.id, data, flowInput.value, flowReasonInput.value.trim(), editorBoardId);
+        // PING: a card left in Waiting with a contact gets a follow-up clock.
+        var savedCard = KB.State.findCard(columnId, card.id);
+        if (savedCard && savedCard.flow && savedCard.flow.state === 'waiting') {
+          var contact = pingContactInput.value.trim();
+          if (!savedCard.ping) {
+            KB.State.armPing(card.id, { contact: contact || savedCard.assignee || '' });
+          } else if (contact && contact !== savedCard.ping.contact) {
+            KB.State.setPingContact(card.id, contact);
+          }
+        }
         KB.UI.toast('Changes saved', 'success');
       } else {
         var finishCreate = function (created) {
@@ -470,6 +634,14 @@
       }
       close();
       KB.App.refresh();
+    });
+
+    // Ctrl/Cmd+Enter anywhere in the editor saves the card (the same submit
+    // handler — dispatch keeps validation, policies and undo intact).
+    form.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
     });
 
     open(form, opener);

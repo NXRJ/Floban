@@ -72,7 +72,7 @@ sheets replace hover-only menus. Desktop is untouched.
 
 ## Workspaces
 
-The header switches between four workspaces:
+The header switches between six workspaces:
 
 - **Board** — the classic board experience.
 - **My Desk** — a cross-board focus view with default sections (Blocked, Due
@@ -80,6 +80,20 @@ The header switches between four workspaces:
   saved **lenses** (saved ways of looking at original cards).
 - **Inbox** — global capture and triage (press `I` anywhere to capture).
 - **Review** — flow health and an actionable attention queue.
+- **Date Desk** — a month calendar of every card with a due date (all boards):
+  colour-labelled card chips in day cells, a dither-highlighted **overdue
+  strip**, drag a chip onto another day to reschedule (one undo step), arrows
+  walk the grid and Enter opens the day's first card. Press `T` to jump here.
+  Mobile renders the same grid; tapping a chip opens the card editor (with
+  type-to-snooze) instead of drag.
+- **Work Log** — a copy-ready weekly ledger of completed work (press `L`):
+  day columns of finished cards with label chips and cycle-time notes, a
+  masthead of per-board counts, an **UNSTAMPED** band flagging cards sitting
+  in Done columns that never ran the lifecycle (with a one-key STAMP fix),
+  `‹ ›` steps weeks, `C` copies a paste-ready summary ("WEEK OF AUG 4–10 —
+  12 DONE · TUE · 3: Ship 1.0 release · Fix #42 …") for client updates,
+  invoices and standups, and `P` prints. Pure projection of `completedAt` —
+  no new storage.
 
 Your current workspace is remembered across reloads.
 
@@ -128,6 +142,21 @@ Your current workspace is remembered across reloads.
 - Create with the `+` in a column header, the inline **quick-add** box at the
   bottom of every column (type a title, press Enter — paste several lines to
   add many cards at once), or press `N` to jump to the first quick-add box.
+- **Smart Quick Add** (natural-language capture): the quick-add box parses
+  due dates, priority and labels straight out of the line —
+  `fix login bug in 3 days p2 #Bug` creates a card titled `fix login bug`
+  with a due date in 3 days, HIGH priority and the `Bug` label. Recognized
+  tokens show as live preview chips before you press Enter, and the parsed
+  fields flow through the same placement pipeline as any other add (policies,
+  lifecycle, entry defaults, one undo entry). Grammar (deliberately small and
+  explicit — plain prose is never rewritten): `today` / `tomorrow` / weekday
+  names (`fri`, `next friday`, `this friday` — bare/`next` weekdays are
+  always in the future), `in N days/weeks/months`, `+1d`/`+2w`/`+1m`,
+  `next week`, `eom`, month-day dates (`25 jul`, `jul 25`), ISO dates
+  (`2026-08-20`), times (`5pm`, `17:30` — recognized but not stored, the
+  model is day-granular), priority `p1`–`p4` or `priority:high`, and labels
+  `#name` (resolved against the board's labels; unknown tags stay in the
+  title). Snooze verbs (`snooze 3d`, `push 1w`) work here too.
 - New cards are created through the same placement pipeline as moves: entering
   an `active` column records `startedAt`, entering a `done` column records
   `completedAt`, entry defaults apply, and policy columns ask for confirmation
@@ -152,9 +181,14 @@ Your current workspace is remembered across reloads.
   rejected. "Ready to pull" is derived — a card with zero unresolved blockers
   is ready. Cards show a `READY` badge or an unresolved blocker count.
 - Due dates render as chips: red when **overdue**, amber when due today or
-  tomorrow. Filter by overdue / today / this week / none, or sort the whole
-  board by due date, priority, size, created or last updated (sorting disables
-  card drag-reordering until you switch back to manual order).
+  tomorrow. In the card editor, the **type-to-snooze** field reschedules the
+  due date from the keyboard — `push fri`, `snooze 3d`, `+1w` (relative
+  offsets move the current due date, weekday names and dates resolve from
+  today) with a live preview chip and a single Enter to apply; the native
+  date picker stays for point-and-click. Filter by overdue / today / this
+  week / none, or sort the whole board by due date, priority, size, created
+  or last updated (sorting disables card drag-reordering until you switch
+  back to manual order).
 - Cards show an **aging chip** (`3D`) once they have sat in a column for more
   than a day. With enough completed samples (or a manual SLE), the chip becomes
   SLE-aware: visible ≥ 50%, warning ≥ 80%, risk beyond the service level.
@@ -285,6 +319,36 @@ Your current workspace is remembered across reloads.
   lens edits the original board card. Lenses can never be accidentally deleted
   (built-ins are code-defined), and deleting a board trims lens scopes safely.
 
+### Day Sheet ("Start My Day")
+- When today's sheet is unstamped, a dither-marked **START MY DAY** banner
+  appears on the board. It opens a bounded two-minute planning ritual: a
+  **Pick band** of at most 9 ranked candidates with reason chips (`CARRIED
+  OVER` from yesterday's sheet → `OVERDUE Nd` oldest first → `DUE TODAY P1`
+  by priority → top of the Review queue), press `1-9` to fill up to **3
+  slots**, Enter (or **STAMP DAY**) to commit.
+- The stamped sheet is the day: checkbox squares tick cards into the Done
+  column (through the normal placement pipeline — policies and lifecycle
+  apply), with a `n of 3 DONE` progress line. It persists per date in the
+  normal save path (IndexedDB + mirror + backups, included in exports).
+- **End the day** forces a decision on every unfinished commitment: `K`
+  keep (carries over to tomorrow's pick band), `P` push +1d, `D` drop the
+  due date, `X` archive — applied as **one atomic, undoable roll**. The
+  sheet is deliberately local, keyboard-first and bounded: the anti-bloat
+  guardrail made concrete (never a 50-item "Today" flood, no $200/yr
+  planner subscription needed).
+
+### Focus sessions
+- A task-tied timer: **Start focus** from the card editor (or the card action
+  sheet) runs a 25-minute pomodoro; a corner HUD shows the countdown with the
+  card's title. Press `F` to stop, or stop from the HUD.
+- Elapsed time is always `now − startedAt` from timestamps — the HUD is a
+  pure render, so it never drifts, and a running session **survives a
+  reload**. Sub-minute sessions log nothing (no effort noise).
+- A full pomodoro stamps the card (`⏱ 2h05m · 5 pomo` chip) and both minutes
+  and pomodoro count land in the per-day focus log (`state.focusDays`) — the
+  freelancer's timesheet substrate. Starting and stopping are each one atomic,
+  undoable state op.
+
 ### Backup & recovery
 - Application data lives in **IndexedDB** (primary). Every save also writes an
   atomic localStorage crash-mirror envelope (`kanban.mirror.v1`) so a tab that
@@ -327,6 +391,11 @@ shortcuts" lists them from the live registry.
 | `M` (card focused) | Start keyboard move mode |
 | Arrow keys / Home / End (move mode) | Choose destination |
 | Enter / Escape (move mode) | Commit / cancel move |
+| `Ctrl/Cmd+Enter` (card editor) | Save the card |
+| `T` | Open the Date Desk (calendar) |
+| `L` | Open the Work Log |
+| `F` | Stop the running focus session |
+| `C` / `P` (Work Log) | Copy the week's summary / print |
 
 ## Code structure
 
@@ -338,6 +407,11 @@ that use them.
 | Area | File | Responsibility |
 | --- | --- | --- |
 | Core | `js/core/date.js` | Deterministic date logic: ISO formatting, day offsets, due-date classification, due-filter matching, card aging. No browser access. |
+| Core | `js/core/nlparse.js` | Natural-language capture grammar: deterministic parsing of due dates, priority and labels out of quick-add lines and snooze phrases, with token spans for live preview. No browser access. |
+| Core | `js/core/calendar.js` | Calendar projection: a pure function of (monthKey, cards, now) producing the 6×7 month grid, today/overdue classification and the overdue strip. No browser access. |
+| Core | `js/core/dayplan.js` | Day Sheet rules: candidate ranking (carry-over → overdue → due-today → Review), stamping (bounded slots, dedupe, order), and the end-of-day roll planner (keep/push/drop/archive ops as one atomic list). No browser access. |
+| Core | `js/core/focus.js` | Focus sessions: pure elapsed-time math (timestamps, never ticks), pomodoro thresholds, per-card/per-day effort accounting and totals, effort formatting. No browser access. |
+| Core | `js/core/worklog.js` | Work Log projection: Monday-anchored week ranges, grouping of completed cards by day with per-board/per-label stats, the UNSTAMPED (done-role, never completed) band, and deterministic copy-ready text composition. No browser access. |
 | Core | `js/core/model.js` | Factories for cards, columns, labels, boards, templates, inbox items, lenses and recurrences, with injectable `{ uid, now }` dependencies. |
 | Core | `js/core/migration.js` | Deterministic, idempotent, reference-independent normalization for **state version 3** (v1/v2/v3 loads, board imports, corrupt payloads, cross-board reference repair). |
 | Core | `js/core/lifecycle.js` | Card transitions: role-based `startedAt`/`completedAt`, capped transition log, flow-state periods, durations, cycle time and age. |
@@ -371,6 +445,7 @@ that use them.
 | Browser | `js/dom.js` | Tiny helpers: `h()` element builder, inline SVG pixel-icon set, presentation date formatting, `KB.el` selector shortcut. |
 | Browser | `js/dragdrop.js` | HTML5 drag-and-drop wiring; every drop routes through the shared policy-gated move path. |
 | Browser | `js/modals/core.js` | Modal system (overlay, focus, prompt/dialog helpers) plus the card, column, recurrence, triage, labels, backup, capture/merge and lens editors. |
+| Browser | `js/modals/day.js` | The Day Sheet ritual modal: pick band with 1-9 key badges and reason chips, stamping, commitment checkboxes, and the end-of-day roll band (K/P/D/X) applied as one atomic undo entry. |
 | Browser | `js/moveto.js` | Move-to menu (board/column/position with cross-board label mapping) and keyboard move mode with `aria-live` announcements. |
 | Browser | `js/selection.js` | Ephemeral multi-select (Ctrl/Shift-click, Escape) and the bulk-action toolbar. |
 | Browser | `js/workspaces.js` | Workspace switching, My Desk / Inbox / Review rendering, lens bar, UI preference persistence. |
@@ -399,6 +474,10 @@ State **version 3** (persisted to IndexedDB; an atomic localStorage envelope
   activeBoardId: '…',
   inbox: { items: [ { id, title, note, url, archived, capturedAt, updatedAt } ] },
   lenses: [ { id, name, scope, boardIds, query, sort, display, createdAt, updatedAt } ],
+  dayplans: { 'YYYY-MM-DD': { dateISO, stampedAt, rolledAt,
+              commitments: [ { cardId, order, status } ] } },
+  focusDays: { 'YYYY-MM-DD': { minutes, pomodoros } },
+  focusSession: { cardId, startedAt, kind: 'pomodoro'|'stopwatch' } | null,
   recurrences: [ { id, enabled, mode, schedule, target, template, dueOffsetDays,
                    overlapPolicy, missedPolicy, activeCardRef, nextRunAt,
                    lastRunAt, lastCompletedAt, endAt, remainingOccurrences,
@@ -424,8 +503,8 @@ State **version 3** (persisted to IndexedDB; an atomic localStorage envelope
 
 Cards carry: `priority`, `size`, `startedAt`, `completedAt`,
 `flow: { state, reason, since, periods }`, `dependencies: { blockers, related }`
-(cross-board `{ boardId, cardId }` references), `recurrenceId` and a capped
-`transitions` log.
+(cross-board `{ boardId, cardId }` references), `recurrenceId`,
+`effort: { minutes, pomodoros }` and a capped `transitions` log.
 
 Everything is saved to **IndexedDB** (`kanban-store` database) after every
 mutation through a serialized write queue, with an atomic localStorage

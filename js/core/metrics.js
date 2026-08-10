@@ -277,6 +277,12 @@
       if (waiting) {
         var waitingDays = Lifecycle.currentFlowDuration(card, now) / MS_PER_DAY;
         addReason(3, 'Waiting for ' + fmtDays(waitingDays));
+        // PING follow-up engine: an armed waiting card past its follow-up
+        // date outranks the plain waiting reason.
+        if (card.ping && card.ping.followUpAt <= now) {
+          var daysOverdue = Math.ceil((now - card.ping.followUpAt) / MS_PER_DAY);
+          addReason(2, 'PING overdue ' + daysOverdue + 'D' + (card.ping.contact ? ' \u2014 ' + card.ping.contact : ''));
+        }
       }
 
       if (options.sleDays !== null && options.sleDays > 0) {

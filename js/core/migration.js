@@ -172,6 +172,7 @@
       if (typeof out.columnId !== 'string') out.columnId = '';
       if (typeof out.title !== 'string') out.title = '';
       if (typeof out.due !== 'string') out.due = '';
+      if (typeof out.when !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(out.when)) out.when = '';
       out.checklist = normalizeChecklist(out.checklist, deps);
       if (!Array.isArray(out.labels)) out.labels = [];
       out.labels = out.labels.filter(function (id) { return typeof id === 'string'; });
@@ -183,11 +184,40 @@
       out.size = pickIn(SIZES, out.size, 'none');
       out.startedAt = toNumberOrNull(out.startedAt);
       out.completedAt = toNumberOrNull(out.completedAt);
+      var effort = out.effort && typeof out.effort === 'object' ? out.effort : {};
+      out.effort = {
+        pomodoros: Math.max(0, toInt(effort.pomodoros, 0)),
+        minutes: Math.max(0, toInt(effort.minutes, 0))
+      };
       out.flow = normalizeFlow(out.flow);
       out.dependencies = normalizeDependencies(out.dependencies);
       out.recurrenceId = typeof out.recurrenceId === 'string' ? out.recurrenceId : null;
       out.transitions = normalizeTransitions(out.transitions, deps);
+      out.ping = normalizePing(out.ping);
       return out;
+    }
+
+    // PING follow-up state on a card: tolerant of missing/malformed fields.
+    function normalizePing(value) {
+      if (!value || typeof value !== 'object') return null;
+      var followUpAt = typeof value.followUpAt === 'number' && isFinite(value.followUpAt) ? value.followUpAt : null;
+      if (followUpAt === null) return null;
+      var logLimit = 20;
+      var log = Array.isArray(value.log) ? value.log.filter(function (entry) {
+        return entry && typeof entry === 'object' && typeof entry.at === 'number';
+      }).slice(-logLimit).map(function (entry) {
+        return { at: entry.at, note: typeof entry.note === 'string' ? entry.note : '' };
+      }) : [];
+      return {
+        contact: typeof value.contact === 'string' ? value.contact : '',
+        followUpAt: followUpAt,
+        cadenceDays: typeof value.cadenceDays === 'number' && value.cadenceDays >= 1 ? value.cadenceDays : 3,
+        escalateAfter: typeof value.escalateAfter === 'number' ? value.escalateAfter : 2,
+        maxEscalation: typeof value.maxEscalation === 'number' ? value.maxEscalation : 4,
+        lastPokedAt: typeof value.lastPokedAt === 'number' && isFinite(value.lastPokedAt) ? value.lastPokedAt : null,
+        pokedCount: Math.max(0, typeof value.pokedCount === 'number' ? value.pokedCount : 0),
+        log: log
+      };
     }
 
     function inferColumnRole(column) {
@@ -509,6 +539,83 @@
       return state;
     }
 
+    function normalizeFocusDays(value) {
+      var out = {};
+      if (!value || typeof value !== 'object') return out;
+      Object.keys(value).forEach(function (key) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
+        var entry = value[key];
+        if (!entry || typeof entry !== 'object') return;
+        out[key] = {
+          minutes: Math.max(0, toInt(entry.minutes, 0)),
+          pomodoros: Math.max(0, toInt(entry.pomodoros, 0))
+        };
+      });
+      return out;
+    }
+
+    function normalizeFocusSession(value) {
+      if (!value || typeof value !== 'object') return null;
+      if (typeof value.cardId !== 'string' || !value.cardId) return null;
+      if (typeof value.startedAt !== 'number') return null;
+      return {
+        cardId: value.cardId,
+        startedAt: value.startedAt,
+        kind: value.kind === 'stopwatch' ? 'stopwatch' : 'pomodoro'
+      };
+    }
+
+    // HI-SCORE streak bookkeeping: { best, lastSeen }. `best` is the
+    // monotonic high score (a stale streak never shrinks it — undoing a
+    // completion must not deflate the record). `lastSeen` is the previous
+    // observation { streak, dayISO } used to detect milestone crossings
+    // across sessions. Tolerant of missing/corrupt values.
+    function normalizeStreaks(value) {
+      if (!value || typeof value !== 'object') {
+        return { best: 0, lastSeen: null };
+      }
+      var best = Math.max(0, toInt(value.best, 0));
+      var lastSeen = null;
+      if (value.lastSeen && typeof value.lastSeen === 'object' &&
+          typeof value.lastSeen.streak === 'number' &&
+          typeof value.lastSeen.dayISO === 'string') {
+        lastSeen = {
+          streak: Math.max(0, value.lastSeen.streak),
+          dayISO: value.lastSeen.dayISO
+        };
+      }
+      return { best: best, lastSeen: lastSeen };
+    }
+
+    function normalizeDayplans(value) {
+      var out = {};
+      if (!value || typeof value !== 'object') return out;
+      var DAYPLAN_STATUSES = ['open', 'done', 'kept', 'pushed', 'dropped', 'archived'];
+      Object.keys(value).forEach(function (key) {
+        var plan = value[key];
+        if (!plan || typeof plan !== 'object') return;
+        if (typeof plan.dateISO !== 'string' || plan.dateISO !== key) return;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(plan.dateISO)) return;
+        if (!Array.isArray(plan.commitments)) return;
+        var commitments = plan.commitments
+          .filter(function (c) { return c && typeof c === 'object' && typeof c.cardId === 'string' && c.cardId; })
+          .map(function (c, index) {
+            return {
+              cardId: c.cardId,
+              order: typeof c.order === 'number' ? c.order : index,
+              status: DAYPLAN_STATUSES.indexOf(c.status) !== -1 ? c.status : 'open'
+            };
+          });
+        out[key] = {
+          dateISO: plan.dateISO,
+          stampedAt: typeof plan.stampedAt === 'number' ? plan.stampedAt : null,
+          rolledAt: typeof plan.rolledAt === 'number' ? plan.rolledAt : null,
+          commitments: commitments
+        };
+      });
+      return out;
+    }
+
     function normalizeState(state, deps) {
       var out = cloneShallow(state);
       out.version = STATE_VERSION;
@@ -527,10 +634,82 @@
       out.lenses = out.lenses.map(function (l) { return normalizeLens(l, deps); }).filter(Boolean);
       if (!Array.isArray(out.recurrences)) out.recurrences = [];
       out.recurrences = out.recurrences.map(function (r) { return normalizeRecurrence(r, deps); }).filter(Boolean);
+      out.dayplans = normalizeDayplans(out.dayplans);
+      out.focusDays = normalizeFocusDays(out.focusDays);
+      out.focusSession = normalizeFocusSession(out.focusSession);
+      out.streaks = normalizeStreaks(out.streaks);
+      out.templates = normalizeTemplates(out.templates);
+      out.power = normalizePower(out.power);
       repairDependencies(out);
       repairRecurrences(out, deps);
       repairLenses(out);
       return out;
+    }
+
+    // CARTRIDGE board templates: array of validated payloads. Unknown fields
+    // dropped, missing fields defaulted — mirrors validateTemplate in
+    // js/core/template.js but lives here so the boot chain has no dependency
+    // on load order.
+    function normalizeTemplates(value) {
+      if (!Array.isArray(value)) return [];
+      return value.map(function (tpl) {
+        if (!tpl || typeof tpl !== 'object') return null;
+        var columns = Array.isArray(tpl.columns) ? tpl.columns.filter(function (c) { return c && typeof c === 'object'; }) : [];
+        var labels = (tpl.boardMeta && Array.isArray(tpl.boardMeta.labels)) ? tpl.boardMeta.labels : [];
+        return {
+          version: 1,
+          name: typeof tpl.name === 'string' && tpl.name ? tpl.name : 'Board template',
+          description: typeof tpl.description === 'string' ? tpl.description : '',
+          starred: Boolean(tpl.starred),
+          createdAt: typeof tpl.createdAt === 'number' ? tpl.createdAt : null,
+          boardMeta: {
+            labels: labels.filter(function (l) {
+              return l && typeof l === 'object' && typeof l.id === 'string' && typeof l.name === 'string';
+            }).map(function (l) {
+              return { id: l.id, name: l.name, color: typeof l.color === 'string' ? l.color : '#6d30d6' };
+            })
+          },
+          columns: columns.map(function (c) {
+            return {
+              title: typeof c.title === 'string' ? c.title : '',
+              role: ['queue', 'active', 'done', 'backlog'].indexOf(c.role) !== -1 ? c.role : 'queue',
+              wipLimit: typeof c.wipLimit === 'number' && c.wipLimit >= 0 ? c.wipLimit : 0,
+              wipMode: ['off', 'soft', 'hard'].indexOf(c.wipMode) !== -1 ? c.wipMode : 'off',
+              entryCriteria: Array.isArray(c.entryCriteria) ? c.entryCriteria.filter(function (x) { return typeof x === 'string'; }) : [],
+              exitCriteria: Array.isArray(c.exitCriteria) ? c.exitCriteria.filter(function (x) { return typeof x === 'string'; }) : [],
+              defaultLabelIds: Array.isArray(c.defaultLabelIds) ? c.defaultLabelIds.filter(function (x) { return typeof x === 'string'; }) : [],
+              defaultAssignee: typeof c.defaultAssignee === 'string' ? c.defaultAssignee : ''
+            };
+          }),
+          starterCards: Array.isArray(tpl.starterCards) ? tpl.starterCards.filter(function (c) { return c && typeof c === 'object'; }).map(function (c) {
+            return {
+              title: typeof c.title === 'string' ? c.title : '',
+              description: typeof c.description === 'string' ? c.description : '',
+              labelIds: Array.isArray(c.labelIds) ? c.labelIds.filter(function (x) { return typeof x === 'string'; }) : [],
+              checklist: Array.isArray(c.checklist) ? c.checklist.filter(function (i) { return i && typeof i === 'object'; }).map(function (i) {
+                return { text: String(i.text || ''), done: Boolean(i.done) };
+              }) : [],
+              priority: ['none', 'low', 'medium', 'high', 'urgent'].indexOf(c.priority) !== -1 ? c.priority : 'none',
+              size: ['none', 'xs', 's', 'm', 'l', 'xl'].indexOf(c.size) !== -1 ? c.size : 'none',
+              columnTitle: typeof c.columnTitle === 'string' ? c.columnTitle : ''
+            };
+          }) : []
+        };
+      }).filter(Boolean);
+    }
+
+    // POWER METER user state: declared band + optional time budget. The
+    // learned energy curve itself is derived (never persisted); this only
+    // stores the user's explicit choices.
+    var POWER_BANDS = ['full', 'mid', 'low', 'drained'];
+    function normalizePower(value) {
+      if (!value || typeof value !== 'object') {
+        return { band: 'mid', timeBudgetMin: null };
+      }
+      return {
+        band: POWER_BANDS.indexOf(value.band) !== -1 ? value.band : 'mid',
+        timeBudgetMin: typeof value.timeBudgetMin === 'number' && value.timeBudgetMin > 0 ? value.timeBudgetMin : null
+      };
     }
 
     function adoptBoardShape(raw, name, deps) {

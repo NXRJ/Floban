@@ -66,6 +66,11 @@
       <button type="button" class="ws-btn" data-workspace="mydesk">My Desk</button>
       <button type="button" class="ws-btn" data-workspace="inbox">Inbox <span id="inbox-badge" class="ws-badge" hidden></span></button>
       <button type="button" class="ws-btn" data-workspace="review">Review</button>
+      <button type="button" class="ws-btn" data-workspace="calendar">Calendar</button>
+      <button type="button" class="ws-btn" data-workspace="log">Log</button>
+      <button type="button" class="ws-btn" data-workspace="tuning">Tuning</button>
+      <button type="button" class="ws-btn" data-workspace="ping">Ping</button>
+      <button type="button" class="ws-btn" data-workspace="power">Power</button>
     </nav>
     <button id="board-switch" class="btn" type="button" title="Switch board">
       <span class="btn-icon"></span><span id="board-name" class="board-name"></span><span class="btn-caret"></span>
@@ -84,6 +89,7 @@
       <span class="btn-icon"></span><span class="btn-label">Recurring</span>
     </button>
     <span id="clock" class="clock" aria-hidden="true"></span>
+    <button id="streak-readout" class="streak-readout" type="button" title="HI-SCORE — completion streak" aria-label="Completion streak, current and best"></button>
     <button id="palette-btn" class="btn icon" type="button" title="Command palette (Ctrl/Cmd+K)" aria-label="Command palette">
       <span class="btn-icon"></span>
     </button>
@@ -145,11 +151,33 @@
     <button type="button" class="mt-btn" data-workspace="review">
       <span class="mt-icon"></span><span class="mt-label">Review</span>
     </button>
+    <button type="button" class="mt-btn" data-workspace="calendar">
+      <span class="mt-icon"></span><span class="mt-label">Cal</span>
+    </button>
+    <button type="button" class="mt-btn" data-workspace="log">
+      <span class="mt-icon"></span><span class="mt-label">Log</span>
+    </button>
+    <button type="button" class="mt-btn" data-workspace="tuning">
+      <span class="mt-icon"></span><span class="mt-label">Tune</span>
+    </button>
+    <button type="button" class="mt-btn" data-workspace="ping">
+      <span class="mt-icon"></span><span class="mt-label">Ping</span>
+    </button>
+    <button type="button" class="mt-btn" data-workspace="power">
+      <span class="mt-icon"></span><span class="mt-label">Power</span>
+    </button>
   </nav>
 
   <section id="ws-mydesk" class="workspace" aria-label="My Desk" hidden></section>
   <section id="ws-inbox" class="workspace" aria-label="Inbox" hidden></section>
   <section id="ws-review" class="workspace" aria-label="Review" hidden></section>
+  <section id="ws-calendar" class="workspace" aria-label="Calendar" hidden></section>
+  <section id="ws-log" class="workspace" aria-label="Work log" hidden></section>
+  <section id="ws-tuning" class="workspace" aria-label="Tuning" hidden></section>
+  <section id="ws-ping" class="workspace" aria-label="Ping" hidden></section>
+  <section id="ws-power" class="workspace" aria-label="Power" hidden></section>
+
+  <div id="focus-hud" class="focus-hud" hidden></div>
 
   <div id="archive-backdrop" class="archive-backdrop"></div>
   <aside id="archive-panel" class="archive-panel" aria-label="Archive"></aside>
@@ -161,13 +189,27 @@
   <div id="live-region" class="live-region" role="status" aria-live="polite"></div>
 
   <script src="js/core/date.js"></script>
+  <script src="js/core/when.js"></script>
+  <script src="js/core/nlparse.js"></script>
+  <script src="js/core/calendar.js"></script>
+  <script src="js/core/dayplan.js"></script>
+  <script src="js/core/focus.js"></script>
+  <script src="js/core/worklog.js"></script>
+  <script src="js/core/streak.js"></script>
   <script src="js/core/model.js"></script>
   <script src="js/core/migration.js"></script>
   <script src="js/core/lifecycle.js"></script>
   <script src="js/core/relations.js"></script>
   <script src="js/core/policies.js"></script>
   <script src="js/core/metrics.js"></script>
+  <script src="js/core/calibrate.js"></script>
+  <script src="js/core/weekly.js"></script>
+  <script src="js/core/template.js"></script>
+  <script src="js/core/ping.js"></script>
+  <script src="js/core/power.js"></script>
   <script src="js/core/pipeline.js"></script>
+  <script src="js/core/importer.js"></script>
+  <script src="js/core/exporter.js"></script>
   <script src="js/core/recurrence.js"></script>
   <script src="js/core/inbox.js"></script>
   <script src="js/core/filtering.js"></script>
@@ -194,6 +236,9 @@
   <script src="js/modals/recurrence.js"></script>
   <script src="js/modals/dialogs.js"></script>
   <script src="js/modals/triage.js"></script>
+  <script src="js/modals/day.js"></script>
+  <script src="js/modals/arrival.js"></script>
+  <script src="js/modals/templates.js"></script>
   <script src="js/moveto.js"></script>
   <script src="js/selection.js"></script>
   <script src="js/workspaces.js"></script>
@@ -201,6 +246,8 @@
   <script src="js/commands.js"></script>
   <script src="js/actionsheet.js"></script>
   <script src="js/palette.js"></script>
+  <script src="js/scoreboard.js"></script>
+  <script src="js/checkpoint.js"></script>
   <script src="js/pwa.js"></script>
   <script src="js/app.js"></script>
 </body>
