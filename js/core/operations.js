@@ -89,6 +89,26 @@
       return { changed: true, state: next, value: placed.value };
     }
 
+    // Card-field overrides supplied per title (smart quick-add parsing).
+    // Only well-formed values pass through; everything else is dropped so a
+    // caller can never inject a malformed card.
+    var FIELD_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+    function sanitizeCardFields(fields) {
+      var out = {};
+      if (!fields || typeof fields !== 'object') return out;
+      if (typeof fields.due === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(fields.due)) {
+        out.due = fields.due;
+      }
+      if (FIELD_PRIORITIES.indexOf(fields.priority) !== -1) {
+        out.priority = fields.priority;
+      }
+      if (Array.isArray(fields.labels)) {
+        var ids = fields.labels.filter(function (id) { return typeof id === 'string' && id; });
+        if (ids.length > 0) out.labels = ids;
+      }
+      return out;
+    }
+
     function createCards(state, command, deps) {
       var d = resolveDeps(deps);
       var next = cloneState(state);
@@ -96,11 +116,13 @@
       if (!board) return { changed: false, state: state, value: 0, reason: 'column-not-found' };
       var column = findColumn(board, command.columnId);
       var titles = Array.isArray(command.titles) ? command.titles : [];
+      var fields = Array.isArray(command.fields) ? command.fields : [];
       var created = [];
       var failed = null;
-      titles.forEach(function (title) {
+      titles.forEach(function (title, index) {
         if (failed) return;
-        var placed = placeCreated(next, board, column, command, { title: title }, d);
+        var overrides = Object.assign({ title: title }, sanitizeCardFields(fields[index]));
+        var placed = placeCreated(next, board, column, command, overrides, d);
         if (!placed.changed) {
           failed = placed;
           return;

@@ -314,13 +314,62 @@
     });
   }
 
+  // Smart Quick Add: each line runs through the deterministic natural-language
+  // parser ("fix bug in 3 days p2 #launch" sets due, priority and labels and
+  // strips the tokens from the title). Parsing happens before the dispatch, so
+  // the whole batch is still one atomic, undoable operation.
+  function parseQuickAddLines(lines) {
+    var labels = KB.State.labels();
+    return lines.map(function (line) {
+      var parsed = KB.Core.Nlparse.parseQuickAdd(line, { now: Date.now(), labels: labels });
+      var fields = {};
+      if (parsed.due) fields.due = parsed.due;
+      if (parsed.priority) fields.priority = parsed.priority;
+      if (parsed.labelIds.length > 0) fields.labels = parsed.labelIds;
+      return { title: parsed.title || line, fields: fields, raw: line };
+    });
+  }
+
+  // Live feedback for the last (visible) line of the quick-add box: recognized
+  // tokens become chips ("DUE AUG 14", "HIGH", "#launch") before commit.
+  function previewQuickAdd(input) {
+    var preview = input.parentNode && input.parentNode.querySelector('.qa-preview');
+    if (!preview) return;
+    var lines = input.value.split('\n').map(function (line) { return line.trim(); }).filter(Boolean);
+    var text = lines.length > 0 ? lines[lines.length - 1] : '';
+    if (!text) {
+      preview.hidden = true;
+      preview.textContent = '';
+      return;
+    }
+    var parsed = KB.Core.Nlparse.parseQuickAdd(text, { now: Date.now(), labels: KB.State.labels() });
+    var chips = KB.Render.qaPreviewChips(parsed);
+    preview.textContent = '';
+    if (!chips) {
+      preview.hidden = true;
+      return;
+    }
+    chips.forEach(function (chip) {
+      var el = h('span', { class: 'chip chip-static qa-preview-chip ' + chip.class, title: chip.title });
+      el.textContent = chip.text;
+      preview.appendChild(el);
+    });
+    preview.hidden = false;
+  }
+
   function submitQuickAdd(input) {
     var list = input.closest('.card-list');
     if (!list) return;
     var columnId = list.dataset.columnId;
     var lines = input.value.split('\n').map(function (line) { return line.trim(); }).filter(Boolean);
     if (lines.length === 0) return;
-    var finish = function (added, keepInput, text) {
+    var parsedLines = parseQuickAddLines(lines);
+    var titles = parsedLines.map(function (p) { return p.title; });
+    var fields = parsedLines.map(function (p) { return p.fields; });
+    var raw = parsedLines.map(function (p) { return p.raw; }).join('\n');
+    var preview = input.parentNode && input.parentNode.querySelector('.qa-preview');
+    if (preview) preview.hidden = true;
+    var finish = function (added, keepInput) {
       if (!keepInput) input.value = '';
       if (added > 0) {
         toast(KB.Dom.plural(added, 'card') + ' added', 'success', 'Undo', undoAction);
@@ -330,20 +379,20 @@
       KB.App.refresh();
       var fresh = KB.el('board').querySelector('.card-list[data-column-id="' + CSS.escape(columnId) + '"] .qa-input');
       if (fresh) {
-        if (keepInput && text) fresh.value = text;
+        if (keepInput) fresh.value = raw;
         fresh.focus();
       }
     };
     var evaluation = KB.State.createNeedsConfirmation(columnId, lines.length);
     if (evaluation) {
       KB.Modal.moveConfirmModal('Adding these cards requires confirmation', evaluation, '', function (reason) {
-        var added = KB.State.addCards(columnId, lines, { confirmed: true, overrideReason: reason });
-        finish(added, added === 0, lines.join('\n'));
+        var added = KB.State.addCards(columnId, titles, { confirmed: true, overrideReason: reason, fields: fields });
+        finish(added, added === 0);
       });
       return;
     }
-    var added = KB.State.addCards(columnId, lines);
-    finish(added, added === 0, lines.join('\n'));
+    var added = KB.State.addCards(columnId, titles, { fields: fields });
+    finish(added, added === 0);
   }
 
   function announceMove(toColumnId, toIndex) {
@@ -658,6 +707,12 @@
       if (!input) return;
       e.preventDefault();
       submitQuickAdd(input);
+    });
+
+    KB.el('board-area').addEventListener('input', function (e) {
+      var input = e.target.closest('.qa-input');
+      if (!input) return;
+      previewQuickAdd(input);
     });
   }
 

@@ -28,7 +28,61 @@
 
     var dueInput = h('input', { type: 'date', id: 'cf-due', 'aria-label': 'Due date' });
     dueInput.value = initial.due || '';
-    form.appendChild(fieldBlock('Due date', dueInput));
+    // Type-to-snooze: "push fri", "snooze 3d", "+1w" reschedule the due date
+    // in one keystroke path, with a live preview chip before it is applied.
+    // Relative offsets move the current due date; absolute references (weekday
+    // names, dates) resolve from today. Nothing is applied until Enter.
+    var snoozeRow = h('div', { class: 'snooze-row' });
+    var snoozeInput = h('input', {
+      type: 'text',
+      id: 'cf-snooze',
+      class: 'snooze-input',
+      maxlength: 40,
+      placeholder: 'push fri · snooze 3d · +1w',
+      'aria-label': 'Reschedule due date by typing (try push fri, snooze 3d, +1w)'
+    });
+    var snoozePreview = h('span', { class: 'chip chip-static qa-preview-chip snooze-preview', hidden: true });
+    snoozeRow.appendChild(snoozeInput);
+    snoozeRow.appendChild(snoozePreview);
+    var dueBlock = fieldBlock('Due date', dueInput);
+    dueBlock.appendChild(snoozeRow);
+    form.appendChild(dueBlock);
+
+    function updateSnoozePreview() {
+      var text = snoozeInput.value.trim();
+      if (!text) {
+        snoozePreview.hidden = true;
+        snoozePreview.textContent = '';
+        return;
+      }
+      var parsed = KB.Core.Nlparse.parseDuePhrase(text, { now: Date.now(), baseISO: dueInput.value || '', bareOffsets: true });
+      if (!parsed.due) {
+        snoozePreview.hidden = true;
+        snoozePreview.textContent = '';
+        return;
+      }
+      snoozePreview.textContent = '\u2192 ' + KB.Dom.fmtShortDate(parsed.due);
+      snoozePreview.title = 'Enter to apply: ' + parsed.consumed + ' \u2192 ' + parsed.due;
+      snoozePreview.hidden = false;
+    }
+    function applySnooze() {
+      var text = snoozeInput.value.trim();
+      if (!text) return;
+      var parsed = KB.Core.Nlparse.parseDuePhrase(text, { now: Date.now(), baseISO: dueInput.value || '', bareOffsets: true });
+      if (!parsed.due) return;
+      dueInput.value = parsed.due;
+      snoozeInput.value = '';
+      snoozePreview.hidden = true;
+      snoozePreview.textContent = '';
+      dueInput.focus();
+    }
+    snoozeInput.addEventListener('input', updateSnoozePreview);
+    snoozeInput.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      if (e.ctrlKey || e.metaKey) return; // let Ctrl+Enter reach the form save handler
+      e.preventDefault();
+      applySnooze();
+    });
 
     var priorityInput = h('select', { id: 'cf-priority', 'aria-label': 'Priority' });
     KB.Filters.PRIORITY_OPTIONS.forEach(function (pair) {
@@ -470,6 +524,14 @@
       }
       close();
       KB.App.refresh();
+    });
+
+    // Ctrl/Cmd+Enter anywhere in the editor saves the card (the same submit
+    // handler — dispatch keeps validation, policies and undo intact).
+    form.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
     });
 
     open(form, opener);

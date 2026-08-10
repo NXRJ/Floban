@@ -260,9 +260,39 @@
       title: 'New card from a template'
     });
     tplBtn.innerHTML = icon('doc');
+    var preview = h('div', { class: 'qa-preview', hidden: true });
     row.appendChild(input);
     row.appendChild(tplBtn);
+    row.appendChild(preview);
     return row;
+  }
+
+  // Live smart-capture preview chips ("fix bug in 3 days p2 #launch" shows
+  // DUE / PRIO / label chips before anything is committed). Returns an array
+  // of { class, text, title } or null when nothing was recognized.
+  function qaPreviewChips(parsed) {
+    var chips = [];
+    if (parsed.due) {
+      chips.push({
+        class: 'qa-due',
+        text: 'DUE ' + KB.Dom.fmtShortDate(parsed.due),
+        title: 'Due ' + KB.Dom.fmtShortDate(parsed.due)
+      });
+    }
+    if (parsed.priority) {
+      chips.push({
+        class: 'qa-prio',
+        text: PRIORITY_LABEL[parsed.priority] || parsed.priority.toUpperCase(),
+        title: 'Priority: ' + parsed.priority
+      });
+    }
+    parsed.labelIds.forEach(function (id) {
+      var label = KB.State.findLabel(id);
+      if (label) {
+        chips.push({ class: 'qa-label', text: '#' + label.name, title: 'Label: ' + label.name });
+      }
+    });
+    return chips.length > 0 ? chips : null;
   }
 
   function columnEl(column, filters) {
@@ -638,6 +668,7 @@
     boardPager: boardPager,
     updatePagerState: updatePagerState,
     scrollToColumn: scrollToColumn,
-    pagerActiveIndex: pagerActiveIndex
+    pagerActiveIndex: pagerActiveIndex,
+    qaPreviewChips: qaPreviewChips
   };
 })(window.KB = window.KB || {});

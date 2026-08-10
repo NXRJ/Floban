@@ -1682,6 +1682,66 @@ input[type="search"]::-webkit-search-cancel-button {
   align-self: stretch;
 }
 
+/* Live smart-capture preview: recognized tokens shown as chips below the
+   quick-add input before anything is committed. */
+.qa {
+  flex-wrap: wrap;
+}
+
+.qa-preview {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 2px;
+  min-height: 0;
+}
+
+.qa-preview[hidden] {
+  display: none;
+}
+
+.qa-preview-chip {
+  font-size: 15px;
+  padding: 2px 8px;
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.qa-preview-chip.qa-due {
+  color: var(--accent);
+  border-color: var(--accent-soft);
+}
+
+.qa-preview-chip.qa-prio {
+  color: var(--warn);
+  border-color: var(--border-strong);
+}
+
+.qa-preview-chip.qa-label {
+  color: var(--muted);
+}
+
+/* Type-to-snooze row inside the card editor due block. */
+.snooze-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.snooze-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  padding: 4px 8px;
+}
+
+.snooze-preview {
+  flex: none;
+  white-space: nowrap;
+}
+
 /* ---------- Card meta chips: due, aging ---------- */
 
 .chip-static.due {

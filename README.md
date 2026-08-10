@@ -128,6 +128,21 @@ Your current workspace is remembered across reloads.
 - Create with the `+` in a column header, the inline **quick-add** box at the
   bottom of every column (type a title, press Enter — paste several lines to
   add many cards at once), or press `N` to jump to the first quick-add box.
+- **Smart Quick Add** (natural-language capture): the quick-add box parses
+  due dates, priority and labels straight out of the line —
+  `fix login bug in 3 days p2 #Bug` creates a card titled `fix login bug`
+  with a due date in 3 days, HIGH priority and the `Bug` label. Recognized
+  tokens show as live preview chips before you press Enter, and the parsed
+  fields flow through the same placement pipeline as any other add (policies,
+  lifecycle, entry defaults, one undo entry). Grammar (deliberately small and
+  explicit — plain prose is never rewritten): `today` / `tomorrow` / weekday
+  names (`fri`, `next friday`, `this friday` — bare/`next` weekdays are
+  always in the future), `in N days/weeks/months`, `+1d`/`+2w`/`+1m`,
+  `next week`, `eom`, month-day dates (`25 jul`, `jul 25`), ISO dates
+  (`2026-08-20`), times (`5pm`, `17:30` — recognized but not stored, the
+  model is day-granular), priority `p1`–`p4` or `priority:high`, and labels
+  `#name` (resolved against the board's labels; unknown tags stay in the
+  title). Snooze verbs (`snooze 3d`, `push 1w`) work here too.
 - New cards are created through the same placement pipeline as moves: entering
   an `active` column records `startedAt`, entering a `done` column records
   `completedAt`, entry defaults apply, and policy columns ask for confirmation
@@ -152,9 +167,14 @@ Your current workspace is remembered across reloads.
   rejected. "Ready to pull" is derived — a card with zero unresolved blockers
   is ready. Cards show a `READY` badge or an unresolved blocker count.
 - Due dates render as chips: red when **overdue**, amber when due today or
-  tomorrow. Filter by overdue / today / this week / none, or sort the whole
-  board by due date, priority, size, created or last updated (sorting disables
-  card drag-reordering until you switch back to manual order).
+  tomorrow. In the card editor, the **type-to-snooze** field reschedules the
+  due date from the keyboard — `push fri`, `snooze 3d`, `+1w` (relative
+  offsets move the current due date, weekday names and dates resolve from
+  today) with a live preview chip and a single Enter to apply; the native
+  date picker stays for point-and-click. Filter by overdue / today / this
+  week / none, or sort the whole board by due date, priority, size, created
+  or last updated (sorting disables card drag-reordering until you switch
+  back to manual order).
 - Cards show an **aging chip** (`3D`) once they have sat in a column for more
   than a day. With enough completed samples (or a manual SLE), the chip becomes
   SLE-aware: visible ≥ 50%, warning ≥ 80%, risk beyond the service level.
@@ -327,6 +347,7 @@ shortcuts" lists them from the live registry.
 | `M` (card focused) | Start keyboard move mode |
 | Arrow keys / Home / End (move mode) | Choose destination |
 | Enter / Escape (move mode) | Commit / cancel move |
+| `Ctrl/Cmd+Enter` (card editor) | Save the card |
 
 ## Code structure
 
@@ -338,6 +359,7 @@ that use them.
 | Area | File | Responsibility |
 | --- | --- | --- |
 | Core | `js/core/date.js` | Deterministic date logic: ISO formatting, day offsets, due-date classification, due-filter matching, card aging. No browser access. |
+| Core | `js/core/nlparse.js` | Natural-language capture grammar: deterministic parsing of due dates, priority and labels out of quick-add lines and snooze phrases, with token spans for live preview. No browser access. |
 | Core | `js/core/model.js` | Factories for cards, columns, labels, boards, templates, inbox items, lenses and recurrences, with injectable `{ uid, now }` dependencies. |
 | Core | `js/core/migration.js` | Deterministic, idempotent, reference-independent normalization for **state version 3** (v1/v2/v3 loads, board imports, corrupt payloads, cross-board reference repair). |
 | Core | `js/core/lifecycle.js` | Card transitions: role-based `startedAt`/`completedAt`, capped transition log, flow-state periods, durations, cycle time and age. |
