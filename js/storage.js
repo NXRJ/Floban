@@ -236,6 +236,12 @@
     // is a no-op in read-only tabs, so this does not weaken the lock gate.
     var stamp = Date.now();
     mirror(state, stamp);
+    // State.save() already gates on canWrite(), but the lease can be handed
+    // over between that check and this engine write — the persistence path
+    // is asynchronous, and a direct Storage.save() bypasses the state gate
+    // entirely. Re-check ownership at the storage boundary so a former
+    // owner's stale state can never start an engine write.
+    if (KB.MultiTab && !KB.MultiTab.canWrite()) return Promise.resolve(null);
     if (!idbOk) return Promise.resolve(null);
     var write = engine.save(state, { reason: source || 'change', backup: 'auto', savedAt: stamp });
     // Every app save is fire-and-forget; surface IDB write failures by

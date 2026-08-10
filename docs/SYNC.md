@@ -71,9 +71,14 @@ any id migration.
   owner's lock is retaken after ~15s), but clean closes release the lease
   instantly (pagehide + owner-left broadcast), takeover settles with a short
   fixed delay before the reload, and the write gate re-checks the live claim
-  synchronously (canWrite) so a suspended former owner can never write stale
-  state — none of this is conflict-free multi-writer sync. A future CRDT
-  layer could lift these limits without touching the guard's UX.
+  synchronously (canWrite) at both the state layer and the storage boundary,
+  so no save can start after a former owner's lease was lost — none of this
+  is conflict-free multi-writer sync. The one residual race is a write that
+  was already in flight when ownership changed: the gate decides whether a
+  write starts, not whether it lands, so a former owner's save that passed
+  both gates microseconds before a takeover can still commit to IndexedDB
+  (the mirror gate makes that window a few synchronous instructions). A
+  future CRDT layer could lift these limits without touching the guard's UX.
 
 ## Testing the seam today
 
