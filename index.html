@@ -68,6 +68,7 @@
       <button type="button" class="ws-btn" data-workspace="review">Review</button>
       <button type="button" class="ws-btn" data-workspace="calendar">Calendar</button>
       <button type="button" class="ws-btn" data-workspace="log">Log</button>
+      <button type="button" class="ws-btn" data-workspace="tuning">Tuning</button>
     </nav>
     <button id="board-switch" class="btn" type="button" title="Switch board">
       <span class="btn-icon"></span><span id="board-name" class="board-name"></span><span class="btn-caret"></span>
@@ -154,6 +155,9 @@
     <button type="button" class="mt-btn" data-workspace="log">
       <span class="mt-icon"></span><span class="mt-label">Log</span>
     </button>
+    <button type="button" class="mt-btn" data-workspace="tuning">
+      <span class="mt-icon"></span><span class="mt-label">Tune</span>
+    </button>
   </nav>
 
   <section id="ws-mydesk" class="workspace" aria-label="My Desk" hidden></section>
@@ -161,6 +165,7 @@
   <section id="ws-review" class="workspace" aria-label="Review" hidden></section>
   <section id="ws-calendar" class="workspace" aria-label="Calendar" hidden></section>
   <section id="ws-log" class="workspace" aria-label="Work log" hidden></section>
+  <section id="ws-tuning" class="workspace" aria-label="Tuning" hidden></section>
 
   <div id="focus-hud" class="focus-hud" hidden></div>
 
@@ -186,6 +191,8 @@
   <script src="js/core/relations.js"></script>
   <script src="js/core/policies.js"></script>
   <script src="js/core/metrics.js"></script>
+  <script src="js/core/calibrate.js"></script>
+  <script src="js/core/weekly.js"></script>
   <script src="js/core/pipeline.js"></script>
   <script src="js/core/importer.js"></script>
   <script src="js/core/exporter.js"></script>
@@ -225,6 +232,7 @@
   <script src="js/actionsheet.js"></script>
   <script src="js/palette.js"></script>
   <script src="js/scoreboard.js"></script>
+  <script src="js/checkpoint.js"></script>
   <script src="js/pwa.js"></script>
   <script src="js/app.js"></script>
 </body>
