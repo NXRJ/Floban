@@ -128,10 +128,11 @@
   }
 
   function mirror(state, savedAt) {
-    // A read-only tab's in-memory state is stale by design; its mirror write
-    // would pair a stale payload with a fresh savedAt and could win boot
-    // recovery over the owner's real data.
-    if (KB.MultiTab && KB.MultiTab.readOnly()) return;
+    // A read-only tab (or one whose lease was taken over) must never write
+    // the shared crash mirror: its stale payload with a fresh savedAt could
+    // win boot recovery over the owner's real data. canWrite() re-checks the
+    // live claim synchronously.
+    if (KB.MultiTab && !KB.MultiTab.canWrite()) return;
     try {
       localStorage.setItem(MIRROR_KEY, JSON.stringify({
         savedAt: savedAt === undefined ? Date.now() : savedAt,
@@ -155,9 +156,10 @@
     if (result.degraded) idbOk = false;
     // Repair the primary store so IDB is authoritative again as soon as
     // possible — but never during a degraded boot (IndexedDB just failed,
-    // so the repair would be one wasted retry), and never from a read-only
-    // tab (its recovered state must not race the owner's writes).
-    if (!result.degraded && !(KB.MultiTab && KB.MultiTab.readOnly()) && (result.source === 'mirror' || result.source === 'legacy' || result.source === 'backup')) {
+    // so the repair would be one wasted retry), and never from a tab that
+    // does not own the edit lease (its recovered state must not race the
+    // owner's writes).
+    if (!result.degraded && !(KB.MultiTab && !KB.MultiTab.canWrite()) && (result.source === 'mirror' || result.source === 'legacy' || result.source === 'backup')) {
       // Migrations from legacy first snapshot the incoming payload into the
       // rotating backups so the original data is never overwritten
       // irrecoverably.
@@ -247,8 +249,8 @@
   }
 
   function backup(state, reason) {
-    mirror(state); // no-op when read-only
-    if (KB.MultiTab && KB.MultiTab.readOnly()) return Promise.resolve(null);
+    mirror(state); // no-op when read-only or the lease is lost
+    if (KB.MultiTab && !KB.MultiTab.canWrite()) return Promise.resolve(null);
     if (!idbOk) return Promise.resolve(null);
     return engine.backup(state, reason || 'manual').catch(function (err) {
       // A mid-session IndexedDB failure must not surface as an unhandled
@@ -276,8 +278,9 @@
   }
 
   function clearAll() {
-    // A read-only tab must not be able to wipe shared storage.
-    if (KB.MultiTab && KB.MultiTab.readOnly()) return Promise.resolve();
+    // A read-only tab (or one whose lease was taken over) must not be able
+    // to wipe shared storage.
+    if (KB.MultiTab && !KB.MultiTab.canWrite()) return Promise.resolve();
     loadResult = null;
     // A factory reset must not resurrect the previous session's crash mirror
     // (or its pre-upgrade legacy payload) on the next boot.

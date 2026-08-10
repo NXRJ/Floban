@@ -67,9 +67,12 @@ any id migration.
   later tabs run read-only with a takeover banner (their saves are dropped,
   including backup/snapshot/import writes), and takeover or owner-departure
   reloads the surviving tab from storage so it never saves a stale in-memory
-  state. Limitations: ownership is time-based (a dead owner's lock is retaken
-  after ~15s), and takeover settles with a short fixed delay before the
-  reload — none of this is conflict-free multi-writer sync. A future CRDT
+  state. Limitations: ownership is time-based as a crash fallback (a dead
+  owner's lock is retaken after ~15s), but clean closes release the lease
+  instantly (pagehide + owner-left broadcast), takeover settles with a short
+  fixed delay before the reload, and the write gate re-checks the live claim
+  synchronously (canWrite) so a suspended former owner can never write stale
+  state — none of this is conflict-free multi-writer sync. A future CRDT
   layer could lift these limits without touching the guard's UX.
 
 ## Testing the seam today
