@@ -3011,6 +3011,154 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   check('undo reverts the checkpoint defer', undidDefer);
 
+  // ---- CARTRIDGE: board templates ----
+  const tplSeed = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const now = Date.now();
+    const board = {
+      id: 'tpl-board', name: 'Kickoff Board',
+      flowSettings: { staleAfterDays: 7, oversizedChecklistThreshold: 10, completedReviewAfterDays: 7, slePercentile: 0.85, manualSleDays: null },
+      labels: [{ id: 'tpl-l1', name: 'Client', color: '#2a58c4' }, { id: 'tpl-l2', name: 'Urgent', color: '#a34800' }],
+      templates: [], archive: { cards: [], columns: [] },
+      columns: [
+        { id: 'tpl-c0', title: 'To Do', role: 'queue', isDone: false, wipLimit: 0, collapsed: false, policy: { wipMode: 'off', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '', countsTowardCycleTime: true }, cards: [] },
+        { id: 'tpl-c1', title: 'In Progress', role: 'active', isDone: false, wipLimit: 1, collapsed: false, policy: { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: ['Kickoff done'], exitCriteria: [], defaultLabelIds: ['tpl-l1'], defaultAssignee: 'Sam', countsTowardCycleTime: true }, cards: [] },
+        { id: 'tpl-c2', title: 'Done', role: 'done', isDone: true, wipLimit: 0, collapsed: false, policy: { wipMode: 'off', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '', countsTowardCycleTime: true }, cards: [] }
+      ]
+    };
+    board.columns[0].cards = [{
+      id: 'tpl-k1', columnId: 'tpl-c0', title: 'Kickoff call', description: 'Intro', labels: ['tpl-l1'],
+      assignee: '', createdAt: now, updatedAt: now, movedAt: now, due: '', checklist: [{ id: 'ck1', text: 'Prep agenda', done: false }],
+      priority: 'high', size: 's', startedAt: null, completedAt: null,
+      flow: { state: 'normal', reason: '', since: null, periods: [] },
+      dependencies: { blockers: [], related: [] }, recurrenceId: null, transitions: []
+    }];
+    b.boards = [board];
+    b.activeBoardId = 'tpl-board';
+    return b;
+  });
+  await seedLocalStorage(tplSeed);
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  // Save the board as a template via the modal API.
+  await page.evaluate(() => {
+    KB.Modal.saveBoardTemplate();
+    const nameInput = document.querySelector('.modal-panel input[type="text"]');
+    nameInput.value = 'Client Kickoff';
+    const boxes = document.querySelectorAll('.modal-panel input[type="checkbox"]');
+    if (boxes[0]) boxes[0].checked = true;
+    Array.prototype.find.call(document.querySelectorAll('.modal-actions .btn'), b => /SAVE TEMPLATE/.test(b.textContent)).click();
+  });
+  await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'template saved');
+  const tplSaved = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    return (b.templates || []).map(t => t.name);
+  });
+  check('saving a board as template persists it', tplSaved.includes('Client Kickoff'));
+  // Apply the template -> new board with structure + starter card.
+  await page.evaluate(() => {
+    KB.Modal.templateGallery();
+  });
+  await waitFor(() => document.querySelectorAll('.tpl-row').length >= 1, 3000, 'gallery row');
+  await page.evaluate(() => {
+    Array.prototype.find.call(document.querySelectorAll('.tpl-row .btn'), b => b.textContent === 'USE').click();
+    const nameInput = document.querySelector('.modal-panel input[type="text"]');
+    nameInput.value = 'Stamped Board';
+    Array.prototype.find.call(document.querySelectorAll('.modal-actions .btn'), b => b.textContent === 'Save').click();
+  });
+  await waitFor(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    return b.boards.some(x => x.name === 'Stamped Board');
+  }, 3000, 'board stamped');
+  const stampedState = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.name === 'Stamped Board');
+    const ip = board.columns.find(c => c.role === 'active');
+    return {
+      columns: board.columns.map(c => c.role).sort().join(','),
+      wip: ip ? ip.wipLimit : null,
+      wipMode: ip ? ip.policy.wipMode : null,
+      entry: ip ? ip.policy.entryCriteria.join(',') : '',
+      labels: board.labels.map(l => l.name).sort().join(','),
+      starter: board.columns[0].cards.map(c => c.title).join(','),
+      starterChecklist: board.columns[0].cards[0] ? board.columns[0].cards[0].checklist.length : 0
+    };
+  });
+  check('template stamps columns with roles and WIP policy',
+    stampedState.columns === 'active,done,queue' && stampedState.wip === 1 && stampedState.wipMode === 'hard' && stampedState.entry === 'Kickoff done');
+  check('template copies the label palette', stampedState.labels === 'Client,Urgent');
+  check('template instantiates starter cards with checklists', stampedState.starter.includes('Kickoff call') && stampedState.starterChecklist === 1);
+  await blur();
+  await pressUndo();
+  const tplUndone = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    return !b.boards.some(x => x.name === 'Stamped Board');
+  });
+  check('one undo removes the whole stamped board', tplUndone);
+
+  // ---- PING: waiting-card follow-up engine ----
+  const pingSeed = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const now = Date.now();
+    const DAY = 86400000;
+    const board = b.boards[0];
+    board.columns.forEach(function (c) { c.cards = []; });
+    const todo = board.columns[0];
+    todo.cards = [{
+      id: 'ping-1', columnId: todo.id, title: 'Wait on client assets', description: '', labels: [],
+      assignee: 'Acme', createdAt: now - 10 * DAY, updatedAt: now, movedAt: now - 2 * DAY,
+      due: '', checklist: [], priority: 'none', size: 'm',
+      startedAt: null, completedAt: null,
+      flow: { state: 'waiting', reason: 'assets', since: now - 2 * DAY, periods: [] },
+      dependencies: { blockers: [], related: [] }, recurrenceId: null, transitions: [],
+      ping: { contact: 'Acme', followUpAt: now - 2 * DAY, cadenceDays: 3, escalateAfter: 2, maxEscalation: 4, lastPokedAt: null, pokedCount: 0, log: [] }
+    }];
+    return b;
+  });
+  await seedLocalStorage(pingSeed);
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  await page.evaluate(() => KB.Workspaces.set('ping'));
+  await waitFor(() => document.querySelectorAll('.ping-row').length >= 1, 3000, 'ping band');
+  const pingState = await page.evaluate(() => ({
+    rows: Array.prototype.map.call(document.querySelectorAll('.ping-row-title'), e => e.textContent),
+    statuses: Array.prototype.map.call(document.querySelectorAll('.ping-status'), e => e.textContent),
+    overdue: document.querySelectorAll('.ping-row.overdue').length
+  }));
+  check('PING workspace lists the overdue waiting card', pingState.rows.includes('Wait on client assets'));
+  check('PING marks it overdue', pingState.overdue >= 1 && pingState.statuses.some(s => /OVERDUE/.test(s)));
+  // Poke it -> rolls the follow-up, leaves the due band.
+  await page.evaluate(() => {
+    document.querySelector('.ping-poke').click();
+  });
+  await waitFor(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const card = b.boards[0].columns[0].cards.find(c => c.id === 'ping-1');
+    return card && card.ping && card.ping.pokedCount === 1;
+  }, 3000, 'poke recorded');
+  const pokedState = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const card = b.boards[0].columns[0].cards.find(c => c.id === 'ping-1');
+    return { count: card.ping.pokedCount, future: card.ping.followUpAt > Date.now() };
+  });
+  check('POKE logs the follow-up and rolls the date forward', pokedState.count === 1 && pokedState.future);
+  await blur();
+  await pressUndo();
+  const pokeUndone = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const card = b.boards[0].columns[0].cards.find(c => c.id === 'ping-1');
+    return card && card.ping && card.ping.pokedCount === 0 && card.ping.followUpAt < Date.now();
+  });
+  check('one undo reverts the poke', pokeUndone);
+  // Card chip on the board.
+  await page.evaluate(() => { KB.Workspaces.set('board'); KB.App.refresh(); });
+  const pingChip = await page.$$eval('.chip-static.ping', els => els.map(e => e.textContent));
+  check('waiting card renders the PING chip', pingChip.length >= 1);
+  // Review integration: the overdue ping ranks above plain waiting.
+  await page.evaluate(() => { KB.Workspaces.set('review'); KB.App.refresh(); });
+  const reviewReasons = await page.$$eval('.review-reason', els => els.map(e => e.textContent));
+  check('Review surfaces the PING overdue reason', reviewReasons.some(r => /PING/.test(r)));
+
   // ---- Reduced motion: palette still opens without animation ----
   const reducedPage = await browser.newPage();
   await reducedPage.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);

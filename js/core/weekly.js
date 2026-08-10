@@ -88,11 +88,13 @@
         var flowBlocked = FLOW_BLOCKED.indexOf(card.flowState) !== -1;
         var stale = agingDays(card, now) >= staleDays;
         if (flowBlocked || stale) {
-          stuck.push({
-            card: card,
-            reason: flowBlocked ? String(card.flowState || 'blocked').toUpperCase()
-              : 'AGING ' + agingDays(card, now) + 'D'
-          });
+          var reason = flowBlocked ? String(card.flowState || 'blocked').toUpperCase()
+            : 'AGING ' + agingDays(card, now) + 'D';
+          if (card.ping && card.ping.followUpAt <= now) {
+            var pingDays = Math.ceil((now - card.ping.followUpAt) / MS_PER_DAY);
+            reason = 'PING ' + pingDays + 'D' + (card.ping.contact ? ' \u00B7 ' + card.ping.contact : '');
+          }
+          stuck.push({ card: card, reason: reason });
         }
         if (card.due && card.due < thisWeek.fromISO) {
           overdue.push(card);

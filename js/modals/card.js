@@ -156,7 +156,40 @@
 
     flowInput.addEventListener('change', function () {
       flowReasonWrap.classList.toggle('hidden', flowInput.value === 'normal');
+      pingWrap.classList.toggle('hidden', flowInput.value !== 'waiting');
+      if (flowInput.value === 'waiting') {
+        pingContactInput.value = assigneeInput.value || pingContactInput.value || '';
+        if (!pingStatusEl.textContent) updatePingStatus();
+      }
     });
+
+    // PING: when the card is Waiting, offer a follow-up clock.
+    var pingWrap = h('div', { id: 'cf-ping-wrap' });
+    var pingHeading = h('span', { class: 'check-editor-title', textContent: 'PING FOLLOW-UP' });
+    pingWrap.appendChild(pingHeading);
+    var pingContactInput = h('input', {
+      type: 'text',
+      id: 'cf-ping-contact',
+      maxlength: 60,
+      placeholder: 'Who holds the ball?',
+      'aria-label': 'Ping contact (who you are waiting on)'
+    });
+    if (card && card.ping) pingContactInput.value = card.ping.contact || '';
+    var pingContactWrap = fieldBlock('Waiting on', pingContactInput);
+    pingWrap.appendChild(pingContactWrap);
+    var pingStatusEl = h('span', { class: 'cf-size-hint', 'aria-live': 'polite' });
+    function updatePingStatus() {
+      if (card && card.ping) {
+        var st = KB.Core.Ping.pingStatus(card, Date.now());
+        pingStatusEl.textContent = 'Armed \u2014 ' + st.state.toUpperCase() + (st.daysOverdue !== null ? ' ' + st.daysOverdue + 'D OVERDUE' : ' \u00B7 +' + st.daysUntil + 'D') +
+          ' \u00B7 ' + (card.ping.pokedCount || 0) + ' poke' + ((card.ping.pokedCount || 0) === 1 ? '' : 's');
+      } else {
+        pingStatusEl.textContent = '';
+      }
+    }
+    pingWrap.appendChild(pingStatusEl);
+    pingWrap.classList.toggle('hidden', flowState !== 'waiting');
+    form.appendChild(pingWrap);
 
     var relOps = [];
     var selfRef = isEdit && card ? { boardId: editorBoardId, cardId: card.id } : null;
@@ -551,6 +584,16 @@
           }
         });
         KB.State.updateCardWithFlow(columnId, card.id, data, flowInput.value, flowReasonInput.value.trim(), editorBoardId);
+        // PING: a card left in Waiting with a contact gets a follow-up clock.
+        var savedCard = KB.State.findCard(columnId, card.id);
+        if (savedCard && savedCard.flow && savedCard.flow.state === 'waiting') {
+          var contact = pingContactInput.value.trim();
+          if (!savedCard.ping) {
+            KB.State.armPing(card.id, { contact: contact || savedCard.assignee || '' });
+          } else if (contact && contact !== savedCard.ping.contact) {
+            KB.State.setPingContact(card.id, contact);
+          }
+        }
         KB.UI.toast('Changes saved', 'success');
       } else {
         var finishCreate = function (created) {

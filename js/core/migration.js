@@ -192,7 +192,31 @@
       out.dependencies = normalizeDependencies(out.dependencies);
       out.recurrenceId = typeof out.recurrenceId === 'string' ? out.recurrenceId : null;
       out.transitions = normalizeTransitions(out.transitions, deps);
+      out.ping = normalizePing(out.ping);
       return out;
+    }
+
+    // PING follow-up state on a card: tolerant of missing/malformed fields.
+    function normalizePing(value) {
+      if (!value || typeof value !== 'object') return null;
+      var followUpAt = typeof value.followUpAt === 'number' && isFinite(value.followUpAt) ? value.followUpAt : null;
+      if (followUpAt === null) return null;
+      var logLimit = 20;
+      var log = Array.isArray(value.log) ? value.log.filter(function (entry) {
+        return entry && typeof entry === 'object' && typeof entry.at === 'number';
+      }).slice(-logLimit).map(function (entry) {
+        return { at: entry.at, note: typeof entry.note === 'string' ? entry.note : '' };
+      }) : [];
+      return {
+        contact: typeof value.contact === 'string' ? value.contact : '',
+        followUpAt: followUpAt,
+        cadenceDays: typeof value.cadenceDays === 'number' && value.cadenceDays >= 1 ? value.cadenceDays : 3,
+        escalateAfter: typeof value.escalateAfter === 'number' ? value.escalateAfter : 2,
+        maxEscalation: typeof value.maxEscalation === 'number' ? value.maxEscalation : 4,
+        lastPokedAt: typeof value.lastPokedAt === 'number' && isFinite(value.lastPokedAt) ? value.lastPokedAt : null,
+        pokedCount: Math.max(0, typeof value.pokedCount === 'number' ? value.pokedCount : 0),
+        log: log
+      };
     }
 
     function inferColumnRole(column) {
@@ -613,10 +637,63 @@
       out.focusDays = normalizeFocusDays(out.focusDays);
       out.focusSession = normalizeFocusSession(out.focusSession);
       out.streaks = normalizeStreaks(out.streaks);
+      out.templates = normalizeTemplates(out.templates);
       repairDependencies(out);
       repairRecurrences(out, deps);
       repairLenses(out);
       return out;
+    }
+
+    // CARTRIDGE board templates: array of validated payloads. Unknown fields
+    // dropped, missing fields defaulted — mirrors validateTemplate in
+    // js/core/template.js but lives here so the boot chain has no dependency
+    // on load order.
+    function normalizeTemplates(value) {
+      if (!Array.isArray(value)) return [];
+      return value.map(function (tpl) {
+        if (!tpl || typeof tpl !== 'object') return null;
+        var columns = Array.isArray(tpl.columns) ? tpl.columns.filter(function (c) { return c && typeof c === 'object'; }) : [];
+        var labels = (tpl.boardMeta && Array.isArray(tpl.boardMeta.labels)) ? tpl.boardMeta.labels : [];
+        return {
+          version: 1,
+          name: typeof tpl.name === 'string' && tpl.name ? tpl.name : 'Board template',
+          description: typeof tpl.description === 'string' ? tpl.description : '',
+          starred: Boolean(tpl.starred),
+          createdAt: typeof tpl.createdAt === 'number' ? tpl.createdAt : null,
+          boardMeta: {
+            labels: labels.filter(function (l) {
+              return l && typeof l === 'object' && typeof l.id === 'string' && typeof l.name === 'string';
+            }).map(function (l) {
+              return { id: l.id, name: l.name, color: typeof l.color === 'string' ? l.color : '#6d30d6' };
+            })
+          },
+          columns: columns.map(function (c) {
+            return {
+              title: typeof c.title === 'string' ? c.title : '',
+              role: ['queue', 'active', 'done', 'backlog'].indexOf(c.role) !== -1 ? c.role : 'queue',
+              wipLimit: typeof c.wipLimit === 'number' && c.wipLimit >= 0 ? c.wipLimit : 0,
+              wipMode: ['off', 'soft', 'hard'].indexOf(c.wipMode) !== -1 ? c.wipMode : 'off',
+              entryCriteria: Array.isArray(c.entryCriteria) ? c.entryCriteria.filter(function (x) { return typeof x === 'string'; }) : [],
+              exitCriteria: Array.isArray(c.exitCriteria) ? c.exitCriteria.filter(function (x) { return typeof x === 'string'; }) : [],
+              defaultLabelIds: Array.isArray(c.defaultLabelIds) ? c.defaultLabelIds.filter(function (x) { return typeof x === 'string'; }) : [],
+              defaultAssignee: typeof c.defaultAssignee === 'string' ? c.defaultAssignee : ''
+            };
+          }),
+          starterCards: Array.isArray(tpl.starterCards) ? tpl.starterCards.filter(function (c) { return c && typeof c === 'object'; }).map(function (c) {
+            return {
+              title: typeof c.title === 'string' ? c.title : '',
+              description: typeof c.description === 'string' ? c.description : '',
+              labelIds: Array.isArray(c.labelIds) ? c.labelIds.filter(function (x) { return typeof x === 'string'; }) : [],
+              checklist: Array.isArray(c.checklist) ? c.checklist.filter(function (i) { return i && typeof i === 'object'; }).map(function (i) {
+                return { text: String(i.text || ''), done: Boolean(i.done) };
+              }) : [],
+              priority: ['none', 'low', 'medium', 'high', 'urgent'].indexOf(c.priority) !== -1 ? c.priority : 'none',
+              size: ['none', 'xs', 's', 'm', 'l', 'xl'].indexOf(c.size) !== -1 ? c.size : 'none',
+              columnTitle: typeof c.columnTitle === 'string' ? c.columnTitle : ''
+            };
+          }) : []
+        };
+      }).filter(Boolean);
     }
 
     function adoptBoardShape(raw, name, deps) {

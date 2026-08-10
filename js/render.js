@@ -123,6 +123,21 @@
     return chip;
   }
 
+  function pingChip(card) {
+    if (!card.ping || !KB.Core.Ping) return null;
+    var status = KB.Core.Ping.pingStatus(card, Date.now());
+    var chip = h('span', { class: 'chip chip-static ping' + (status.state === 'overdue' ? ' ping-overdue' : '') });
+    chip.innerHTML = icon('clock');
+    if (status.state === 'overdue') {
+      chip.appendChild(document.createTextNode('PING OVERDUE ' + status.daysOverdue + 'D'));
+    } else {
+      chip.appendChild(document.createTextNode('PING +' + status.daysUntil + 'D'));
+    }
+    var contact = card.ping.contact ? 'Waiting on ' + card.ping.contact + ' \u00B7 ' : '';
+    chip.title = contact + 'follow up in ' + status.daysUntil + ' day' + (status.daysUntil === 1 ? '' : 's');
+    return chip;
+  }
+
   function agingChip(card, isDone) {
     if (isDone || !card.movedAt) return null;
     var days = KB.Core.Date.ageInDays(card.movedAt, Date.now());
@@ -199,6 +214,8 @@
     if (ef) meta.appendChild(ef);
     var fl = flowChip(card);
     if (fl) meta.appendChild(fl);
+    var pg = pingChip(card);
+    if (pg) meta.appendChild(pg);
     var dep = dependencyChip(card, column);
     if (dep) meta.appendChild(dep);
     var rec = recurrenceChip(card);

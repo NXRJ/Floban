@@ -819,7 +819,7 @@
     KB.el('app-menu').querySelector('.btn-icon').innerHTML = icon('menu');
     KB.el('search-input').previousElementSibling.innerHTML = icon('search');
 
-    var tabIcons = { board: 'board', mydesk: 'star', inbox: 'box', review: 'check', tuning: 'clock' };
+    var tabIcons = { board: 'board', mydesk: 'star', inbox: 'box', review: 'check', tuning: 'clock', ping: 'doc' };
     KB.el('mobile-tabs').querySelectorAll('.mt-btn').forEach(function (btn) {
       btn.querySelector('.mt-icon').innerHTML = icon(tabIcons[btn.dataset.workspace] || 'doc');
     });
