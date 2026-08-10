@@ -64,6 +64,7 @@
     KB.Workspaces.inboxBadge();
     updateMobileTabs();
     renderFocusHud();
+    if (KB.Scoreboard) KB.Scoreboard.sync();
     if (KB.Workspaces.current() !== 'board') {
       KB.Render.boardPager();
       return;
@@ -485,6 +486,10 @@
     KB.el('app-menu').addEventListener('click', function () {
       openAppMenu(KB.el('app-menu'));
     });
+    var readout = KB.el('streak-readout');
+    if (readout && KB.Scoreboard) {
+      readout.addEventListener('click', function () { KB.Scoreboard.open(); });
+    }
   }
 
   function wireMobile() {
