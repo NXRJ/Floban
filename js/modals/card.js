@@ -8,6 +8,25 @@
   var checklistEditor = KB.Modal.checklistEditor;
   var readChecklist = KB.Modal.readChecklist;
   var labelsFor = KB.Modal.labelsFor;
+
+  // All cards across boards (live + archived) for the TUNING size hint —
+  // same source as the TUNING workspace and Day Sheet check.
+  function calibrationCardsForEditor() {
+    var state = KB.State.data();
+    var out = [];
+    (state.boards || []).forEach(function (board) {
+      (board.columns || []).forEach(function (column) {
+        (column.cards || []).forEach(function (card) { out.push(card); });
+      });
+      var archive = board.archive || {};
+      (archive.columns || []).forEach(function (ac) {
+        (ac.cards || []).forEach(function (card) { out.push(card); });
+      });
+      (archive.cards || []).forEach(function (card) { out.push(card); });
+    });
+    return out;
+  }
+
   function cardEditor(columnId, card, opener, boardId, prefill) {
     var isEdit = Boolean(card);
     var initial = isEdit ? card : (prefill || {});
@@ -96,7 +115,19 @@
       sizeInput.appendChild(new Option(pair[1], pair[0]));
     });
     sizeInput.value = initial.size || 'none';
-    form.appendChild(fieldBlock('Size', sizeInput));
+    var sizeWrap = fieldBlock('Size', sizeInput);
+    // TUNING: show the user's calibrated actual for the selected size.
+    var sizeHint = h('span', { class: 'cf-size-hint', 'aria-live': 'polite' });
+    function updateSizeHint() {
+      if (!KB.Core.Calibrate) { sizeHint.textContent = ''; return; }
+      var cards = calibrationCardsForEditor();
+      var cal = KB.Core.Calibrate.calibrate(cards, Date.now());
+      sizeHint.textContent = KB.Core.Calibrate.estimateLabel(sizeInput.value, cal);
+    }
+    sizeInput.addEventListener('change', updateSizeHint);
+    sizeWrap.appendChild(sizeHint);
+    form.appendChild(sizeWrap);
+    updateSizeHint();
 
     var descInput = h('textarea', { id: 'cf-desc', rows: 5, placeholder: 'Details, context, notes…  **bold**  *italic*  `code`  [link](url)', 'aria-label': 'Description' });
     descInput.value = initial.description || '';

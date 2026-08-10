@@ -90,9 +90,49 @@
   // ---- Rendering helpers ----------------------------------------------------
 
   function reasonChip(text) {
-    var chip = h('span', { class: 'chip chip-static day-reason' });
-    chip.textContent = text;
+    var chip = h('span', { class: 'chip chip-static day-reason' });    chip.textContent = text;
     return chip;
+  }
+
+  // All cards across boards (live + archived) for calibration — same source
+  // as the TUNING workspace.
+  function calibrationCards() {
+    var state = KB.State.data();
+    var out = [];
+    (state.boards || []).forEach(function (board) {
+      (board.columns || []).forEach(function (column) {
+        (column.cards || []).forEach(function (card) { out.push(card); });
+      });
+      var archive = board.archive || {};
+      (archive.columns || []).forEach(function (ac) {
+        (ac.cards || []).forEach(function (card) { out.push(card); });
+      });
+      (archive.cards || []).forEach(function (card) { out.push(card); });
+    });
+    return out;
+  }
+
+  // Estimate-vs-actual reality check for the current picks: a chip line under
+  // the slot progress. Returns null when nothing is picked yet.
+  function tuningPlanCheck() {
+    if (!KB.Core.Calibrate) return null;
+    if (picked.length === 0) return null;
+    var cards = calibrationCards();
+    var cal = KB.Core.Calibrate.calibrate(cards, Date.now());
+    var byId = {};
+    cards.forEach(function (c) { if (c) byId[c.id] = c; });
+    var check = KB.Core.Calibrate.planCheck(todayISO(), picked, byId, cal, cards, Date.now());
+    var wrap = h('div', { class: 'day-tune' + (check.warn ? ' warn' : '') });
+    var label = h('span', { class: 'day-tune-label' });
+    label.textContent = 'TUNING';
+    wrap.appendChild(label);
+    var text = h('span', { class: 'day-tune-text' });
+    text.textContent = picked.length + ' PICK' + (picked.length === 1 ? '' : 'S') + ' \u2248 ' +
+      (Math.round(check.estimateDays * 10) / 10) + 'D \u2014 YOUR REALISTIC DAY \u2248 ' +
+      (Math.round(check.capacityDays * 10) / 10) + 'D' +
+      (check.warn ? '. TRIM?' : '.');
+    wrap.appendChild(text);
+    return wrap;
   }
 
   function keyBadge(label) {
@@ -208,6 +248,11 @@
       var progress = h('div', { class: 'day-progress' });
       progress.textContent = picked.length + ' of ' + SLOTS + ' SLOTS';
       content.appendChild(progress);
+
+      // TUNING reality check: estimated load of the current picks vs the
+      // user's recorded daily capacity. Advisory only — the user decides.
+      var checkEl = tuningPlanCheck();
+      if (checkEl) content.appendChild(checkEl);
 
       var actions = h('div', { class: 'modal-actions' });
       var cancelBtn = h('button', { type: 'button', class: 'btn ghost' });

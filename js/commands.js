@@ -81,6 +81,7 @@
   workspaceCommand('workspace.mydesk', 'My Desk', 'mydesk');
   workspaceCommand('workspace.inbox', 'Inbox', 'inbox');
   workspaceCommand('workspace.review', 'Review', 'review');
+  workspaceCommand('workspace.tuning', 'Tuning', 'tuning');
   C.register({
     id: 'workspace.calendar',
     title: 'Date Desk',
@@ -187,6 +188,31 @@
     order: 7,
     run: function () {
       KB.Modal.exportModal();
+    }
+  });
+
+  C.register({
+    id: 'calibration.open',
+    title: 'TUNING',
+    keywords: ['calibration', 'estimate', 'actual', 'size', 'planning', 'reality', 'drift'],
+    category: 'Workspace',
+    icon: 'doc',
+    shortcut: 'g',
+    order: 1,
+    run: function () {
+      KB.Workspaces.set('tuning');
+    }
+  });
+  C.register({
+    id: 'weekly.start',
+    title: 'Weekly Checkpoint',
+    keywords: ['weekly', 'review', 'checkpoint', 'ritual', 'gtd', 'retrospective', 'plan'],
+    category: 'App',
+    icon: 'doc',
+    shortcut: 'w',
+    order: 5,
+    run: function () {
+      KB.Checkpoint.start();
     }
   });
 

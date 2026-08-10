@@ -33,7 +33,7 @@
   }
 
   function isValidWorkspace(name) {
-    return ['board', 'mydesk', 'inbox', 'review', 'calendar', 'log'].indexOf(name) !== -1;
+    return ['board', 'mydesk', 'inbox', 'review', 'calendar', 'log', 'tuning'].indexOf(name) !== -1;
   }
 
   function current() {
@@ -863,6 +863,7 @@
     KB.el('ws-review').hidden = workspace !== 'review';
     KB.el('ws-calendar').hidden = workspace !== 'calendar';
     KB.el('ws-log').hidden = workspace !== 'log';
+    KB.el('ws-tuning').hidden = workspace !== 'tuning';
     document.querySelectorAll('.ws-btn').forEach(function (btn) {
       btn.classList.toggle('active', btn.dataset.workspace === workspace);
     });
@@ -876,6 +877,134 @@
     else if (workspace === 'inbox') renderInbox();
     else if (workspace === 'calendar') renderCalendar();
     else if (workspace === 'log') renderLog();
+    else if (workspace === 'tuning') renderTuning();
+  }
+
+  // ---------------- TUNING (estimate-vs-actual calibration) ----------------
+
+  // All cards across every board (live + archived) — the same source the
+  // Work Log and metrics use. Calibration is personal, not per-board.
+  function tuningCards() {
+    var state = KB.State.data();
+    var out = [];
+    (state.boards || []).forEach(function (board) {
+      (board.columns || []).forEach(function (column) {
+        (column.cards || []).forEach(function (card) {
+          out.push(card);
+        });
+      });
+      var archive = board.archive || {};
+      (archive.columns || []).forEach(function (ac) {
+        (ac.cards || []).forEach(function (card) { out.push(card); });
+      });
+      (archive.cards || []).forEach(function (card) { out.push(card); });
+    });
+    return out;
+  }
+
+  function tuningGauge(size, entry) {
+    var wrap = h('div', { class: 'tune-gauge' });
+    var head = h('div', { class: 'tune-gauge-head' });
+    var name = h('span', { class: 'tune-gauge-size' });
+    name.textContent = size;
+    head.appendChild(name);
+    var val = h('span', { class: 'tune-gauge-value' });
+    if (entry.n === 0) {
+      val.textContent = 'NO DATA';
+      val.classList.add('empty');
+    } else {
+      val.textContent = entry.medianDays === null ? '—' : (Math.round(entry.medianDays * 10) / 10) + 'd';
+    }
+    head.appendChild(val);
+    wrap.appendChild(head);
+    var track = h('div', { class: 'tune-gauge-track' });
+    var fill = h('div', { class: 'tune-gauge-fill' });
+    if (entry.medianDays !== null) {
+      // Scale: XL (3d fallback) maps to full width.
+      var pct = Math.min(100, (entry.medianDays / 3) * 100);
+      fill.style.width = pct + '%';
+    } else {
+      fill.classList.add('off');
+    }
+    track.appendChild(fill);
+    wrap.appendChild(track);
+    var meta = h('div', { class: 'tune-gauge-meta' });
+    if (entry.n > 0) {
+      meta.textContent = 'n=' + entry.n + (entry.p85Days !== null ? ' \u00B7 p85 ' + (Math.round(entry.p85Days * 10) / 10) + 'd' : '');
+    } else {
+      meta.textContent = 'complete sized cards to calibrate';
+    }
+    wrap.appendChild(meta);
+    return wrap;
+  }
+
+  function renderTuning() {
+    var el = KB.el('ws-tuning');
+    el.innerHTML = '';
+    var now = Date.now();
+    var cards = tuningCards();
+    var cal = KB.Core.Calibrate.calibrate(cards, now);
+    var capacity = KB.Core.Calibrate.dailyCapacityDays(cards, now);
+
+    var head = h('div', { class: 'ws-head' });
+    var title = h('h2', { class: 'desk-section-title' });
+    title.textContent = 'TUNING \u00B7 ESTIMATE VS ACTUAL';
+    head.appendChild(title);
+    head.appendChild(h('span', { class: 'spacer' }));
+    var asOf = h('span', { class: 'tune-asof' });
+    asOf.textContent = 'AS OF ' + cal.asOfISO;
+    head.appendChild(asOf);
+    el.appendChild(head);
+
+    var hint = h('p', { class: 'form-hint' });
+    hint.textContent = 'Your size estimates (XS\u2013XL) vs the real cycle times the board recorded. Every sized card you complete sharpens these numbers — they feed the Day Sheet reality check and the card editor.';
+    el.appendChild(hint);
+
+    if (!cal.ready) {
+      var empty = h('div', { class: 'tune-empty' });
+      var emptyTitle = h('span', { class: 'tune-empty-title' });
+      emptyTitle.textContent = 'NO DATA YET';
+      empty.appendChild(emptyTitle);
+      var emptySub = h('p');
+      emptySub.textContent = 'Complete at least ' + KB.Core.Calibrate.MIN_SAMPLES + ' cards that carry a size (XS\u2013XL). Quick-add accepts size tokens: "Ship 1.0 #M".';
+      empty.appendChild(emptySub);
+      el.appendChild(empty);
+    }
+
+    var gauges = h('div', { class: 'tune-gauges' });
+    KB.Core.Calibrate.SIZES.forEach(function (size) {
+      gauges.appendChild(tuningGauge(size, cal.bySize[size]));
+    });
+    el.appendChild(gauges);
+
+    var capacityRow = h('div', { class: 'tune-capacity' });
+    var capLabel = h('span', { class: 'tune-capacity-label' });
+    capLabel.textContent = 'YOUR REALISTIC DAY';
+    capacityRow.appendChild(capLabel);
+    var capVal = h('span', { class: 'tune-capacity-value' });
+    capVal.textContent = (Math.round(capacity * 10) / 10) + 'd';
+    capVal.title = 'Median daily completed workload over the last 14 days';
+    capacityRow.appendChild(capVal);
+    el.appendChild(capacityRow);
+
+    var drift = h('div', { class: 'tune-drift' });
+    var driftLabel = h('span', { class: 'tune-drift-label' });
+    driftLabel.textContent = 'PLANNING DRIFT';
+    drift.appendChild(driftLabel);
+    var driftVal = h('span', { class: 'tune-drift-value' });
+    var global = cal.global.medianDays;
+    if (global !== null) {
+      driftVal.textContent = 'M \u2248 ' + (Math.round(global * 10) / 10) + 'd \u2014 ' +
+        (global > 1 ? 'you plan like a day holds ' + (Math.round(global * 10) / 10) + 'd' : 'your plans run close to your days');
+    } else {
+      driftVal.textContent = 'NO SAMPLES YET';
+    }
+    drift.appendChild(driftVal);
+    el.appendChild(drift);
+
+    var line = h('p', { class: 'tune-hint' });
+    line.textContent = 'The Day Sheet now shows "3 PICKS \u2248 5.2D \u2014 YOUR REALISTIC DAY \u2248 1.4D" when a pick band is overloaded. Sizes are honest here.';
+    el.appendChild(line);
   }
 
   function openBoard() {
