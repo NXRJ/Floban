@@ -540,6 +540,28 @@
       };
     }
 
+    // HI-SCORE streak bookkeeping: { best, lastSeen }. `best` is the
+    // monotonic high score (a stale streak never shrinks it — undoing a
+    // completion must not deflate the record). `lastSeen` is the previous
+    // observation { streak, dayISO } used to detect milestone crossings
+    // across sessions. Tolerant of missing/corrupt values.
+    function normalizeStreaks(value) {
+      if (!value || typeof value !== 'object') {
+        return { best: 0, lastSeen: null };
+      }
+      var best = Math.max(0, toInt(value.best, 0));
+      var lastSeen = null;
+      if (value.lastSeen && typeof value.lastSeen === 'object' &&
+          typeof value.lastSeen.streak === 'number' &&
+          typeof value.lastSeen.dayISO === 'string') {
+        lastSeen = {
+          streak: Math.max(0, value.lastSeen.streak),
+          dayISO: value.lastSeen.dayISO
+        };
+      }
+      return { best: best, lastSeen: lastSeen };
+    }
+
     function normalizeDayplans(value) {
       var out = {};
       if (!value || typeof value !== 'object') return out;
@@ -590,6 +612,7 @@
       out.dayplans = normalizeDayplans(out.dayplans);
       out.focusDays = normalizeFocusDays(out.focusDays);
       out.focusSession = normalizeFocusSession(out.focusSession);
+      out.streaks = normalizeStreaks(out.streaks);
       repairDependencies(out);
       repairRecurrences(out, deps);
       repairLenses(out);

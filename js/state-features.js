@@ -358,8 +358,80 @@
     });
   }
 
-  KB.State.processRecurrences = processRecurrences;
-  KB.State.addRecurrence = addRecurrence;
+  // ---- HI-SCORE completion streak (derived projection + bookkeeping) ----
+
+  // All cards across every board, live and archived — the streak is a
+  // board-wide score, not a per-board one. completedAt is the only input.
+  function allCompletedCards(state) {
+    var out = [];
+    (state.boards || []).forEach(function (board) {
+      (board.columns || []).forEach(function (column) {
+        (column.cards || []).forEach(function (card) {
+          out.push(card);
+        });
+      });
+      var archive = board.archive || {};
+      (archive.columns || []).forEach(function (ac) {
+        (ac.cards || []).forEach(function (card) { out.push(card); });
+      });
+      (archive.cards || []).forEach(function (card) { out.push(card); });
+    });
+    return out;
+  }
+
+  // Pure projection: current/best/todayDone/week from completedAt data,
+  // with best floored at the persisted high score (undo/delete must never
+  // deflate the record).
+  function streakSnapshot() {
+    var current = KB.State.data();
+    var info = KB.Core.Streak.compute(allCompletedCards(current), now(), {});
+    var stored = current.streaks || { best: 0, lastSeen: null };
+    return {
+      current: info.current,
+      best: Math.max(info.best, stored.best || 0),
+      todayDone: info.todayDone,
+      week: info.week,
+      goal: info.goal
+    };
+  }
+
+  // Observe the current streak: bump the persisted high score and record
+  // the lastSeen observation (used for milestone crossing detection). This
+  // is derived bookkeeping — it deliberately does NOT push history, so
+  // Ctrl+Z over a completion never un-writes a high score.
+  function observeStreak(observation) {
+    var current = KB.State.data();
+    if (!current.streaks) current.streaks = { best: 0, lastSeen: null };
+    var info = observation || streakSnapshot();
+    if (info.current > (current.streaks.best || 0)) {
+      current.streaks.best = info.current;
+      internal.save('streak-best');
+    }
+    var todayISO = KB.Core.Date.isoDate(new Date(internal.now()));
+    var lastSeen = current.streaks.lastSeen;
+    if (!lastSeen || lastSeen.dayISO !== todayISO || lastSeen.streak !== info.current) {
+      current.streaks.lastSeen = { streak: info.current, dayISO: todayISO };
+      internal.save('streak-seen');
+    }
+    return current.streaks;
+  }
+
+  KB.State.streakSnapshot = streakSnapshot;
+  KB.State.observeStreak = observeStreak;
+
+  // ---- ARRIVAL import/export (migration kit) ----
+
+  // Apply a mapped import as ONE atomic state transition — a single history
+  // entry, so one Ctrl+Z reverts the whole migration.
+  function importTasks(mapped) {
+    return commit(function (current) {
+      return KB.Core.Importer.applyImport(current, mapped, deps());
+    });
+  }
+
+  KB.State.importTasks = importTasks;
+
+  KB.State.processRecurrences = processRecurrences;  KB.State.addRecurrence = addRecurrence;
   KB.State.updateRecurrence = updateRecurrence;
   KB.State.deleteRecurrence = deleteRecurrence;
   KB.State.pauseRecurrence = pauseRecurrence;

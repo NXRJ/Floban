@@ -267,6 +267,22 @@
       progress.textContent = doneCount + ' of ' + entries.length + ' DONE';
       content.appendChild(progress);
 
+      var streak = KB.State.streakSnapshot();
+      if (streak) {
+        var cell = h('div', { class: 'day-streak' + (streak.current > 0 ? ' live' : '') });
+        var label = h('span', { class: 'day-streak-label' });
+        label.textContent = 'HI-SCORE';
+        cell.appendChild(label);
+        var val = h('span', { class: 'day-streak-value' });
+        val.textContent = streak.current + (streak.best > streak.current ? ' / ' + streak.best : '');
+        val.title = 'Current / best completion streak';
+        cell.appendChild(val);
+        var goal = h('span', { class: 'day-streak-goal' });
+        goal.textContent = streak.todayDone ? 'TODAY DONE' : '0 TODAY';
+        cell.appendChild(goal);
+        content.appendChild(cell);
+      }
+
       var actions = h('div', { class: 'modal-actions' });
       var closeBtn = h('button', { type: 'button', class: 'btn ghost' });
       closeBtn.textContent = 'Close';

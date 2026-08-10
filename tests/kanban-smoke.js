@@ -2621,6 +2621,222 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await pressUndo();
   check('undo restores the unstamped card', await page.$$eval('.log-unstamped-row .log-row-title', els => els.some(e => e.textContent === 'Skipped stamp')));
 
+  // ---- HI-SCORE completion streak ----
+  const streakSeed = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    board.columns[0].role = 'queue';
+    board.columns[1].role = 'active';
+    board.columns[2].role = 'done';
+    const col = board.columns[0];
+    // Six completions on the previous six LOCAL days (noon avoids midnight
+    // drift), one open card for today's completion, nothing else.
+    const doneCards = [];
+    for (let i = 6; i >= 1; i--) {
+      const d = new Date();
+      d.setHours(12, 0, 0, 0);
+      d.setDate(d.getDate() - i);
+      doneCards.push({
+        id: 'streak-done-' + i,
+        columnId: board.columns[2].id,
+        title: 'Streak day ' + i,
+        description: '',
+        labels: [],
+        assignee: '',
+        createdAt: d.getTime() - 3600000,
+        updatedAt: d.getTime(),
+        movedAt: d.getTime(),
+        due: '',
+        checklist: [],
+        priority: 'none',
+        size: 'none',
+        startedAt: null,
+        completedAt: d.getTime(),
+        flow: { state: 'normal', reason: '', since: null, periods: [] },
+        dependencies: { blockers: [], related: [] },
+        recurrenceId: null,
+        transitions: []
+      });
+    }
+    board.columns[0].cards = [{
+      id: 'streak-open',
+      columnId: col.id,
+      title: 'Complete me today',
+      description: '',
+      labels: [],
+      assignee: '',
+      createdAt: 1000,
+      updatedAt: 1000,
+      movedAt: 1000,
+      due: '',
+      checklist: [],
+      priority: 'none',
+      size: 'none',
+      startedAt: null,
+      completedAt: null,
+      flow: { state: 'normal', reason: '', since: null, periods: [] },
+      dependencies: { blockers: [], related: [] },
+      recurrenceId: null,
+      transitions: []
+    }];
+    board.columns[1].cards = [];
+    board.columns[2].cards = doneCards;
+    // Earlier scenarios may have left completed cards on OTHER boards (they
+    // count toward the streak too) — scrub every board so the seed is exact.
+    b.boards.forEach(function (other) {
+      if (other.id === board.id) return;
+      other.columns.forEach(function (c) { c.cards = []; });
+      if (other.archive) {
+        other.archive.cards = [];
+        (other.archive.columns || []).forEach(function (ac) { ac.cards = []; });
+      }
+    });
+    return b;
+  });
+  await seedLocalStorage(streakSeed);
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  const streakInitial = await page.evaluate(() => {
+    const info = KB.State.streakSnapshot();
+    const el = document.getElementById('streak-readout');
+    return { current: info.current, todayDone: info.todayDone, readout: el ? el.textContent : null };
+  });
+  check('streak holds at 6 before today completes', streakInitial.current === 6 && streakInitial.todayDone === false);
+  check('header readout renders the streak', streakInitial.readout !== null && streakInitial.readout.includes('6'));
+  // Complete the open card through the real move pipeline.
+  await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const card = board.columns[0].cards.find(c => c.id === 'streak-open');
+    const doneId = KB.State.data().boards.find(x => x.id === board.id).columns.find(c => c.role === 'done').id;
+    KB.State.moveCardChecked(board.columns[0].id, card.id, doneId);
+    KB.App.refresh();
+  });
+  const streakSeven = await waitFor(() => {
+    return document.getElementById('streak-readout') &&
+      document.getElementById('streak-readout').textContent.includes('7');
+  }, 3000, 'streak readout 7');
+  check('completing a card advances the streak to 7', streakSeven);
+  const streakToast = await waitFor(() => Array.prototype.some.call(document.querySelectorAll('.toast'), t => t.textContent.indexOf('7-DAY STREAK') !== -1), 3000, 'milestone toast');
+  check('milestone toast fires at 7 days', streakToast);
+  await blur();
+  await pressUndo();
+  const streakAfterUndo = await waitFor(() => {
+    return document.getElementById('streak-readout') &&
+      document.getElementById('streak-readout').textContent.includes('6');
+  }, 3000, 'streak readout 6 after undo');
+  check('undoing the completion drops the streak back to 6', streakAfterUndo);
+  await pressRedo();
+  const streakRedo = await waitFor(() => {
+    return document.getElementById('streak-readout') &&
+      document.getElementById('streak-readout').textContent.includes('7');
+  }, 3000, 'streak readout 7 after redo');
+  check('redo restores the streak to 7', streakRedo);
+  // Scoreboard overlay: H opens, Esc closes.
+  await page.keyboard.press('h');
+  await waitFor(() => !!document.querySelector('.modal-panel.scoreboard'), 3000, 'scoreboard opens');
+  check('scoreboard overlay opens on H', (await page.$eval('.modal-panel.scoreboard .sb-title', el => el.textContent)) === 'HI-SCORE');
+  await page.keyboard.press('Escape');
+  await waitFor(() => !document.querySelector('.modal-panel.scoreboard'), 3000, 'scoreboard closes');
+  check('scoreboard closes on Esc', true);
+  // Mobile compact readout.
+  const streakMobile = await browser.newPage();
+  await streakMobile.setViewport({ width: 400, height: 800 });
+  await streakMobile.goto(URL, { waitUntil: 'load' });
+  await streakMobile.waitForFunction(() => document.documentElement.dataset.ready === '1', { timeout: 5000 });
+  const mobileReadout = await streakMobile.evaluate(() => {
+    const el = document.getElementById('streak-readout');
+    const label = el ? el.querySelector('.sr-label') : null;
+    return {
+      exists: !!el,
+      scrollable: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      labelHidden: label ? getComputedStyle(label).display === 'none' : false
+    };
+  });
+  check('mobile shows a compact streak readout without overflow', mobileReadout.exists && mobileReadout.scrollable && mobileReadout.labelHidden);
+  await streakMobile.close();
+
+  // ---- ARRIVAL: import + export migration kit ----
+  const arrivalSeed = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    b.boards = [b.boards.find(x => x.id === b.activeBoardId)];
+    b.boards[0].columns.forEach(function (c) { c.cards = []; });
+    if (b.boards[0].archive) { b.boards[0].archive.cards = []; b.boards[0].archive.columns = []; }
+    return b;
+  });
+  await seedLocalStorage(arrivalSeed);
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  const todoistExport = {
+    projects: [{ id: 1, name: 'Client Work' }],
+    sections: [
+      { id: 10, project_id: 1, name: 'In Progress' },
+      { id: 11, project_id: 1, name: 'Done' }
+    ],
+    items: [
+      { id: 100, project_id: 1, section_id: 10, content: 'Ship landing page', description: 'Deploy to prod', due: { date: '2026-08-20' }, priority: 1, labels: [1], checked: 0 },
+      { id: 101, project_id: 1, section_id: 10, content: 'Fix nav bug', priority: 2, labels: [2], parent_id: 100, checked: 0 },
+      { id: 102, project_id: 1, section_id: 11, content: 'Invoice March', priority: 4, labels: [], checked: 1 }
+    ],
+    labels: [{ id: 1, name: 'Launch' }, { id: 2, name: 'Bug' }]
+  };
+  await page.evaluate((exported) => {
+    KB.Modal.arrivalWizard();
+    // Drive the wizard programmatically: paste path is deterministic here.
+    const ta = document.querySelector('.arrival-paste');
+    ta.value = exported;
+    Array.prototype.find.call(document.querySelectorAll('.modal-actions .btn'), b => b.textContent === 'ANALYZE').click();
+  }, JSON.stringify(todoistExport));
+  await waitFor(() => document.querySelectorAll('.arrival-board').length >= 1, 3000, 'arrival preview');
+  const previewState = await page.evaluate(() => ({
+    boards: document.querySelectorAll('.arrival-board').length,
+    boardName: document.querySelector('.arrival-board-title') ? document.querySelector('.arrival-board-title').textContent : '',
+    cols: Array.prototype.map.call(document.querySelectorAll('.arrival-col'), e => e.textContent),
+    samples: Array.prototype.map.call(document.querySelectorAll('.arrival-sample-title'), e => e.textContent)
+  }));
+  check('arrival preview shows the parsed board', previewState.boards === 1 && /Client Work/.test(previewState.boardName));
+  check('arrival preview lists columns with roles', previewState.cols.some(c => /In Progress/.test(c)) && previewState.cols.some(c => /Done/.test(c)));
+  check('arrival preview shows sample cards', previewState.samples.includes('Ship landing page') && previewState.samples.includes('Invoice March'));
+  // Commit the import.
+  await page.evaluate(() => {
+    Array.prototype.find.call(document.querySelectorAll('.modal-actions .btn'), b => /IMPORT/.test(b.textContent)).click();
+  });
+  await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'arrival committed');
+  const arrivalState = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.name === 'Client Work');
+    if (!board) return null;
+    const all = [];
+    board.columns.forEach(col => col.cards.forEach(card => all.push({ title: card.title, role: col.role, priority: card.priority, due: card.due, labels: card.labels.length, checklist: card.checklist.length })));
+    return { all, recurrences: b.recurrences.length };
+  });
+  check('import created the board with cards in role columns',
+    arrivalState && arrivalState.all.length === 2 &&
+    arrivalState.all.some(c => c.title === 'Ship landing page' && c.role === 'active' && c.priority === 'urgent' && c.due === '2026-08-20' && c.labels === 1 && c.checklist === 1) &&
+    arrivalState.all.some(c => c.title === 'Invoice March' && c.role === 'done'));
+  check('import is atomic in one undo step', arrivalState !== null);
+  await blur();
+  await pressUndo();
+  const undoneArrival = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    return !b.boards.some(x => x.name === 'Client Work');
+  });
+  check('one undo removes the whole import', undoneArrival);
+  await pressRedo();
+  const redoneArrival = await waitFor(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    return b.boards.some(x => x.name === 'Client Work');
+  }, 3000, 'redo restores import');
+  check('redo restores the import', redoneArrival);
+  // Export: CSV download contains the imported cards.
+  await page.evaluate(() => KB.State.setActiveBoard(KB.State.data().boards.find(x => x.name === 'Client Work').id));
+  await page.evaluate(() => KB.Modal.exportModal());
+  await waitFor(() => document.querySelectorAll('.arrival-export-row').length === 2, 3000, 'export rows');
+  const exportLabels = await page.$$eval('.arrival-export-name', els => els.map(e => e.textContent));
+  check('export offers CSV and Markdown', exportLabels.includes('CSV') && exportLabels.includes('Markdown'));
+  const csvContent = await page.evaluate(() => KB.Core.Exporter.exportCsv(KB.State.data().boards.find(x => x.name === 'Client Work')));
+  check('exported CSV contains the imported cards', /Ship landing page/.test(csvContent) && /Invoice March/.test(csvContent) && /Completed/.test(csvContent));
+  await page.evaluate(() => KB.Modal.close());
+
   // ---- Reduced motion: palette still opens without animation ----
   const reducedPage = await browser.newPage();
   await reducedPage.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);

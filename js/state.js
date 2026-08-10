@@ -102,6 +102,7 @@
       dayplans: {},
       focusDays: {},
       focusSession: null,
+      streaks: { best: 0, lastSeen: null },
       boards: [board]
     };
   }

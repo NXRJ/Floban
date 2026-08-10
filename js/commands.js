@@ -153,6 +153,43 @@
     }
   });
 
+  C.register({
+    id: 'streak.show',
+    title: 'HI-SCORE scoreboard',
+    keywords: ['streak', 'score', 'hi-score', 'gamification', 'record'],
+    category: 'App',
+    icon: 'star',
+    shortcut: 'h',
+    order: 6,
+    run: function () {
+      KB.Scoreboard.open();
+    }
+  });
+
+  C.register({
+    id: 'arrival.import',
+    title: 'Import tasks\u2026',
+    keywords: ['import', 'migrate', 'todoist', 'trello', 'csv', 'arrival', 'bring', 'old tasks'],
+    category: 'Board',
+    icon: 'download',
+    shortcut: 'mod+shift+i',
+    order: 6,
+    run: function () {
+      KB.Modal.arrivalWizard();
+    }
+  });
+  C.register({
+    id: 'arrival.export',
+    title: 'Export board\u2026',
+    keywords: ['export', 'csv', 'markdown', 'download', 'lock-in'],
+    category: 'Board',
+    icon: 'upload',
+    order: 7,
+    run: function () {
+      KB.Modal.exportModal();
+    }
+  });
+
   // ---------- Board ----------
 
   C.register({
