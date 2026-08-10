@@ -40,6 +40,7 @@
       return KB.Core.Operations.createCards(current, {
         columnId: columnId,
         titles: cleanTitles,
+        fields: opts && Array.isArray(opts.fields) ? opts.fields : null,
         confirmed: opts && opts.confirmed,
         overrideReason: opts && opts.overrideReason
       }, deps());

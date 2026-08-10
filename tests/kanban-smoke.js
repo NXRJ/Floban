@@ -118,6 +118,117 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   count = await waitCount('.column:nth-child(1) .card', 6) ? 6 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
   check('bulk paste redoes as one step', count === 6);
 
+  // ---- Smart Quick Add: natural-language capture ----
+  const qa1 = '.column:nth-child(1) .qa-input';
+  await page.$eval(qa1, (el) => { el.value = ''; });
+  await page.type(qa1, 'Ship release fri p2 #Bug');
+  const previewShown = await waitFor(() => {
+    const p = document.querySelector('.column:nth-child(1) .qa-preview');
+    return p && !p.hidden && p.querySelector('.qa-due') && p.querySelector('.qa-prio') && p.querySelector('.qa-label');
+  }, 3000, 'smart capture preview chips');
+  check('smart capture shows live preview chips', previewShown);
+  const previewText = await page.$eval('.column:nth-child(1) .qa-preview', el => el.textContent);
+  check('preview shows due, priority and label', /DUE /.test(previewText) && /HIGH/.test(previewText) && /#Bug/.test(previewText));
+
+  await page.keyboard.press('Enter');
+  count = await waitCount('.column:nth-child(1) .card', 7) ? 7 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  check('smart capture adds card', count === 7);
+  const smartCard = await page.$$eval('.column:nth-child(1) .card', els => {
+    const el = els[els.length - 1];
+    return {
+      title: el.querySelector('.card-title') ? el.querySelector('.card-title').textContent.trim() : '',
+      due: !!el.querySelector('.chip-static.due'),
+      high: !!el.querySelector('.chip-static.priority.p-high'),
+      label: Array.prototype.some.call(el.querySelectorAll('.chip-static'), c => c.textContent.trim() === 'Bug'),
+      previewHidden: (() => {
+        const p = el.closest('.column').querySelector('.qa-preview');
+        return !p || p.hidden;
+      })()
+    };
+  });
+  check('smart capture strips tokens from the title', smartCard.title === 'Ship release');
+  check('smart capture sets due, priority and label', smartCard.due && smartCard.high && smartCard.label);
+  check('preview hides after commit', smartCard.previewHidden);
+
+  await blur();
+  await pressUndo();
+  count = await waitCount('.column:nth-child(1) .card', 6) ? 6 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  check('smart capture undoes atomically', count === 6);
+  await pressRedo();
+  count = await waitCount('.column:nth-child(1) .card', 7) ? 7 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  check('smart capture redoes atomically', count === 7);
+
+  // Plain prose: no preview chips, no fields, untouched title
+  await page.$eval(qa1, (el) => { el.value = ''; });
+  await page.type(qa1, 'call mom about dinner');
+  const noPreview = await page.evaluate(() => {
+    const p = document.querySelector('.column:nth-child(1) .qa-preview');
+    return !p || p.hidden || p.textContent.trim() === '';
+  });
+  check('plain prose shows no capture preview', noPreview);
+  await page.keyboard.press('Enter');
+  count = await waitCount('.column:nth-child(1) .card', 8) ? 8 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  const plainCard = await page.$$eval('.column:nth-child(1) .card', els => {
+    const el = els[els.length - 1];
+    return {
+      title: el.querySelector('.card-title') ? el.querySelector('.card-title').textContent.trim() : '',
+      due: !!el.querySelector('.chip-static.due')
+    };
+  });
+  check('plain prose card keeps full title and no due', plainCard.title === 'call mom about dinner' && !plainCard.due);
+
+  // ---- Type-to-snooze in the card editor ----
+  await page.$eval(qa1, (el) => { el.value = ''; });
+  await page.type(qa1, 'Snooze target tomorrow');
+  await page.keyboard.press('Enter');
+  count = await waitCount('.column:nth-child(1) .card', 9) ? 9 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  check('snooze target card created', count === 9);
+
+  await cardAction(1, 9, 'edit-card');
+  await waitFor(() => !!document.querySelector('#cf-due'), 3000, 'snooze editor opens');
+  const dueBefore = await page.$eval('#cf-due', el => el.value);
+  check('snooze editor preloaded the due date', dueBefore.length === 10);
+  await page.type('#cf-snooze', 'snooze 3d');
+  const snoozeShown = await waitFor(() => {
+    const p = document.querySelector('.snooze-preview');
+    return p && !p.hidden && p.textContent.indexOf('\u2192') !== -1;
+  }, 3000, 'snooze preview chip');
+  check('snooze shows live preview chip', snoozeShown);
+  await page.keyboard.press('Enter'); // apply without submitting the form
+  const dueAfter = await page.$eval('#cf-due', el => el.value);
+  const expectedAfter = await page.evaluate((before) => {
+    const d = new Date(before + 'T12:00:00');
+    d.setDate(d.getDate() + 3);
+    return d.toISOString().slice(0, 10);
+  }, dueBefore);
+  check('snooze reschedules due by 3 days', dueAfter === expectedAfter);
+  check('snooze input clears after apply', (await page.$eval('#cf-snooze', el => el.value)) === '');
+  await clickByText('.modal-actions .btn', 'Save');
+  await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'snooze editor closes');
+  const snoozedChip = await page.$$eval('.column:nth-child(1) .card', els => {
+    const last = els[els.length - 1];
+    return last.querySelectorAll('.chip-static.due').length;
+  });
+  check('card renders the rescheduled due chip', snoozedChip === 1);
+  await blur();
+  await pressUndo();
+  const undoneDue = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    const cards = board.columns[0].cards;
+    return cards[cards.length - 1].due;
+  });
+  check('undo reverts the snoozed due date', undoneDue === dueBefore);
+
+  // Restore the board for the downstream sections: undo the snooze target,
+  // prose and smart-capture creations (one history entry each).
+  await blur();
+  await pressUndo();
+  await pressUndo();
+  await pressUndo();
+  count = await waitCount('.column:nth-child(1) .card', 6) ? 6 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  check('smart-capture block restores the original card count', count === 6);
+
   // ---- Card editor: due date + checklist + duplicate + template ----
   await cardAction(2, 1, 'edit-card');
   await waitFor(() => !!document.querySelector('#cf-due'), 3000, 'editor opens');
@@ -2210,12 +2321,947 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   // (its claim was replaced by the phantom), so its pagehide will not
   // release anything. Drop the phantom claim from this tab instead: the
   // removal fires the storage event in the main tab, which takes over and
-  // reloads immediately. Wait so nothing races it.
+  // reloads immediately. Wait for that navigation deterministically (armed
+  // BEFORE the removal) so downstream sections start on a stable document —
+  // racing it was the source of the CI-only 'state is null' flake.
+  const handshakeNav = page.waitForNavigation({ waitUntil: 'load', timeout: 10000 }).catch(() => null);
   await storagePage.evaluate(() => { localStorage.removeItem('kanban.owner.v1'); });
   await storagePage.close();
+  await handshakeNav;
   await waitFor(() => {
     return window.KB && KB.MultiTab.readOnly() === false && !document.querySelector('.multitab-banner');
   }, 6000, 'main tab resumes editing after the storage-gate tab closes');
+
+  // ---- Date Desk: calendar workspace ----
+  // The storage-gate handshake above ends with the main tab reloading itself
+  // via a storage event; that navigation can commit asynchronously after the
+  // section's last check, so land on a stable, fully-loaded document before
+  // mutating anything.
+  await page.reload({ waitUntil: 'load' });
+  await waitBoard();
+  await page.setViewport({ width: 1280, height: 800 });
+  await page.evaluate(() => {
+    // Neutralize any policies the earlier sections piled onto this board so
+    // the seed cards are guaranteed to land.
+    const board = KB.State.activeBoard();
+    board.columns.forEach((col) => {
+      col.wipLimit = 0;
+      col.policy = col.policy || {};
+      col.policy.wipMode = 'off';
+      col.policy.entryCriteria = '';
+      col.policy.exitCriteria = '';
+      col.policy.defaultLabelIds = [];
+      col.policy.defaultAssignee = '';
+    });
+    const col = board.columns[0];
+    KB.State.addCard(col.id, { title: 'Cal past due', due: '2020-01-15' });
+    KB.State.addCard(col.id, { title: 'Cal today', due: KB.Core.Date.isoDate(new Date()) });
+    KB.State.addCard(col.id, { title: 'Cal plus three', due: KB.Core.Date.addDaysISO(new Date(), 3) });
+    KB.State.addCard(col.id, { title: 'Cal no due' });
+    KB.App.refresh();
+  });
+  await page.evaluate(() => KB.Workspaces.set('calendar'));
+  await waitFor(() => document.querySelectorAll('.cal-day').length === 42, 3000, 'calendar grid renders');
+  check('calendar renders a 42-cell month grid', await page.$$eval('.cal-day', els => els.length) === 42);
+  check('calendar marks today', await page.$$eval('.cal-day.today', els => els.length) === 1);
+  check('overdue strip lists the past-due card', await page.$$eval('.cal-overdue .cal-chip', els => els.some(e => e.textContent.includes('Cal past due'))));
+  const calCells = await page.$$eval('.cal-day', els => {
+    const todayEl = els.find(e => e.classList.contains('today'));
+    const todayISO = todayEl.dataset.date;
+    const plus3 = new Date(new Date(todayISO + 'T12:00:00').getTime() + 3 * 86400000).toISOString().slice(0, 10);
+    const todayCell = els.find(e => e.dataset.date === todayISO);
+    const plus3Cell = els.find(e => e.dataset.date === plus3);
+    return {
+      plus3ISO: plus3,
+      todayHas: todayCell ? Array.prototype.map.call(todayCell.querySelectorAll('.cal-chip'), c => c.textContent) : [],
+      plus3Has: plus3Cell ? Array.prototype.map.call(plus3Cell.querySelectorAll('.cal-chip'), c => c.textContent) : [],
+      noDueVisible: els.some(e => Array.prototype.some.call(e.querySelectorAll('.cal-chip'), c => c.textContent === 'Cal no due'))
+    };
+  });
+  check('today cell holds the due-today card', calCells.todayHas.includes('Cal today'));
+  check('+3 day cell holds the future card', calCells.plus3Has.includes('Cal plus three'));
+  check('cards without due dates are excluded', !calCells.noDueVisible);
+
+  // Drag-to-reschedule via synthetic DragEvents (deterministic in headless).
+  await page.evaluate(() => {
+    const chip = Array.prototype.find.call(document.querySelectorAll('.cal-chip'), c => c.textContent.includes('Cal plus three'));
+    const target = document.querySelector('.cal-day.today');
+    const dt = new window.DataTransfer();
+    chip.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+    target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    chip.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+  });
+  await sleep(150);
+  const draggedDue = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    const card = board.columns[0].cards.find(c => c.title === 'Cal plus three');
+    return card ? card.due : null;
+  });
+  const todayISO = await page.evaluate(() => KB.Core.Date.isoDate(new Date()));
+  check('drag reschedules the card to today', draggedDue === todayISO);
+  await blur();
+  await pressUndo();
+  const undidDrag = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    return board.columns[0].cards.find(c => c.title === 'Cal plus three').due;
+  });
+  check('one undo restores the original due date', undidDrag === calCells.plus3ISO);
+
+  // Keyboard: arrows walk the grid, Enter opens the day's first card.
+  // (Trusted-key focus delivery to the custom cell is unreliable in headless;
+  // the handler itself is exercised via synthetic dispatch, same code path.)
+  await page.evaluate(() => { document.querySelector('.cal-day.today').focus(); });
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowLeft');
+  const focusAfterArrows = await page.evaluate(() => document.activeElement && document.activeElement.classList.contains('cal-day'));
+  check('calendar arrows move the focused day', focusAfterArrows === true);
+  await page.evaluate(() => {
+    const cell = document.querySelector('.cal-day.today');
+    cell.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  });
+  await waitFor(() => !!document.querySelector('#cf-title'), 3000, 'calendar keyboard opens editor');
+  check('calendar Enter opens the focused day\'s card', (await page.$eval('#cf-title', el => el.value.trim())) !== '');
+  await page.keyboard.press('Escape');
+
+  // ---- Day Sheet: Start My Day ritual ----
+  await page.evaluate(() => {
+    KB.State.addBoard('Day Sheet Test');
+    KB.State.addColumn('To Do', false, true, 'queue');
+    KB.State.addColumn('In Progress', false, true, 'active');
+    KB.State.addColumn('Done', true, true, 'done');
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    KB.State.addCard(col.id, { title: 'Day overdue', due: '2020-01-15' });
+    KB.State.addCard(col.id, { title: 'Day today', due: KB.Core.Date.isoDate(new Date()) });
+    KB.State.addCard(col.id, { title: 'Day no due' });
+    KB.Workspaces.set('board');
+    KB.App.refresh();
+  });
+  await waitFor(() => !!document.querySelector('.day-banner'), 3000, 'start-my-day banner');
+  check('unplanned day shows the start-my-day banner', (await page.$eval('.day-banner', el => el.textContent)).includes('START MY DAY'));
+
+  await page.evaluate(() => KB.Modal.daySheet());
+  await waitFor(() => document.querySelectorAll('.day-candidate').length >= 2, 3000, 'pick band renders');
+  check('pick band ranks candidates', await page.$$eval('.day-candidate', els => els.length) >= 2);
+  check('overdue candidate leads the pick band', /^OVERDUE/.test(await page.$eval('.day-candidate .day-reason', el => el.textContent)));
+  // Digit and Enter keys go through the modal's keydown handler; dispatch
+  // synthetically on the sheet form (trusted-key focus delivery to the
+  // modal is unreliable in headless, the handler itself is the target).
+  const pressDayKey = (key) => page.evaluate((k) => {
+    document.querySelector('.day-sheet').dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  }, key);
+  await pressDayKey('1');
+  await pressDayKey('2');
+  await waitFor(() => {
+    const p = document.querySelector('.day-progress');
+    return p && p.textContent === '2 of 3 SLOTS';
+  }, 3000, 'slot progress');
+  check('picking fills slots from the keyboard', (await page.$eval('.day-progress', el => el.textContent)) === '2 of 3 SLOTS');
+  await pressDayKey('Enter');
+  await waitFor(() => document.querySelectorAll('.day-row').length === 2, 3000, 'stamped sheet');
+  check('stamp commits the picked commitments', await page.$$eval('.day-row', els => els.length) === 2);
+  await page.keyboard.press('Escape');
+  await waitFor(() => !document.querySelector('.day-banner'), 3000, 'banner hides after stamp');
+  check('banner hides once the day is stamped', (await page.$('.day-banner')) === null);
+
+  await page.reload({ waitUntil: 'load' });
+  await waitBoard();
+  check('day sheet persists across reloads', await page.evaluate(() => KB.State.daySheetFor(KB.Core.Date.isoDate(new Date())) !== null));
+
+  // Complete one commitment through the sheet, then roll the rest.
+  await page.evaluate(() => KB.Modal.daySheet());
+  await waitFor(() => document.querySelectorAll('.day-row .day-box').length === 2, 3000, 'sheet reopens');
+  await page.evaluate(() => { document.querySelectorAll('.day-row .day-box')[1].click(); }); // complete "Day today"
+  await waitFor(() => document.querySelectorAll('.day-row.done').length === 1, 3000, 'sheet completion');
+  check('sheet completion moves the card to done', await page.$$eval('.day-row.done', els => els.length) === 1);
+  await page.evaluate(() => {
+    Array.prototype.find.call(document.querySelectorAll('.modal-actions .btn'), b => b.textContent.includes('END DAY')).click();
+  });
+  await waitFor(() => document.querySelectorAll('.roll-row').length === 1, 3000, 'roll band');
+  check('roll band lists only unfinished commitments', await page.$$eval('.roll-row', els => els.length) === 1);
+  await page.evaluate(() => {
+    document.querySelector('.day-sheet').dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true, cancelable: true }));
+  }); // push +1d on the focused row
+  await page.evaluate(() => {
+    Array.prototype.find.call(document.querySelectorAll('.modal-actions .btn'), b => b.textContent.includes('END DAY')).click();
+  });
+  await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'roll applied');
+  const rollState = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.name === 'Day Sheet Test');
+    const card = board.columns[0].cards.find(c => c.title === 'Day overdue');
+    const plan = b.dayplans[KB.Core.Date.isoDate(new Date())];
+    const entry = plan ? plan.commitments.find(c => c.cardId === card.id) : null;
+    return { due: card ? card.due : null, rolled: plan ? plan.rolledAt !== null : false, status: entry ? entry.status : null };
+  });
+  check('roll pushes the unfinished commitment by one day', rollState.due === '2020-01-16' && rollState.rolled && rollState.status === 'pushed');
+  await blur();
+  await pressUndo();
+  const undidRoll = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.name === 'Day Sheet Test');
+    const card = board.columns[0].cards.find(c => c.title === 'Day overdue');
+    const plan = b.dayplans[KB.Core.Date.isoDate(new Date())];
+    return { due: card ? card.due : null, rolled: plan ? plan.rolledAt : 'missing' };
+  });
+  check('one undo reverts the entire roll', undidRoll.due === '2020-01-15' && undidRoll.rolled === null);
+
+  // ---- Focus sessions: task-tied timer ----
+  await page.evaluate(() => { KB.Workspaces.set('board'); KB.App.refresh(); });
+  const focusCardId = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    const card = KB.State.addCard(col.id, { title: 'Focus me' });
+    KB.App.refresh();
+    return card.id;
+  });
+  await page.evaluate((cid) => {
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    const card = col.cards.find(c => c.id === cid);
+    KB.Modal.cardEditor(col.id, card, null, board.id);
+  }, focusCardId);
+  await waitFor(() => !!document.querySelector('#cf-focus'), 3000, 'editor focus button');
+  check('card editor exposes a focus button', (await page.$eval('#cf-focus', el => el.textContent)) === 'START FOCUS');
+  await page.click('#cf-focus');
+  await waitFor(() => !document.querySelector('.modal-panel') && !document.querySelector('#focus-hud').hidden, 3000, 'hud after start');
+  check('focus HUD appears with the card title', await page.evaluate(() =>
+    !document.querySelector('#focus-hud').hidden && document.querySelector('#focus-hud').textContent.includes('Focus me')));
+  // Backdate the running session so the effort lands (sub-minute sessions log
+  // nothing by design).
+  await page.evaluate(() => { KB.State.data().focusSession.startedAt = Date.now() - 61000; });
+  await page.evaluate(() => KB.Commands.run('focus.toggle', null));
+  await waitFor(() => document.querySelector('#focus-hud').hidden, 3000, 'hud hides on stop');
+  check('stopping focus hides the HUD', await page.evaluate(() => document.querySelector('#focus-hud').hidden));
+  const effortChip = await page.$$eval('.column:nth-child(1) .card', els => {
+    const last = els[els.length - 1];
+    const chip = last.querySelector('.chip-static.effort');
+    return chip ? chip.textContent : null;
+  });
+  check('effort chip renders on the focused card', effortChip !== null && /m/.test(effortChip));
+  check('per-day focus log recorded', await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    return b.focusDays ? Object.keys(b.focusDays).length >= 1 : false;
+  }));
+  await blur();
+  await pressUndo();
+  check('one undo reverts the effort stamp', await page.$$eval('.column:nth-child(1) .card', els => {
+    const last = els[els.length - 1];
+    return last.querySelector('.chip-static.effort') ? false : true;
+  }));
+  // The undo restored the running session: a reload must resume it.
+  await page.reload({ waitUntil: 'load' });
+  await waitBoard();
+  const hudResumed = await waitFor(() => !document.querySelector('#focus-hud').hidden, 4000, 'hud resumes after reload');
+  check('focus session resumes across reloads', hudResumed && await page.evaluate(() =>
+    document.querySelector('#focus-hud').textContent.includes('Focus me')));
+  await page.evaluate(() => KB.Commands.run('focus.toggle', null));
+
+  // ---- Work Log: weekly ledger ----
+  await page.evaluate(() => {
+    // Each state op commits a fresh state object, so re-resolve the board
+    // from the LIVE state after the moves (stale references are detached).
+    const first = KB.State.activeBoard();
+    const todo = first.columns[0];
+    const doneId = first.columns.find(c => c.role === 'done').id;
+    for (let i = 1; i <= 3; i++) {
+      const card = KB.State.addCard(todo.id, { title: 'Log item ' + i });
+      KB.State.moveCardChecked(todo.id, card.id, doneId);
+    }
+    const board = KB.State.data().boards.find(x => x.id === first.id);
+    const doneCol = board.columns.find(c => c.role === 'done');
+    // Backdate one completion to the previous day when that day is still in
+    // the current ISO week (from a Monday, yesterday is last week — keep it
+    // simple and leave all three on today).
+    const week = KB.Core.Worklog.weekRange(Date.now(), 0);
+    const c2 = doneCol.cards.find(c => c.title === 'Log item 2');
+    const yesterdayISO = KB.Core.Date.isoDate(new Date(Date.now() - 86400000));
+    if (c2 && yesterdayISO >= week.fromISO) c2.completedAt = Date.now() - 86400000;
+    // An unstamped card: pushed straight onto the done column (bypassing the
+    // lifecycle) — the exact rot pattern the UNSTAMPED band exists for.
+    doneCol.cards.push({
+      id: 'unstamped-probe', columnId: doneCol.id, title: 'Skipped stamp', description: '', labels: [],
+      assignee: '', createdAt: Date.now(), updatedAt: Date.now(), movedAt: Date.now(), due: '',
+      checklist: [], archivedAt: null, fromColumn: '', priority: 'none', size: 'none',
+      startedAt: null, completedAt: null, flow: { state: 'normal', reason: '', since: null, periods: [] },
+      dependencies: { blockers: [], related: [] }, recurrenceId: null, transitions: []
+    });
+    KB.Workspaces.set('log');
+    KB.App.refresh();
+  });
+  await waitFor(() => document.querySelectorAll('.log-days .log-day').length >= 1, 3000, 'log days render');
+  const logState = await page.evaluate(() => ({
+    mast: document.querySelector('.log-masthead .log-done') ? document.querySelector('.log-masthead .log-done').textContent : '',
+    titles: Array.prototype.map.call(document.querySelectorAll('.log-row-title'), e => e.textContent),
+    dayGroups: document.querySelectorAll('.log-days .log-day').length,
+    unstamped: document.querySelectorAll('.log-unstamped-row').length
+  }));
+  check('log masthead counts completed cards', /DONE/.test(logState.mast) && parseInt(logState.mast, 10) >= 3);
+  check('log lists the seeded completed cards', ['Log item 1', 'Log item 2', 'Log item 3'].every(t => logState.titles.includes(t)));
+  check('log renders day groups', logState.dayGroups >= 1);
+  check('log flags unstamped done-column cards', logState.unstamped >= 1 && logState.titles.includes('Skipped stamp'));
+  await page.evaluate(() => { document.querySelector('.ws-head [data-log="copy"]').click(); });
+  await waitFor(() => Array.prototype.some.call(document.querySelectorAll('.toast'), t => t.textContent.indexOf('Log copied') !== -1), 3000, 'copy toast');
+  check('copy composes and reports the log', true);
+  const unstampedBefore = await page.$$eval('.log-unstamped-row', els => els.length);
+  await page.evaluate(() => {
+    const rows = Array.prototype.slice.call(document.querySelectorAll('.log-unstamped-row'));
+    const row = rows.find(r => {
+      const t = r.querySelector('.log-row-title');
+      return t && t.textContent === 'Skipped stamp';
+    });
+    if (row) row.querySelector('[data-log="stamp"]').click();
+  });
+  await waitFor(() => document.querySelectorAll('.log-unstamped-row').length < unstampedBefore, 3000, 'unstamped band shrinks');
+  check('stamp clears the stamped row from the band', await page.$$eval('.log-unstamped-row .log-row-title', els => !els.some(e => e.textContent === 'Skipped stamp')));
+  await blur();
+  await pressUndo();
+  check('undo restores the unstamped card', await page.$$eval('.log-unstamped-row .log-row-title', els => els.some(e => e.textContent === 'Skipped stamp')));
+
+  // ---- HI-SCORE completion streak ----
+  const streakSeed = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    board.columns[0].role = 'queue';
+    board.columns[1].role = 'active';
+    board.columns[2].role = 'done';
+    const col = board.columns[0];
+    // Six completions on the previous six LOCAL days (noon avoids midnight
+    // drift), one open card for today's completion, nothing else.
+    const doneCards = [];
+    for (let i = 6; i >= 1; i--) {
+      const d = new Date();
+      d.setHours(12, 0, 0, 0);
+      d.setDate(d.getDate() - i);
+      doneCards.push({
+        id: 'streak-done-' + i,
+        columnId: board.columns[2].id,
+        title: 'Streak day ' + i,
+        description: '',
+        labels: [],
+        assignee: '',
+        createdAt: d.getTime() - 3600000,
+        updatedAt: d.getTime(),
+        movedAt: d.getTime(),
+        due: '',
+        checklist: [],
+        priority: 'none',
+        size: 'none',
+        startedAt: null,
+        completedAt: d.getTime(),
+        flow: { state: 'normal', reason: '', since: null, periods: [] },
+        dependencies: { blockers: [], related: [] },
+        recurrenceId: null,
+        transitions: []
+      });
+    }
+    board.columns[0].cards = [{
+      id: 'streak-open',
+      columnId: col.id,
+      title: 'Complete me today',
+      description: '',
+      labels: [],
+      assignee: '',
+      createdAt: 1000,
+      updatedAt: 1000,
+      movedAt: 1000,
+      due: '',
+      checklist: [],
+      priority: 'none',
+      size: 'none',
+      startedAt: null,
+      completedAt: null,
+      flow: { state: 'normal', reason: '', since: null, periods: [] },
+      dependencies: { blockers: [], related: [] },
+      recurrenceId: null,
+      transitions: []
+    }];
+    board.columns[1].cards = [];
+    board.columns[2].cards = doneCards;
+    // Earlier scenarios may have left completed cards on OTHER boards (they
+    // count toward the streak too) — scrub every board so the seed is exact.
+    b.boards.forEach(function (other) {
+      if (other.id === board.id) return;
+      other.columns.forEach(function (c) { c.cards = []; });
+      if (other.archive) {
+        other.archive.cards = [];
+        (other.archive.columns || []).forEach(function (ac) { ac.cards = []; });
+      }
+    });
+    return b;
+  });
+  await seedLocalStorage(streakSeed);
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  const streakInitial = await page.evaluate(() => {
+    const info = KB.State.streakSnapshot();
+    const el = document.getElementById('streak-readout');
+    return { current: info.current, todayDone: info.todayDone, readout: el ? el.textContent : null };
+  });
+  check('streak holds at 6 before today completes', streakInitial.current === 6 && streakInitial.todayDone === false);
+  check('header readout renders the streak', streakInitial.readout !== null && streakInitial.readout.includes('6'));
+  // Complete the open card through the real move pipeline.
+  await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const card = board.columns[0].cards.find(c => c.id === 'streak-open');
+    const doneId = KB.State.data().boards.find(x => x.id === board.id).columns.find(c => c.role === 'done').id;
+    KB.State.moveCardChecked(board.columns[0].id, card.id, doneId);
+    KB.App.refresh();
+  });
+  const streakSeven = await waitFor(() => {
+    return document.getElementById('streak-readout') &&
+      document.getElementById('streak-readout').textContent.includes('7');
+  }, 3000, 'streak readout 7');
+  check('completing a card advances the streak to 7', streakSeven);
+  const streakToast = await waitFor(() => Array.prototype.some.call(document.querySelectorAll('.toast'), t => t.textContent.indexOf('7-DAY STREAK') !== -1), 3000, 'milestone toast');
+  check('milestone toast fires at 7 days', streakToast);
+  await blur();
+  await pressUndo();
+  const streakAfterUndo = await waitFor(() => {
+    return document.getElementById('streak-readout') &&
+      document.getElementById('streak-readout').textContent.includes('6');
+  }, 3000, 'streak readout 6 after undo');
+  check('undoing the completion drops the streak back to 6', streakAfterUndo);
+  await pressRedo();
+  const streakRedo = await waitFor(() => {
+    return document.getElementById('streak-readout') &&
+      document.getElementById('streak-readout').textContent.includes('7');
+  }, 3000, 'streak readout 7 after redo');
+  check('redo restores the streak to 7', streakRedo);
+  // Scoreboard overlay: H opens, Esc closes.
+  await page.keyboard.press('h');
+  await waitFor(() => !!document.querySelector('.modal-panel.scoreboard'), 3000, 'scoreboard opens');
+  check('scoreboard overlay opens on H', (await page.$eval('.modal-panel.scoreboard .sb-title', el => el.textContent)) === 'HI-SCORE');
+  await page.keyboard.press('Escape');
+  await waitFor(() => !document.querySelector('.modal-panel.scoreboard'), 3000, 'scoreboard closes');
+  check('scoreboard closes on Esc', true);
+  // Mobile compact readout.
+  const streakMobile = await browser.newPage();
+  await streakMobile.setViewport({ width: 400, height: 800 });
+  await streakMobile.goto(URL, { waitUntil: 'load' });
+  await streakMobile.waitForFunction(() => document.documentElement.dataset.ready === '1', { timeout: 5000 });
+  const mobileReadout = await streakMobile.evaluate(() => {
+    const el = document.getElementById('streak-readout');
+    const label = el ? el.querySelector('.sr-label') : null;
+    return {
+      exists: !!el,
+      scrollable: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      labelHidden: label ? getComputedStyle(label).display === 'none' : false
+    };
+  });
+  check('mobile shows a compact streak readout without overflow', mobileReadout.exists && mobileReadout.scrollable && mobileReadout.labelHidden);
+  await streakMobile.close();
+
+  // ---- ARRIVAL: import + export migration kit ----
+  const arrivalSeed = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    b.boards = [b.boards.find(x => x.id === b.activeBoardId)];
+    b.boards[0].columns.forEach(function (c) { c.cards = []; });
+    if (b.boards[0].archive) { b.boards[0].archive.cards = []; b.boards[0].archive.columns = []; }
+    return b;
+  });
+  await seedLocalStorage(arrivalSeed);
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  const todoistExport = {
+    projects: [{ id: 1, name: 'Client Work' }],
+    sections: [
+      { id: 10, project_id: 1, name: 'In Progress' },
+      { id: 11, project_id: 1, name: 'Done' }
+    ],
+    items: [
+      { id: 100, project_id: 1, section_id: 10, content: 'Ship landing page', description: 'Deploy to prod', due: { date: '2026-08-20' }, priority: 1, labels: [1], checked: 0 },
+      { id: 101, project_id: 1, section_id: 10, content: 'Fix nav bug', priority: 2, labels: [2], parent_id: 100, checked: 0 },
+      { id: 102, project_id: 1, section_id: 11, content: 'Invoice March', priority: 4, labels: [], checked: 1 }
+    ],
+    labels: [{ id: 1, name: 'Launch' }, { id: 2, name: 'Bug' }]
+  };
+  await page.evaluate((exported) => {
+    KB.Modal.arrivalWizard();
+    // Drive the wizard programmatically: paste path is deterministic here.
+    const ta = document.querySelector('.arrival-paste');
+    ta.value = exported;
+    Array.prototype.find.call(document.querySelectorAll('.modal-actions .btn'), b => b.textContent === 'ANALYZE').click();
+  }, JSON.stringify(todoistExport));
+  await waitFor(() => document.querySelectorAll('.arrival-board').length >= 1, 3000, 'arrival preview');
+  const previewState = await page.evaluate(() => ({
+    boards: document.querySelectorAll('.arrival-board').length,
+    boardName: document.querySelector('.arrival-board-title') ? document.querySelector('.arrival-board-title').textContent : '',
+    cols: Array.prototype.map.call(document.querySelectorAll('.arrival-col'), e => e.textContent),
+    samples: Array.prototype.map.call(document.querySelectorAll('.arrival-sample-title'), e => e.textContent)
+  }));
+  check('arrival preview shows the parsed board', previewState.boards === 1 && /Client Work/.test(previewState.boardName));
+  check('arrival preview lists columns with roles', previewState.cols.some(c => /In Progress/.test(c)) && previewState.cols.some(c => /Done/.test(c)));
+  check('arrival preview shows sample cards', previewState.samples.includes('Ship landing page') && previewState.samples.includes('Invoice March'));
+  // Commit the import.
+  await page.evaluate(() => {
+    Array.prototype.find.call(document.querySelectorAll('.modal-actions .btn'), b => /IMPORT/.test(b.textContent)).click();
+  });
+  await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'arrival committed');
+  const arrivalState = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.name === 'Client Work');
+    if (!board) return null;
+    const all = [];
+    board.columns.forEach(col => col.cards.forEach(card => all.push({ title: card.title, role: col.role, priority: card.priority, due: card.due, labels: card.labels.length, checklist: card.checklist.length })));
+    return { all, recurrences: b.recurrences.length };
+  });
+  check('import created the board with cards in role columns',
+    arrivalState && arrivalState.all.length === 2 &&
+    arrivalState.all.some(c => c.title === 'Ship landing page' && c.role === 'active' && c.priority === 'urgent' && c.due === '2026-08-20' && c.labels === 1 && c.checklist === 1) &&
+    arrivalState.all.some(c => c.title === 'Invoice March' && c.role === 'done'));
+  check('import is atomic in one undo step', arrivalState !== null);
+  await blur();
+  await pressUndo();
+  const undoneArrival = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    return !b.boards.some(x => x.name === 'Client Work');
+  });
+  check('one undo removes the whole import', undoneArrival);
+  await pressRedo();
+  const redoneArrival = await waitFor(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    return b.boards.some(x => x.name === 'Client Work');
+  }, 3000, 'redo restores import');
+  check('redo restores the import', redoneArrival);
+  // Export: CSV download contains the imported cards.
+  await page.evaluate(() => KB.State.setActiveBoard(KB.State.data().boards.find(x => x.name === 'Client Work').id));
+  await page.evaluate(() => KB.Modal.exportModal());
+  await waitFor(() => document.querySelectorAll('.arrival-export-row').length === 2, 3000, 'export rows');
+  const exportLabels = await page.$$eval('.arrival-export-name', els => els.map(e => e.textContent));
+  check('export offers CSV and Markdown', exportLabels.includes('CSV') && exportLabels.includes('Markdown'));
+  const csvContent = await page.evaluate(() => KB.Core.Exporter.exportCsv(KB.State.data().boards.find(x => x.name === 'Client Work')));
+  check('exported CSV contains the imported cards', /Ship landing page/.test(csvContent) && /Invoice March/.test(csvContent) && /Completed/.test(csvContent));
+  await page.evaluate(() => KB.Modal.close());
+
+  // ---- TUNING: estimate-vs-actual calibration ----
+  const tuningSeed = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const now = Date.now();
+    const DAY = 86400000;
+    const board = {
+      id: 'tuning-board', name: 'Tuning Board',
+      flowSettings: { staleAfterDays: 7, oversizedChecklistThreshold: 10, completedReviewAfterDays: 7, slePercentile: 0.85, manualSleDays: null },
+      labels: [], templates: [], archive: { cards: [], columns: [] },
+      columns: [
+        { id: 't-c0', title: 'To Do', role: 'queue', isDone: false, wipLimit: 0, collapsed: false, policy: { wipMode: 'off', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '', countsTowardCycleTime: true }, cards: [] },
+        { id: 't-c1', title: 'In Progress', role: 'active', isDone: false, wipLimit: 0, collapsed: false, policy: { wipMode: 'off', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '', countsTowardCycleTime: true }, cards: [] },
+        { id: 't-c2', title: 'Done', role: 'done', isDone: true, wipLimit: 0, collapsed: false, policy: { wipMode: 'off', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '', countsTowardCycleTime: true }, cards: [] }
+      ]
+    };
+    function sizedCard(id, size, startedDaysAgo, durDays) {
+      return {
+        id: id, columnId: 't-c2', title: 'Cal ' + id, description: '', labels: [],
+        assignee: '', createdAt: now - 20 * DAY, updatedAt: now - startedDaysAgo * DAY,
+        movedAt: now - startedDaysAgo * DAY, due: '', checklist: [], priority: 'none', size: size,
+        startedAt: now - startedDaysAgo * DAY, completedAt: now - startedDaysAgo * DAY + durDays * DAY,
+        flow: { state: 'normal', reason: '', since: null, periods: [] },
+        dependencies: { blockers: [], related: [] }, recurrenceId: null, transitions: []
+      };
+    }
+    board.columns[2].cards = [
+      sizedCard('cal-m1', 'm', 10, 2.3),
+      sizedCard('cal-m2', 'm', 8, 1.9),
+      sizedCard('cal-l1', 'l', 12, 4.5),
+      sizedCard('cal-s1', 's', 6, 0.8),
+      sizedCard('cal-xl1', 'xl', 3, 1.2)
+    ];
+    board.columns[0].cards = [{
+      id: 'cal-open', columnId: 't-c0', title: 'Open sized card', description: '', labels: [],
+      assignee: '', createdAt: now, updatedAt: now, movedAt: now, due: '', checklist: [], priority: 'none', size: 'm',
+      startedAt: null, completedAt: null, flow: { state: 'normal', reason: '', since: null, periods: [] },
+      dependencies: { blockers: [], related: [] }, recurrenceId: null, transitions: []
+    }];
+    b.boards = [board];
+    b.activeBoardId = 'tuning-board';
+    return b;
+  });
+  await seedLocalStorage(tuningSeed);
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  await page.evaluate(() => KB.Workspaces.set('tuning'));
+  await waitFor(() => document.querySelectorAll('.tune-gauge').length === 5, 3000, 'tuning gauges');
+  const tuningState = await page.evaluate(() => ({
+    gauges: Array.prototype.map.call(document.querySelectorAll('.tune-gauge-size'), e => e.textContent),
+    values: Array.prototype.map.call(document.querySelectorAll('.tune-gauge-value'), e => e.textContent),
+    capacity: document.querySelector('.tune-capacity-value') ? document.querySelector('.tune-capacity-value').textContent : null
+  }));
+  check('tuning renders five size gauges', tuningState.gauges.join(',') === 'XS,S,M,L,XL');
+  check('tuning shows calibrated medians', tuningState.values.some(v => /2\.1d/.test(v)) && tuningState.values.some(v => /4\.5d/.test(v)));
+  check('tuning shows the realistic-day capacity', tuningState.capacity !== null && /d/.test(tuningState.capacity));
+  // Card editor size hint.
+  await page.evaluate(() => { KB.Workspaces.set('board'); KB.App.refresh(); });
+  await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    const card = col.cards.find(c => c.id === 'cal-open');
+    KB.Modal.cardEditor(col.id, card, null, board.id);
+  });
+  await waitFor(() => !!document.querySelector('#cf-size'), 3000, 'editor size control');
+  const sizeHint = await page.$eval('.cf-size-hint', el => el.textContent);
+  check('card editor shows the calibrated size hint', /M≈2\.1d/.test(sizeHint) && /n=2/.test(sizeHint));
+  await page.evaluate(() => KB.Modal.close());
+
+  // ---- CHECKPOINT: guided weekly review ----
+  const cpSeed = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const now = Date.now();
+    const DAY = 86400000;
+    const board = {
+      id: 'cp-board', name: 'Checkpoint Board',
+      flowSettings: { staleAfterDays: 7, oversizedChecklistThreshold: 10, completedReviewAfterDays: 7, slePercentile: 0.85, manualSleDays: null },
+      labels: [], templates: [], archive: { cards: [], columns: [] },
+      columns: [
+        { id: 'cp-c0', title: 'To Do', role: 'queue', isDone: false, wipLimit: 0, collapsed: false, policy: { wipMode: 'off', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '', countsTowardCycleTime: true }, cards: [] },
+        { id: 'cp-c1', title: 'In Progress', role: 'active', isDone: false, wipLimit: 0, collapsed: false, policy: { wipMode: 'off', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '', countsTowardCycleTime: true }, cards: [] },
+        { id: 'cp-c2', title: 'Done', role: 'done', isDone: true, wipLimit: 0, collapsed: false, policy: { wipMode: 'off', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '', countsTowardCycleTime: true }, cards: [] }
+      ]
+    };
+    function baseCard(id, title, columnId) {
+      return {
+        id: id, columnId: columnId, title: title, description: '', labels: [],
+        assignee: '', createdAt: now - 20 * DAY, updatedAt: now, movedAt: now - 2 * DAY,
+        due: '', checklist: [], priority: 'none', size: 'm',
+        startedAt: null, completedAt: null, flow: { state: 'normal', reason: '', since: null, periods: [] },
+        dependencies: { blockers: [], related: [] }, recurrenceId: null, transitions: []
+      };
+    }
+    const doneCards = [];
+    // Two completions in the PREVIOUS Monday-anchored week (compute it).
+    const week = KB.Core.Worklog.weekRange(Date.now(), -1);
+    const prevMon = new Date(week.fromISO + 'T12:00:00').getTime();
+    doneCards.push(Object.assign(baseCard('cp-win-a', 'Shipped milestone', 'cp-c2'), { completedAt: prevMon, startedAt: prevMon - 2 * DAY }));
+    doneCards.push(Object.assign(baseCard('cp-win-b', 'Closed invoice run', 'cp-c2'), { completedAt: prevMon + DAY, startedAt: prevMon - DAY }));
+    board.columns[2].cards = doneCards;
+    board.columns[0].cards = [
+      Object.assign(baseCard('cp-blocked', 'Waiting on API keys', 'cp-c0'), { flow: { state: 'blocked', reason: 'vendor', since: now - 3 * DAY, periods: [] } }),
+      Object.assign(baseCard('cp-overdue', 'Overdue deliverable', 'cp-c0'), { due: '2020-01-10' }),
+      Object.assign(baseCard('cp-due', 'Client sync notes', 'cp-c0'), { due: KB.Core.Date.addDaysISO(new Date(), 2) }),
+      Object.assign(baseCard('cp-open', 'Normal task', 'cp-c0'), {})
+    ];
+    b.boards = [board];
+    b.activeBoardId = 'cp-board';
+    return b;
+  });
+  await seedLocalStorage(cpSeed);
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  await page.keyboard.press('w');
+  await waitFor(() => !!document.querySelector('.cp-overlay'), 3000, 'checkpoint opens');
+  const cpStage1 = await page.evaluate(() => ({
+    title: document.querySelector('.cp-title') ? document.querySelector('.cp-title').textContent : '',
+    stage: document.querySelector('.cp-stage') ? document.querySelector('.cp-stage').textContent : '',
+    rows: document.querySelectorAll('.cp-row').length,
+    rowText: Array.prototype.map.call(document.querySelectorAll('.cp-row-title'), e => e.textContent)
+  }));
+  check('W opens the checkpoint at WINS', cpStage1.title === 'CHECKPOINT' && /WINS/.test(cpStage1.stage));
+  check('WINS lists last week completions', cpStage1.rowText.includes('Shipped milestone') && cpStage1.rowText.includes('Closed invoice run'));
+  // Next stage -> STUCK.
+  await page.evaluate(() => { document.querySelector('[data-cp="next"]').click(); });
+  await waitFor(() => /STUCK/.test(document.querySelector('.cp-stage').textContent), 3000, 'stuck stage');
+  const cpStuck = await page.$$eval('.cp-row-title', els => els.map(e => e.textContent));
+  check('STUCK surfaces the blocked card', cpStuck.includes('Waiting on API keys'));
+  // Next -> OVERDUE, defer the overdue card.
+  await page.evaluate(() => { document.querySelector('[data-cp="next"]').click(); });
+  await waitFor(() => /OVERDUE/.test(document.querySelector('.cp-stage').textContent), 3000, 'overdue stage');
+  const cpOverdueRows = await page.$$eval('.cp-row', els => els.map(e => e.querySelector('.cp-row-title').textContent));
+  check('OVERDUE lists the late card', cpOverdueRows.includes('Overdue deliverable'));
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.cp-row')];
+    const row = rows.find(r => r.querySelector('.cp-row-title').textContent === 'Overdue deliverable');
+    [...row.querySelectorAll('button')].find(b => b.textContent === 'DEFER').click();
+  });
+  await waitFor(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const card = b.boards[0].columns[0].cards.find(c => c.id === 'cp-overdue');
+    return card && card.due && card.due !== '2020-01-10';
+  }, 3000, 'defer applied');
+  check('DEFER moves the overdue card to next Monday', true);
+  // LOOKAHEAD then FOCUS: assign a card to next Monday.
+  await page.evaluate(() => { document.querySelector('[data-cp="next"]').click(); });
+  await waitFor(() => /LOOKAHEAD/.test(document.querySelector('.cp-stage').textContent), 3000, 'lookahead stage');
+  await page.evaluate(() => { document.querySelector('[data-cp="next"]').click(); });
+  await waitFor(() => /FOCUS/.test(document.querySelector('.cp-stage').textContent), 3000, 'focus stage');
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.cp-row')];
+    const row = rows.find(r => r.querySelector('.cp-row-title').textContent === 'Client sync notes');
+    row.querySelector('.cp-focus-day').click(); // MON of next week
+  });
+  await page.evaluate(() => { document.querySelector('[data-cp="commit"]').click(); });
+  await waitFor(() => !document.querySelector('.cp-overlay'), 3000, 'checkpoint commits');
+  const cpCommitted = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const week = KB.Core.Worklog.weekRange(Date.now(), 1);
+    const plan = b.dayplans[week.fromISO];
+    return plan ? plan.commitments.map(c => c.cardId) : [];
+  });
+  check('FOCUS seeds the next-week Monday Day Sheet', cpCommitted.includes('cp-due'));
+  // The DEFER and the FOCUS stamp are separate ops (each its own undo entry).
+  // Undo twice: first the Day Sheet seed, then the defer.
+  await blur();
+  await pressUndo();
+  await pressUndo();
+  const undidDefer = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const card = b.boards[0].columns[0].cards.find(c => c.id === 'cp-overdue');
+    return card && card.due === '2020-01-10';
+  });
+  check('undo reverts the checkpoint defer', undidDefer);
+
+  // ---- CARTRIDGE: board templates ----
+  const tplSeed = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const now = Date.now();
+    const board = {
+      id: 'tpl-board', name: 'Kickoff Board',
+      flowSettings: { staleAfterDays: 7, oversizedChecklistThreshold: 10, completedReviewAfterDays: 7, slePercentile: 0.85, manualSleDays: null },
+      labels: [{ id: 'tpl-l1', name: 'Client', color: '#2a58c4' }, { id: 'tpl-l2', name: 'Urgent', color: '#a34800' }],
+      templates: [], archive: { cards: [], columns: [] },
+      columns: [
+        { id: 'tpl-c0', title: 'To Do', role: 'queue', isDone: false, wipLimit: 0, collapsed: false, policy: { wipMode: 'off', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '', countsTowardCycleTime: true }, cards: [] },
+        { id: 'tpl-c1', title: 'In Progress', role: 'active', isDone: false, wipLimit: 1, collapsed: false, policy: { wipMode: 'hard', overrideRequiresReason: false, entryCriteria: ['Kickoff done'], exitCriteria: [], defaultLabelIds: ['tpl-l1'], defaultAssignee: 'Sam', countsTowardCycleTime: true }, cards: [] },
+        { id: 'tpl-c2', title: 'Done', role: 'done', isDone: true, wipLimit: 0, collapsed: false, policy: { wipMode: 'off', overrideRequiresReason: false, entryCriteria: [], exitCriteria: [], defaultLabelIds: [], defaultAssignee: '', countsTowardCycleTime: true }, cards: [] }
+      ]
+    };
+    board.columns[0].cards = [{
+      id: 'tpl-k1', columnId: 'tpl-c0', title: 'Kickoff call', description: 'Intro', labels: ['tpl-l1'],
+      assignee: '', createdAt: now, updatedAt: now, movedAt: now, due: '', checklist: [{ id: 'ck1', text: 'Prep agenda', done: false }],
+      priority: 'high', size: 's', startedAt: null, completedAt: null,
+      flow: { state: 'normal', reason: '', since: null, periods: [] },
+      dependencies: { blockers: [], related: [] }, recurrenceId: null, transitions: []
+    }];
+    b.boards = [board];
+    b.activeBoardId = 'tpl-board';
+    return b;
+  });
+  await seedLocalStorage(tplSeed);
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  // Save the board as a template via the modal API.
+  await page.evaluate(() => {
+    KB.Modal.saveBoardTemplate();
+    const nameInput = document.querySelector('.modal-panel input[type="text"]');
+    nameInput.value = 'Client Kickoff';
+    const boxes = document.querySelectorAll('.modal-panel input[type="checkbox"]');
+    if (boxes[0]) boxes[0].checked = true;
+    Array.prototype.find.call(document.querySelectorAll('.modal-actions .btn'), b => /SAVE TEMPLATE/.test(b.textContent)).click();
+  });
+  await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'template saved');
+  const tplSaved = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    return (b.templates || []).map(t => t.name);
+  });
+  check('saving a board as template persists it', tplSaved.includes('Client Kickoff'));
+  // Apply the template -> new board with structure + starter card.
+  await page.evaluate(() => {
+    KB.Modal.templateGallery();
+  });
+  await waitFor(() => document.querySelectorAll('.tpl-row').length >= 1, 3000, 'gallery row');
+  await page.evaluate(() => {
+    Array.prototype.find.call(document.querySelectorAll('.tpl-row .btn'), b => b.textContent === 'USE').click();
+    const nameInput = document.querySelector('.modal-panel input[type="text"]');
+    nameInput.value = 'Stamped Board';
+    Array.prototype.find.call(document.querySelectorAll('.modal-actions .btn'), b => b.textContent === 'Save').click();
+  });
+  await waitFor(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    return b.boards.some(x => x.name === 'Stamped Board');
+  }, 3000, 'board stamped');
+  const stampedState = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.name === 'Stamped Board');
+    const ip = board.columns.find(c => c.role === 'active');
+    return {
+      columns: board.columns.map(c => c.role).sort().join(','),
+      wip: ip ? ip.wipLimit : null,
+      wipMode: ip ? ip.policy.wipMode : null,
+      entry: ip ? ip.policy.entryCriteria.join(',') : '',
+      labels: board.labels.map(l => l.name).sort().join(','),
+      starter: board.columns[0].cards.map(c => c.title).join(','),
+      starterChecklist: board.columns[0].cards[0] ? board.columns[0].cards[0].checklist.length : 0
+    };
+  });
+  check('template stamps columns with roles and WIP policy',
+    stampedState.columns === 'active,done,queue' && stampedState.wip === 1 && stampedState.wipMode === 'hard' && stampedState.entry === 'Kickoff done');
+  check('template copies the label palette', stampedState.labels === 'Client,Urgent');
+  check('template instantiates starter cards with checklists', stampedState.starter.includes('Kickoff call') && stampedState.starterChecklist === 1);
+  await blur();
+  await pressUndo();
+  const tplUndone = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    return !b.boards.some(x => x.name === 'Stamped Board');
+  });
+  check('one undo removes the whole stamped board', tplUndone);
+
+  // ---- PING: waiting-card follow-up engine ----
+  const pingSeed = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const now = Date.now();
+    const DAY = 86400000;
+    const board = b.boards[0];
+    board.columns.forEach(function (c) { c.cards = []; });
+    const todo = board.columns[0];
+    todo.cards = [{
+      id: 'ping-1', columnId: todo.id, title: 'Wait on client assets', description: '', labels: [],
+      assignee: 'Acme', createdAt: now - 10 * DAY, updatedAt: now, movedAt: now - 2 * DAY,
+      due: '', checklist: [], priority: 'none', size: 'm',
+      startedAt: null, completedAt: null,
+      flow: { state: 'waiting', reason: 'assets', since: now - 2 * DAY, periods: [] },
+      dependencies: { blockers: [], related: [] }, recurrenceId: null, transitions: [],
+      ping: { contact: 'Acme', followUpAt: now - 2 * DAY, cadenceDays: 3, escalateAfter: 2, maxEscalation: 4, lastPokedAt: null, pokedCount: 0, log: [] }
+    }];
+    return b;
+  });
+  await seedLocalStorage(pingSeed);
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  await page.evaluate(() => KB.Workspaces.set('ping'));
+  await waitFor(() => document.querySelectorAll('.ping-row').length >= 1, 3000, 'ping band');
+  const pingState = await page.evaluate(() => ({
+    rows: Array.prototype.map.call(document.querySelectorAll('.ping-row-title'), e => e.textContent),
+    statuses: Array.prototype.map.call(document.querySelectorAll('.ping-status'), e => e.textContent),
+    overdue: document.querySelectorAll('.ping-row.overdue').length
+  }));
+  check('PING workspace lists the overdue waiting card', pingState.rows.includes('Wait on client assets'));
+  check('PING marks it overdue', pingState.overdue >= 1 && pingState.statuses.some(s => /OVERDUE/.test(s)));
+  // Poke it -> rolls the follow-up, leaves the due band.
+  await page.evaluate(() => {
+    document.querySelector('.ping-poke').click();
+  });
+  await waitFor(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const card = b.boards[0].columns[0].cards.find(c => c.id === 'ping-1');
+    return card && card.ping && card.ping.pokedCount === 1;
+  }, 3000, 'poke recorded');
+  const pokedState = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const card = b.boards[0].columns[0].cards.find(c => c.id === 'ping-1');
+    return { count: card.ping.pokedCount, future: card.ping.followUpAt > Date.now() };
+  });
+  check('POKE logs the follow-up and rolls the date forward', pokedState.count === 1 && pokedState.future);
+  await blur();
+  await pressUndo();
+  const pokeUndone = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const card = b.boards[0].columns[0].cards.find(c => c.id === 'ping-1');
+    return card && card.ping && card.ping.pokedCount === 0 && card.ping.followUpAt < Date.now();
+  });
+  check('one undo reverts the poke', pokeUndone);
+  // Card chip on the board.
+  await page.evaluate(() => { KB.Workspaces.set('board'); KB.App.refresh(); });
+  const pingChip = await page.$$eval('.chip-static.ping', els => els.map(e => e.textContent));
+  check('waiting card renders the PING chip', pingChip.length >= 1);
+  // Review integration: the overdue ping ranks above plain waiting.
+  await page.evaluate(() => { KB.Workspaces.set('review'); KB.App.refresh(); });
+  const reviewReasons = await page.$$eval('.review-reason', els => els.map(e => e.textContent));
+  check('Review surfaces the PING overdue reason', reviewReasons.some(r => /PING/.test(r)));
+
+  // ---- WHEN/DEADLINE: dual-date model ----
+  const whenSeed = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    b.boards = [b.boards.find(x => x.id === b.activeBoardId)];
+    const board = b.boards[0];
+    board.columns.forEach(function (c) { c.cards = []; });
+    if (board.archive) { board.archive.cards = []; board.archive.columns = []; }
+    board.columns[0].cards = [{
+      id: 'when-1', columnId: board.columns[0].id, title: 'Planned deliverable', description: '', labels: [],
+      assignee: '', createdAt: Date.now(), updatedAt: Date.now(), movedAt: Date.now(),
+      due: KB.Core.Date.addDaysISO(new Date(), 8), when: KB.Core.Date.addDaysISO(new Date(), 2),
+      checklist: [], priority: 'high', size: 'l',
+      startedAt: null, completedAt: null, flow: { state: 'normal', reason: '', since: null, periods: [] },
+      dependencies: { blockers: [], related: [] }, recurrenceId: null, transitions: []
+    }];
+    return b;
+  });
+  await seedLocalStorage(whenSeed);
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  await page.evaluate(() => KB.Workspaces.set('board'));
+  await waitFor(() => document.querySelectorAll('.card').length >= 1, 3000, 'board card renders');
+  const whenChips = await page.$$eval('.chip-static', els => els.map(e => e.textContent));
+  check('card renders DO and DUE chips', whenChips.some(t => t.includes('DO ')) && whenChips.some(t => t.includes('DUE ')));
+  // Calendar places the card on its when day.
+  await page.evaluate(() => KB.Workspaces.set('calendar'));
+  await waitFor(() => !!document.querySelector('.cal-grid'), 3000, 'calendar renders');
+  const whenCal = await page.evaluate(() => {
+    const dueDay = KB.Core.Date.addDaysISO(new Date(), 8);
+    const whenDay = KB.Core.Date.addDaysISO(new Date(), 2);
+    const cells = [...document.querySelectorAll('.cal-day')];
+    const onWhen = cells.find(c => c.dataset.date === whenDay);
+    const onDue = cells.find(c => c.dataset.date === dueDay);
+    return {
+      whenHas: onWhen ? onWhen.querySelectorAll('.cal-chip').length : 0,
+      dueHas: onDue ? onDue.querySelectorAll('.cal-chip').length : 0,
+      overdue: document.querySelectorAll('.cal-overdue .cal-chip').length
+    };
+  });
+  check('calendar places the card on its do-date, not the deadline', whenCal.whenHas >= 1 && whenCal.dueHas === 0);
+  check('future-due planned card is never overdue', whenCal.overdue === 0);
+  // Quick-add with a do-date.
+  await page.evaluate(() => { KB.Workspaces.set('board'); KB.App.refresh(); });
+  await page.type('.column:nth-child(1) .qa-input', 'do fri ship landing page');
+  await page.keyboard.press('Enter');
+  const whenAdded = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const card = b.boards[0].columns[0].cards.find(c => c.title === 'ship landing page');
+    return card ? { when: card.when, title: card.title } : null;
+  });
+  check('quick-add do <date> sets the when field', whenAdded && /^\d{4}-\d{2}-\d{2}$/.test(whenAdded.when) && whenAdded.title === 'ship landing page');
+
+  // ---- POWER METER: state-aware picking ----
+  const powerSeed = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    b.boards = [b.boards.find(x => x.id === b.activeBoardId)];
+    const board = b.boards[0];
+    board.columns.forEach(function (c) { c.cards = []; });
+    if (board.archive) { board.archive.cards = []; board.archive.columns = []; }
+    const now = Date.now();
+    function mk(id, title, size, extra) {
+      return Object.assign({
+        id: id, columnId: board.columns[0].id, title: title, description: '', labels: [],
+        assignee: '', createdAt: now, updatedAt: now, movedAt: now, due: '', checklist: [],
+        priority: 'none', size: size, startedAt: null, completedAt: null,
+        flow: { state: 'normal', reason: '', since: null, periods: [] },
+        dependencies: { blockers: [], related: [] }, recurrenceId: null, transitions: []
+      }, extra || {});
+    }
+    board.columns[0].cards = [
+      mk('pwr-xs', 'Quick win', 'xs'),
+      mk('pwr-xl', 'Deep work', 'xl'),
+      mk('pwr-blocked', 'Blocked thing', 'xs', { flow: { state: 'blocked', reason: 'x', since: now, periods: [] } })
+    ];
+    return b;
+  });
+  await seedLocalStorage(powerSeed);
+  await page.goto(URL, { waitUntil: 'load' });
+  await waitBoard();
+  await page.evaluate(() => KB.Workspaces.set('power'));
+  await waitFor(() => !!document.querySelector('.power-pick'), 3000, 'power pick renders');
+  const powerState = await page.evaluate(() => ({
+    top: document.querySelector('.power-top-title') ? document.querySelector('.power-top-title').textContent : '',
+    bands: document.querySelectorAll('.power-band-btn').length,
+    curveBars: document.querySelectorAll('.power-bar').length
+  }));
+  check('power workspace renders the pick and 4 bands', powerState.bands === 4 && powerState.curveBars === 24);
+  check('default mid band picks the balanced card', powerState.top !== '');
+  // LOW POWER excludes the heavy card and dims it on the board.
+  await page.evaluate(() => { document.querySelector('.power-band-btn[data-band="low"]').click(); });
+  await waitFor(() => {
+    const t = document.querySelector('.power-top-title');
+    return t && t.textContent === 'Quick win';
+  }, 3000, 'low power pick');
+  check('low power picks the quick win', true);
+  await page.evaluate(() => { KB.Workspaces.set('board'); KB.App.refresh(); });
+  const dimmed = await page.$$eval('.card.power-dim .card-title', els => els.map(e => e.textContent));
+  check('LOW POWER MODE dims the heavy card', dimmed.includes('Deep work') && !dimmed.includes('Quick win'));
+  // Undo restores the band.
+  await blur();
+  await pressUndo();
+  const bandUndone = await page.evaluate(() => KB.State.powerState().band === 'mid');
+  check('one undo reverts the band change', bandUndone);
 
   // ---- Reduced motion: palette still opens without animation ----
   const reducedPage = await browser.newPage();

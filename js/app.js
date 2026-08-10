@@ -63,6 +63,8 @@
     KB.Workspaces.render();
     KB.Workspaces.inboxBadge();
     updateMobileTabs();
+    renderFocusHud();
+    if (KB.Scoreboard) KB.Scoreboard.sync();
     if (KB.Workspaces.current() !== 'board') {
       KB.Render.boardPager();
       return;
@@ -314,13 +316,63 @@
     });
   }
 
+  // Smart Quick Add: each line runs through the deterministic natural-language
+  // parser ("fix bug in 3 days p2 #launch" sets due, priority and labels and
+  // strips the tokens from the title). Parsing happens before the dispatch, so
+  // the whole batch is still one atomic, undoable operation.
+  function parseQuickAddLines(lines) {
+    var labels = KB.State.labels();
+    return lines.map(function (line) {
+      var parsed = KB.Core.Nlparse.parseQuickAdd(line, { now: Date.now(), labels: labels });
+      var fields = {};
+      if (parsed.due) fields.due = parsed.due;
+      if (parsed.when) fields.when = parsed.when;
+      if (parsed.priority) fields.priority = parsed.priority;
+      if (parsed.labelIds.length > 0) fields.labels = parsed.labelIds;
+      return { title: parsed.title || line, fields: fields, raw: line };
+    });
+  }
+
+  // Live feedback for the last (visible) line of the quick-add box: recognized
+  // tokens become chips ("DUE AUG 14", "HIGH", "#launch") before commit.
+  function previewQuickAdd(input) {
+    var preview = input.parentNode && input.parentNode.querySelector('.qa-preview');
+    if (!preview) return;
+    var lines = input.value.split('\n').map(function (line) { return line.trim(); }).filter(Boolean);
+    var text = lines.length > 0 ? lines[lines.length - 1] : '';
+    if (!text) {
+      preview.hidden = true;
+      preview.textContent = '';
+      return;
+    }
+    var parsed = KB.Core.Nlparse.parseQuickAdd(text, { now: Date.now(), labels: KB.State.labels() });
+    var chips = KB.Render.qaPreviewChips(parsed);
+    preview.textContent = '';
+    if (!chips) {
+      preview.hidden = true;
+      return;
+    }
+    chips.forEach(function (chip) {
+      var el = h('span', { class: 'chip chip-static qa-preview-chip ' + chip.class, title: chip.title });
+      el.textContent = chip.text;
+      preview.appendChild(el);
+    });
+    preview.hidden = false;
+  }
+
   function submitQuickAdd(input) {
     var list = input.closest('.card-list');
     if (!list) return;
     var columnId = list.dataset.columnId;
     var lines = input.value.split('\n').map(function (line) { return line.trim(); }).filter(Boolean);
     if (lines.length === 0) return;
-    var finish = function (added, keepInput, text) {
+    var parsedLines = parseQuickAddLines(lines);
+    var titles = parsedLines.map(function (p) { return p.title; });
+    var fields = parsedLines.map(function (p) { return p.fields; });
+    var raw = parsedLines.map(function (p) { return p.raw; }).join('\n');
+    var preview = input.parentNode && input.parentNode.querySelector('.qa-preview');
+    if (preview) preview.hidden = true;
+    var finish = function (added, keepInput) {
       if (!keepInput) input.value = '';
       if (added > 0) {
         toast(KB.Dom.plural(added, 'card') + ' added', 'success', 'Undo', undoAction);
@@ -330,20 +382,20 @@
       KB.App.refresh();
       var fresh = KB.el('board').querySelector('.card-list[data-column-id="' + CSS.escape(columnId) + '"] .qa-input');
       if (fresh) {
-        if (keepInput && text) fresh.value = text;
+        if (keepInput) fresh.value = raw;
         fresh.focus();
       }
     };
     var evaluation = KB.State.createNeedsConfirmation(columnId, lines.length);
     if (evaluation) {
       KB.Modal.moveConfirmModal('Adding these cards requires confirmation', evaluation, '', function (reason) {
-        var added = KB.State.addCards(columnId, lines, { confirmed: true, overrideReason: reason });
-        finish(added, added === 0, lines.join('\n'));
+        var added = KB.State.addCards(columnId, titles, { confirmed: true, overrideReason: reason, fields: fields });
+        finish(added, added === 0);
       });
       return;
     }
-    var added = KB.State.addCards(columnId, lines);
-    finish(added, added === 0, lines.join('\n'));
+    var added = KB.State.addCards(columnId, titles, { fields: fields });
+    finish(added, added === 0);
   }
 
   function announceMove(toColumnId, toIndex) {
@@ -435,6 +487,10 @@
     KB.el('app-menu').addEventListener('click', function () {
       openAppMenu(KB.el('app-menu'));
     });
+    var readout = KB.el('streak-readout');
+    if (readout && KB.Scoreboard) {
+      readout.addEventListener('click', function () { KB.Scoreboard.open(); });
+    }
   }
 
   function wireMobile() {
@@ -659,6 +715,12 @@
       e.preventDefault();
       submitQuickAdd(input);
     });
+
+    KB.el('board-area').addEventListener('input', function (e) {
+      var input = e.target.closest('.qa-input');
+      if (!input) return;
+      previewQuickAdd(input);
+    });
   }
 
   function wireArchive() {
@@ -737,7 +799,14 @@
       var tag = document.activeElement && document.activeElement.tagName;
       var typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
       if (typing || KB.Modal.isOpen()) return;
-      var shortcut = KB.Commands.normalizeShortcut(keyCombo(e));
+      // A workspace may claim a plain letter it advertises on screen (the Work
+      // Log's COPY (C) / PRINT (P)) before the global registry sees it.
+      var bare = keyCombo(e);
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && KB.Workspaces.handleKey(bare)) {
+        e.preventDefault();
+        return;
+      }
+      var shortcut = KB.Commands.normalizeShortcut(bare);
       var command = KB.Commands.findByShortcut(shortcut);
       if (!command) return;
       e.preventDefault();
@@ -758,7 +827,10 @@
     KB.el('app-menu').querySelector('.btn-icon').innerHTML = icon('menu');
     KB.el('search-input').previousElementSibling.innerHTML = icon('search');
 
-    var tabIcons = { board: 'board', mydesk: 'star', inbox: 'box', review: 'check' };
+    var tabIcons = {
+      board: 'board', mydesk: 'star', inbox: 'box', review: 'check',
+      calendar: 'clock', log: 'doc', tuning: 'clock', ping: 'doc', power: 'doc'
+    };
     KB.el('mobile-tabs').querySelectorAll('.mt-btn').forEach(function (btn) {
       btn.querySelector('.mt-icon').innerHTML = icon(tabIcons[btn.dataset.workspace] || 'doc');
     });
@@ -858,6 +930,62 @@
     bootSequence();
   }
 
+  // ---- Focus HUD (task-tied timer) ----
+
+  function focusCardTitle(cardId) {
+    var state = KB.State.data();
+    if (!state) return '';
+    for (var i = 0; i < state.boards.length; i++) {
+      var board = state.boards[i];
+      for (var j = 0; j < board.columns.length; j++) {
+        var card = board.columns[j].cards.find(function (c) { return c.id === cardId; });
+        if (card) return card.title || '';
+      }
+    }
+    return '';
+  }
+
+  function formatClock(totalSeconds) {
+    var m = Math.floor(totalSeconds / 60);
+    var s = totalSeconds % 60;
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  // Corner HUD showing the running session. The source of truth is the
+  // session's startedAt timestamp — this renderer may tick as often as it
+  // likes without drift.
+  function renderFocusHud() {
+    var hud = KB.el('focus-hud');
+    if (!hud) return;
+    var session = KB.State.focusSession();
+    if (!session) {
+      hud.hidden = true;
+      hud.innerHTML = '';
+      return;
+    }
+    var now = Date.now();
+    hud.innerHTML = '';
+    var title = h('span', { class: 'focus-hud-title' });
+    title.textContent = focusCardTitle(session.cardId) || 'Focus';
+    title.title = 'Focusing on this card';
+    hud.appendChild(title);
+    var time = h('span', { class: 'focus-hud-time' });
+    if (session.kind === 'pomodoro') {
+      var left = Math.max(0, Math.ceil((KB.Core.Focus.DEFAULT_POMODORO_MS - (now - session.startedAt)) / 1000));
+      time.textContent = formatClock(left) + ' POMO';
+    } else {
+      time.textContent = KB.Core.Focus.formatEffort(Math.round((now - session.startedAt) / 60000)) + ' FOCUS';
+    }
+    hud.appendChild(time);
+    var stop = h('button', { type: 'button', class: 'btn sm focus-hud-stop', title: 'End focus (F)' });
+    stop.textContent = 'STOP';
+    stop.addEventListener('click', function () {
+      KB.Commands.run('focus.toggle', null);
+    });
+    hud.appendChild(stop);
+    hud.hidden = false;
+  }
+
   function init() {
     // The cross-tab guard must know whether this tab is read-only before the
     // first save (e.g. the defaults save on a fresh profile).
@@ -881,6 +1009,8 @@
       toggleArchive(false);
       tickClock();
       setInterval(tickClock, 10000);
+      renderFocusHud();
+      setInterval(renderFocusHud, 1000);
       processRecurrences();
       setInterval(processRecurrences, 60000);
       document.addEventListener('visibilitychange', function () {

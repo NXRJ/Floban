@@ -95,6 +95,12 @@
           endedAt: nowVal
         }, PERIOD_LIMIT);
       }
+      // A PING follow-up clock only means anything while the card is waiting
+      // on someone. Leaving `waiting` disarms it, so a resolved card cannot
+      // linger forever in the PING workspace's contact groups.
+      if (cardCopy.flow.state === 'waiting' && nextState !== 'waiting' && cardCopy.ping) {
+        delete cardCopy.ping;
+      }
       cardCopy.flow.state = nextState;
       cardCopy.flow.reason = nextState === 'normal' ? '' : (typeof reason === 'string' ? reason : '');
       cardCopy.flow.since = nextState === 'normal' ? null : nowVal;

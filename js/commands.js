@@ -81,6 +81,248 @@
   workspaceCommand('workspace.mydesk', 'My Desk', 'mydesk');
   workspaceCommand('workspace.inbox', 'Inbox', 'inbox');
   workspaceCommand('workspace.review', 'Review', 'review');
+  workspaceCommand('workspace.tuning', 'Tuning', 'tuning');
+  workspaceCommand('workspace.ping', 'Ping', 'ping');
+  workspaceCommand('workspace.power', 'Power', 'power');
+  C.register({
+    id: 'workspace.calendar',
+    title: 'Date Desk',
+    keywords: ['calendar', 'month', 'due dates', 'schedule'],
+    category: 'Workspace',
+    icon: 'doc',
+    shortcut: 't',
+    order: 1,
+    run: function () {
+      KB.Workspaces.set('calendar');
+    }
+  });
+  C.register({
+    id: 'day.start',
+    title: 'Start My Day',
+    keywords: ['day sheet', 'plan', 'ritual', 'commit', 'stamp'],
+    category: 'App',
+    icon: 'doc',
+    order: 4,
+    run: function () {
+      KB.Modal.daySheet();
+    }
+  });
+  C.register({
+    id: 'log.open',
+    title: 'Work Log',
+    keywords: ['log', 'weekly', 'completed', 'ledger', 'report', 'history'],
+    category: 'Workspace',
+    icon: 'doc',
+    shortcut: 'l',
+    order: 1,
+    run: function () {
+      KB.Workspaces.set('log');
+    }
+  });
+  C.register({
+    id: 'focus.start',
+    title: 'Start focus',
+    keywords: ['pomodoro', 'timer', 'focus', 'stopwatch'],
+    category: 'Card',
+    icon: 'clock',
+    scope: 'card',
+    run: function (ctx) {
+      if (!ctx || !ctx.cardId) return;
+      if (KB.State.focusSession()) {
+        KB.UI.toast('A focus session is already running', 'info');
+        return;
+      }
+      KB.State.startFocus(ctx.cardId, 'pomodoro');
+      KB.UI.toast('Focus started \u2014 press F to stop', 'success');
+      KB.App.refresh();
+    }
+  });
+  C.register({
+    id: 'focus.toggle',
+    title: 'Stop focus',
+    keywords: ['pomodoro', 'timer', 'focus', 'stop'],
+    category: 'App',
+    icon: 'clock',
+    shortcut: 'f',
+    order: 5,
+    run: function () {
+      if (KB.State.focusSession()) {
+        var ended = KB.State.endFocus();
+        KB.UI.toast(ended && ended.logged ? 'Focus logged' : 'Focus ended', 'success', 'Undo', KB.UI.undoAction);
+        KB.App.refresh();
+      } else {
+        KB.UI.toast('Pick a card and use Start focus to begin', 'info');
+      }
+    }
+  });
+
+  C.register({
+    id: 'streak.show',
+    title: 'HI-SCORE scoreboard',
+    keywords: ['streak', 'score', 'hi-score', 'gamification', 'record'],
+    category: 'App',
+    icon: 'star',
+    shortcut: 'h',
+    order: 6,
+    run: function () {
+      KB.Scoreboard.open();
+    }
+  });
+
+  C.register({
+    id: 'arrival.import',
+    title: 'Import tasks\u2026',
+    keywords: ['import', 'migrate', 'todoist', 'trello', 'csv', 'arrival', 'bring', 'old tasks'],
+    category: 'Board',
+    icon: 'download',
+    shortcut: 'mod+shift+i',
+    order: 6,
+    run: function () {
+      KB.Modal.arrivalWizard();
+    }
+  });
+  C.register({
+    id: 'arrival.export',
+    title: 'Export board\u2026',
+    keywords: ['export', 'csv', 'markdown', 'download', 'lock-in'],
+    category: 'Board',
+    icon: 'upload',
+    order: 7,
+    run: function () {
+      KB.Modal.exportModal();
+    }
+  });
+
+  C.register({
+    id: 'calibration.open',
+    title: 'TUNING',
+    keywords: ['calibration', 'estimate', 'actual', 'size', 'planning', 'reality', 'drift'],
+    category: 'Workspace',
+    icon: 'doc',
+    shortcut: 'g',
+    order: 1,
+    run: function () {
+      KB.Workspaces.set('tuning');
+    }
+  });
+  C.register({
+    id: 'weekly.start',
+    title: 'Weekly Checkpoint',
+    keywords: ['weekly', 'review', 'checkpoint', 'ritual', 'gtd', 'retrospective', 'plan'],
+    category: 'App',
+    icon: 'doc',
+    shortcut: 'w',
+    order: 5,
+    run: function () {
+      KB.Checkpoint.start();
+    }
+  });
+
+  C.register({
+    id: 'templates.gallery',
+    title: 'Cartridges\u2026',
+    keywords: ['template', 'cartridge', 'board template', 'reuse', 'workflow'],
+    category: 'Board',
+    icon: 'doc',
+    order: 8,
+    run: function () {
+      KB.Modal.templateGallery();
+    }
+  });
+  C.register({
+    id: 'templates.save',
+    title: 'Save board as template\u2026',
+    keywords: ['save template', 'cartridge', 'capture setup'],
+    category: 'Board',
+    icon: 'plus',
+    order: 9,
+    run: function () {
+      KB.Modal.saveBoardTemplate();
+    }
+  });
+
+  C.register({
+    id: 'ping.open',
+    title: 'PING',
+    keywords: ['ping', 'waiting', 'follow up', 'follow-up', 'chase', 'contact', 'ball'],
+    category: 'Workspace',
+    icon: 'doc',
+    shortcut: 'p',
+    order: 1,
+    run: function () {
+      KB.Workspaces.set('ping');
+    }
+  });
+  C.register({
+    id: 'ping.arm',
+    title: 'Arm PING follow-up',
+    keywords: ['ping', 'follow up', 'follow-up', 'waiting', 'poke'],
+    category: 'Card',
+    icon: 'clock',
+    scope: 'card',
+    available: function (ctx) {
+      return Boolean(ctx && ctx.cardId && !ctx.archived);
+    },
+    run: function (ctx) {
+      if (!ctx || !ctx.cardId) return;
+      var result = KB.State.armPing(ctx.cardId, {});
+      if (result) {
+        KB.UI.toast('PING armed \u2014 follow-up in 3 days', 'success', 'Undo', KB.UI.undoAction);
+        KB.App.refresh();
+      } else {
+        KB.UI.toast('Card must be Waiting to arm a ping', 'error');
+      }
+    }
+  });
+  C.register({
+    id: 'ping.poke',
+    title: 'Poke (log follow-up)',
+    keywords: ['ping', 'poke', 'follow up', 'follow-up'],
+    category: 'Card',
+    icon: 'clock',
+    scope: 'card',
+    available: function (ctx) {
+      return Boolean(ctx && ctx.cardId && !ctx.archived);
+    },
+    run: function (ctx) {
+      if (!ctx || !ctx.cardId) return;
+      var result = KB.State.pokeCard(ctx.cardId, '');
+      if (result) {
+        KB.UI.toast('Poked \u2014 next follow-up scheduled', 'success', 'Undo', KB.UI.undoAction);
+        KB.App.refresh();
+      }
+    }
+  });
+
+  C.register({
+    id: 'power.open',
+    title: 'POWER METER',
+    keywords: ['power', 'energy', 'now pick', 'mood', 'state', 'what can i do'],
+    category: 'Workspace',
+    icon: 'doc',
+    shortcut: 'shift+p',
+    order: 1,
+    run: function () {
+      KB.Workspaces.set('power');
+    }
+  });
+  C.register({
+    id: 'power.cycle',
+    title: 'Cycle power band',
+    keywords: ['power', 'band', 'energy', 'cycle'],
+    category: 'App',
+    icon: 'doc',
+    shortcut: 'b',
+    order: 7,
+    run: function () {
+      var power = KB.State.powerState();
+      var bands = KB.Core.Power.BANDS;
+      var next = bands[(bands.indexOf(power.band) + 1) % bands.length];
+      KB.State.setPowerBand(next);
+      KB.UI.toast('Power band: ' + next.toUpperCase(), 'success');
+      KB.App.refresh();
+    }
+  });
 
   // ---------- Board ----------
 
