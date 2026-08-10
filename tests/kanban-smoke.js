@@ -118,6 +118,117 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   count = await waitCount('.column:nth-child(1) .card', 6) ? 6 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
   check('bulk paste redoes as one step', count === 6);
 
+  // ---- Smart Quick Add: natural-language capture ----
+  const qa1 = '.column:nth-child(1) .qa-input';
+  await page.$eval(qa1, (el) => { el.value = ''; });
+  await page.type(qa1, 'Ship release fri p2 #Bug');
+  const previewShown = await waitFor(() => {
+    const p = document.querySelector('.column:nth-child(1) .qa-preview');
+    return p && !p.hidden && p.querySelector('.qa-due') && p.querySelector('.qa-prio') && p.querySelector('.qa-label');
+  }, 3000, 'smart capture preview chips');
+  check('smart capture shows live preview chips', previewShown);
+  const previewText = await page.$eval('.column:nth-child(1) .qa-preview', el => el.textContent);
+  check('preview shows due, priority and label', /DUE /.test(previewText) && /HIGH/.test(previewText) && /#Bug/.test(previewText));
+
+  await page.keyboard.press('Enter');
+  count = await waitCount('.column:nth-child(1) .card', 7) ? 7 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  check('smart capture adds card', count === 7);
+  const smartCard = await page.$$eval('.column:nth-child(1) .card', els => {
+    const el = els[els.length - 1];
+    return {
+      title: el.querySelector('.card-title') ? el.querySelector('.card-title').textContent.trim() : '',
+      due: !!el.querySelector('.chip-static.due'),
+      high: !!el.querySelector('.chip-static.priority.p-high'),
+      label: Array.prototype.some.call(el.querySelectorAll('.chip-static'), c => c.textContent.trim() === 'Bug'),
+      previewHidden: (() => {
+        const p = el.closest('.column').querySelector('.qa-preview');
+        return !p || p.hidden;
+      })()
+    };
+  });
+  check('smart capture strips tokens from the title', smartCard.title === 'Ship release');
+  check('smart capture sets due, priority and label', smartCard.due && smartCard.high && smartCard.label);
+  check('preview hides after commit', smartCard.previewHidden);
+
+  await blur();
+  await pressUndo();
+  count = await waitCount('.column:nth-child(1) .card', 6) ? 6 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  check('smart capture undoes atomically', count === 6);
+  await pressRedo();
+  count = await waitCount('.column:nth-child(1) .card', 7) ? 7 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  check('smart capture redoes atomically', count === 7);
+
+  // Plain prose: no preview chips, no fields, untouched title
+  await page.$eval(qa1, (el) => { el.value = ''; });
+  await page.type(qa1, 'call mom about dinner');
+  const noPreview = await page.evaluate(() => {
+    const p = document.querySelector('.column:nth-child(1) .qa-preview');
+    return !p || p.hidden || p.textContent.trim() === '';
+  });
+  check('plain prose shows no capture preview', noPreview);
+  await page.keyboard.press('Enter');
+  count = await waitCount('.column:nth-child(1) .card', 8) ? 8 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  const plainCard = await page.$$eval('.column:nth-child(1) .card', els => {
+    const el = els[els.length - 1];
+    return {
+      title: el.querySelector('.card-title') ? el.querySelector('.card-title').textContent.trim() : '',
+      due: !!el.querySelector('.chip-static.due')
+    };
+  });
+  check('plain prose card keeps full title and no due', plainCard.title === 'call mom about dinner' && !plainCard.due);
+
+  // ---- Type-to-snooze in the card editor ----
+  await page.$eval(qa1, (el) => { el.value = ''; });
+  await page.type(qa1, 'Snooze target tomorrow');
+  await page.keyboard.press('Enter');
+  count = await waitCount('.column:nth-child(1) .card', 9) ? 9 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  check('snooze target card created', count === 9);
+
+  await cardAction(1, 9, 'edit-card');
+  await waitFor(() => !!document.querySelector('#cf-due'), 3000, 'snooze editor opens');
+  const dueBefore = await page.$eval('#cf-due', el => el.value);
+  check('snooze editor preloaded the due date', dueBefore.length === 10);
+  await page.type('#cf-snooze', 'snooze 3d');
+  const snoozeShown = await waitFor(() => {
+    const p = document.querySelector('.snooze-preview');
+    return p && !p.hidden && p.textContent.indexOf('\u2192') !== -1;
+  }, 3000, 'snooze preview chip');
+  check('snooze shows live preview chip', snoozeShown);
+  await page.keyboard.press('Enter'); // apply without submitting the form
+  const dueAfter = await page.$eval('#cf-due', el => el.value);
+  const expectedAfter = await page.evaluate((before) => {
+    const d = new Date(before + 'T12:00:00');
+    d.setDate(d.getDate() + 3);
+    return d.toISOString().slice(0, 10);
+  }, dueBefore);
+  check('snooze reschedules due by 3 days', dueAfter === expectedAfter);
+  check('snooze input clears after apply', (await page.$eval('#cf-snooze', el => el.value)) === '');
+  await clickByText('.modal-actions .btn', 'Save');
+  await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'snooze editor closes');
+  const snoozedChip = await page.$$eval('.column:nth-child(1) .card', els => {
+    const last = els[els.length - 1];
+    return last.querySelectorAll('.chip-static.due').length;
+  });
+  check('card renders the rescheduled due chip', snoozedChip === 1);
+  await blur();
+  await pressUndo();
+  const undoneDue = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    const cards = board.columns[0].cards;
+    return cards[cards.length - 1].due;
+  });
+  check('undo reverts the snoozed due date', undoneDue === dueBefore);
+
+  // Restore the board for the downstream sections: undo the snooze target,
+  // prose and smart-capture creations (one history entry each).
+  await blur();
+  await pressUndo();
+  await pressUndo();
+  await pressUndo();
+  count = await waitCount('.column:nth-child(1) .card', 6) ? 6 : await page.$$eval('.column:nth-child(1) .card', els => els.length);
+  check('smart-capture block restores the original card count', count === 6);
+
   // ---- Card editor: due date + checklist + duplicate + template ----
   await cardAction(2, 1, 'edit-card');
   await waitFor(() => !!document.querySelector('#cf-due'), 3000, 'editor opens');
