@@ -2103,6 +2103,22 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const mirrorAfter = await page.evaluate(() => localStorage.getItem('kanban.mirror.v1'));
   check('read-only tab cannot create snapshots', backupsAfter === backupsBefore && mirrorAfter === mirrorBefore);
   await tab2.keyboard.press('Escape');
+
+  // Lease handover without the owner's knowledge: another tab replaces the
+  // claim while this tab still believes it is the owner (a storage event
+  // never fires in the writer's own tab). A save attempt must be dropped at
+  // the authoritative canWrite() boundary — the mirror must not change.
+  const leaseLoss = await page.evaluate(async () => {
+    localStorage.setItem('kanban.owner.v1', JSON.stringify({ id: 'tab-foreign', ts: Date.now() }));
+    const stillBelievesOwner = KB.MultiTab.readOnly() === false;
+    KB.State.addCard(KB.State.activeBoard().columns[0].id, { title: 'Lease-loss probe' });
+    await new Promise((r) => setTimeout(r, 60));
+    const mirrorUnchanged = !JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload.boards
+      .some(b => b.columns.some(c => c.cards.some(x => x.title === 'Lease-loss probe')));
+    return { stillBelievesOwner, mirrorUnchanged, demoted: KB.MultiTab.readOnly() === true };
+  });
+  check('former owner cannot write after losing the lease', leaseLoss.stillBelievesOwner && leaseLoss.mirrorUnchanged && leaseLoss.demoted);
+
   // Takeover: the second tab claims the lock, reloads, and becomes the editor.
   await tab2.evaluate(() => { document.querySelector('.mt-takeover').click(); });
   await tab2.waitForFunction(() => document.documentElement.dataset.ready === '1' && KB.MultiTab.readOnly() === false, { timeout: 8000 });
@@ -2112,12 +2128,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     return window.KB && KB.MultiTab.readOnly() === true && !!document.querySelector('.multitab-banner');
   }, 6000, 'first tab demotes on takeover');
   check('first tab demotes on takeover', await page.evaluate(() => KB.MultiTab.readOnly() === true));
-  // Closing the new owner lets the first tab claim the lock again. The stale
-  // window is 15s by design, so the test expires the lease deterministically
-  // instead of sleeping: remove the owner claim; the first tab's check loop
-  // promotes it and reloads fresh within ~1s.
+  // Closing the new owner releases the lease: pagehide removes the claim and
+  // broadcasts owner-left, and the storage event reaches the first tab
+  // immediately — no 15s stale-window wait. The first tab promotes and
+  // reloads fresh.
   await tab2.close();
-  await page.evaluate(() => localStorage.removeItem('kanban.owner.v1'));
   await waitFor(() => {
     return window.KB && KB.MultiTab.readOnly() === false && !document.querySelector('.multitab-banner');
   }, 6000, 'first tab resumes editing');

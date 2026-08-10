@@ -15,15 +15,23 @@
   // otherwise every page load inside the stale window would demote itself,
   // wait for the claim to expire, and reload again — a reload loop.
   //
-  // BroadcastChannel makes takeover/leave instant; the stale-claim timer
-  // covers the owner closing without notice. Everything degrades to a
-  // harmless no-op when storage or the channel is unavailable (file://).
+  // The write boundary is AUTHORITATIVE, not a cached flag: canWrite()
+  // re-checks the live claim synchronously before any persistence, so a
+  // suspended former owner that has not yet run its demotion check cannot
+  // write stale state or overwrite the new owner's claim. localStorage
+  // 'storage' events, BroadcastChannel messages, visibility changes and the
+  // closing tab's pagehide all push demotion/promotion immediately; the
+  // stale-claim timer (STALE_MS) remains only as the crash fallback.
+  // Everything degrades to a harmless no-op when storage or the channel is
+  // unavailable (file://).
 
   var OWNER_KEY = 'kanban.owner.v1';
   // Long enough that a briefly hidden owner is not evicted (browsers throttle
   // hidden-tab timers), short enough that a dead owner's lock is retaken
   // promptly. The claim is also refreshed the moment the tab hides, so the
-  // window measures real idle time, not throttled timer drift.
+  // window measures real idle time, not throttled timer drift. Graceful
+  // handovers (pagehide, owner-left broadcast) release the lease instantly,
+  // so this window only matters for crashes.
   var STALE_MS = 15000;
   var BEAT_MS = 1200;
   var CHECK_MS = 1000;
@@ -78,6 +86,30 @@
     return Boolean(claim && now() - claim.ts < STALE_MS);
   }
 
+  // The lease belongs to THIS tab, right now.
+  function ownsLease() {
+    var claim = readClaim();
+    return claimIsFresh(claim) && claim.id === tabId;
+  }
+
+  // Authoritative write gate. Every persistence path must call this: a
+  // cached readOnly flag can be stale for up to a beat after a handover.
+  function canWrite() {
+    if (readOnly || !ownsLease()) {
+      setReadOnly(true);
+      return false;
+    }
+    return true;
+  }
+
+  function broadcastTakeover() {
+    if (channel) {
+      // A channel closed by a torn-down page throws on postMessage; the
+      // claim in localStorage is the authoritative takeover either way.
+      try { channel.postMessage({ type: 'takeover', id: tabId }); } catch (err) {}
+    }
+  }
+
   function renderBanner() {
     if (readOnly) {
       if (banner) return;
@@ -99,11 +131,7 @@
         // otherwise make this tab boot read-only too (both tabs waiting out
         // the lease). The stale window covers the residual race either way.
         writeClaim();
-        if (channel) {
-          // A channel closed by a torn-down page throws on postMessage; the
-          // claim in localStorage is the authoritative takeover either way.
-          try { channel.postMessage({ type: 'takeover', id: tabId }); } catch (err) {}
-        }
+        broadcastTakeover();
         setTimeout(function () { location.reload(); }, 250);
       });
       banner.appendChild(msg);
@@ -125,31 +153,42 @@
     renderBanner();
   }
 
+  // Take the lease and reload fresh state (never save the stale in-memory
+  // state over the owner's last writes).
+  function takeOver() {
+    writeClaim();
+    broadcastTakeover();
+    setReadOnly(false);
+    location.reload();
+  }
+
   function onMessage(e) {
     var data = e.data || {};
     if (!data || data.id === tabId) return;
     if (data.type === 'takeover') {
       // Another tab is taking over: demote without touching the claim.
       setReadOnly(true);
+    } else if (data.type === 'owner-left' && readOnly) {
+      // The owner closed cleanly — take over immediately instead of waiting
+      // out the stale window.
+      takeOver();
     }
   }
 
   function check() {
-    var claim = readClaim();
     if (readOnly) {
+      var claim = readClaim();
       if (!claimIsFresh(claim)) {
-        // The owner left or crashed. Take the lock and reload so the
-        // in-memory state is never stale relative to the owner's last writes.
-        writeClaim();
-        setReadOnly(false);
-        location.reload();
+        // The owner left or crashed (no owner-left message arrived). Take
+        // the lock and reload so the in-memory state is never stale relative
+        // to the owner's last writes.
+        takeOver();
       }
       return;
     }
-    if (claimIsFresh(claim) && claim.id !== tabId) {
-      // Someone else took over while we were idle.
-      setReadOnly(true);
-    }
+    // Not read-only: verify the lease still belongs to us. A handover that
+    // bypassed the storage/broadcast listeners (rare) demotes here.
+    if (!ownsLease()) setReadOnly(true);
   }
 
   function init() {
@@ -169,18 +208,54 @@
       }
     }
     setInterval(function () {
-      if (!readOnly) writeClaim();
+      // Renew only while the lease is genuinely ours; a suspended former
+      // owner must never overwrite the new owner's claim.
+      if (ownsLease()) writeClaim();
+      else if (!readOnly) setReadOnly(true);
     }, BEAT_MS);
     setInterval(check, CHECK_MS);
-    // Refresh the claim the instant the tab hides: a throttled hidden timer
-    // must not let a live owner's lease expire mid-idle.
+    // Storage events fire in every OTHER tab when the claim changes — the
+    // instant handover signal when a tab takes over, releases, or dies.
+    window.addEventListener('storage', function (e) {
+      if (e.key !== OWNER_KEY || e.storageArea !== localStorage) return;
+      var latest = readClaim();
+      if (readOnly && !claimIsFresh(latest)) {
+        // Owner released or crashed — take over now.
+        takeOver();
+      } else if (!readOnly && claimIsFresh(latest) && latest.id !== tabId) {
+        // The lease moved to another tab — demote immediately.
+        setReadOnly(true);
+      }
+    });
+    // Visibility: becoming visible re-checks ownership BEFORE the app's
+    // visibility handler processes recurrences (which can save state), and
+    // becoming hidden refreshes the claim once so throttled timers do not
+    // expire a live owner's lease.
     document.addEventListener('visibilitychange', function () {
-      if (!readOnly && document.visibilityState === 'hidden') writeClaim();
+      if (document.visibilityState === 'visible') {
+        if (ownsLease()) writeClaim();
+        else setReadOnly(true);
+      } else if (ownsLease()) {
+        writeClaim();
+      }
+    });
+    // Graceful close: release the lease (unless the page enters the
+    // back-forward cache and may resume) and tell surviving tabs instantly.
+    window.addEventListener('pagehide', function (e) {
+      if (e && e.persisted) return;
+      if (ownsLease()) {
+        try { localStorage.removeItem(OWNER_KEY); } catch (err) {}
+        if (channel) {
+          try { channel.postMessage({ type: 'owner-left', id: tabId }); } catch (err) {}
+        }
+      }
     });
   }
 
   KB.MultiTab = {
     init: init,
-    readOnly: function () { return readOnly; }
+    readOnly: function () { return readOnly; },
+    ownsLease: ownsLease,
+    canWrite: canWrite
   };
 })(window.KB = window.KB || {});
