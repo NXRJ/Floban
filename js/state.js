@@ -99,6 +99,7 @@
       inbox: { items: [] },
       lenses: [],
       recurrences: [],
+      dayplans: {},
       boards: [board]
     };
   }

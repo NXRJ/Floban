@@ -2416,3 +2416,289 @@ input[type="search"]::-webkit-search-cancel-button {
 .snapshot-reason { font-family: var(--font-body); font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .snapshot-time { font-family: var(--font-chrome); font-size: 9px; letter-spacing: 1px; color: var(--muted); }
 .snapshot-empty { color: var(--muted); }
+
+/* ---------- Date Desk (calendar workspace) ---------- */
+
+.cal-label {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.cal-head {
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  padding: 2px 0;
+}
+
+.cal-day {
+  position: relative;
+  min-height: 96px;
+  border: 2px solid var(--border);
+  background: var(--surface-2);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.cal-day:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 2px 2px 0 var(--accent-soft);
+}
+
+.cal-day.out {
+  background: var(--surface);
+  opacity: 0.55;
+}
+
+.cal-day.today {
+  border-color: var(--accent);
+  box-shadow: 2px 2px 0 var(--accent-soft);
+}
+
+.cal-day.drop-target {
+  border-color: var(--primary);
+  background: var(--surface-3);
+}
+
+.cal-stamp {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.cal-day.today .cal-stamp {
+  color: var(--accent);
+}
+
+.cal-chip {
+  font-size: 13px;
+  line-height: 1.15;
+  text-align: left;
+  padding: 2px 4px;
+  border: 2px solid var(--border-strong);
+  background: var(--surface-3);
+  color: var(--text);
+  cursor: grab;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.cal-chip.done {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.cal-chip.dragging {
+  opacity: 0.4;
+}
+
+.cal-chip:hover {
+  border-color: var(--accent);
+}
+
+.cal-overdue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px;
+  margin-top: 8px;
+  border: 2px dashed var(--danger);
+  background: var(--surface-2);
+}
+
+.cal-overdue-label {
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: var(--danger);
+}
+
+/* ---------- Day Sheet (Start My Day ritual) ---------- */
+
+.day-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border: 2px dashed var(--accent);
+  background: var(--surface-2);
+  color: var(--text);
+  letter-spacing: 1px;
+}
+
+.day-sheet {
+  max-width: 560px;
+}
+
+.day-heading {
+  margin: 0 0 4px;
+}
+
+.day-sub {
+  color: var(--muted);
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+
+.day-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.day-candidate,
+.day-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 2px solid var(--border);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.day-candidate:hover {
+  border-color: var(--accent);
+}
+
+.day-candidate.picked {
+  border-color: var(--primary);
+  box-shadow: 2px 2px 0 var(--accent-soft);
+}
+
+.day-key {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--border-strong);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.day-candidate-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.day-reason {
+  font-size: 13px;
+  padding: 2px 6px;
+}
+
+.day-pick {
+  flex: none;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.day-progress {
+  text-align: right;
+  color: var(--muted);
+  font-size: 14px;
+  letter-spacing: 1px;
+  margin: 4px 0;
+}
+
+.day-box {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--border-strong);
+  background: var(--input);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.day-box.checked {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+
+.day-row.done {
+  opacity: 0.6;
+}
+
+.day-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.day-board {
+  flex: none;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.day-status {
+  font-size: 13px;
+  padding: 2px 6px;
+}
+
+.day-roll-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.day-roll-btn {
+  font-size: 13px;
+  padding: 2px 6px;
+}
+
+.day-roll-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .cal-day {
+    min-height: 64px;
+    padding: 2px;
+  }
+
+  .cal-chip {
+    font-size: 11px;
+    padding: 1px 2px;
+  }
+
+  .cal-head {
+    font-size: 10px;
+  }
+
+  .cal-overdue {
+    padding: 4px;
+  }
+}

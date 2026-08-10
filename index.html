@@ -66,6 +66,7 @@
       <button type="button" class="ws-btn" data-workspace="mydesk">My Desk</button>
       <button type="button" class="ws-btn" data-workspace="inbox">Inbox <span id="inbox-badge" class="ws-badge" hidden></span></button>
       <button type="button" class="ws-btn" data-workspace="review">Review</button>
+      <button type="button" class="ws-btn" data-workspace="calendar">Calendar</button>
     </nav>
     <button id="board-switch" class="btn" type="button" title="Switch board">
       <span class="btn-icon"></span><span id="board-name" class="board-name"></span><span class="btn-caret"></span>
@@ -145,11 +146,15 @@
     <button type="button" class="mt-btn" data-workspace="review">
       <span class="mt-icon"></span><span class="mt-label">Review</span>
     </button>
+    <button type="button" class="mt-btn" data-workspace="calendar">
+      <span class="mt-icon"></span><span class="mt-label">Cal</span>
+    </button>
   </nav>
 
   <section id="ws-mydesk" class="workspace" aria-label="My Desk" hidden></section>
   <section id="ws-inbox" class="workspace" aria-label="Inbox" hidden></section>
   <section id="ws-review" class="workspace" aria-label="Review" hidden></section>
+  <section id="ws-calendar" class="workspace" aria-label="Calendar" hidden></section>
 
   <div id="archive-backdrop" class="archive-backdrop"></div>
   <aside id="archive-panel" class="archive-panel" aria-label="Archive"></aside>
@@ -162,6 +167,8 @@
 
   <script src="js/core/date.js"></script>
   <script src="js/core/nlparse.js"></script>
+  <script src="js/core/calendar.js"></script>
+  <script src="js/core/dayplan.js"></script>
   <script src="js/core/model.js"></script>
   <script src="js/core/migration.js"></script>
   <script src="js/core/lifecycle.js"></script>
@@ -195,6 +202,7 @@
   <script src="js/modals/recurrence.js"></script>
   <script src="js/modals/dialogs.js"></script>
   <script src="js/modals/triage.js"></script>
+  <script src="js/modals/day.js"></script>
   <script src="js/moveto.js"></script>
   <script src="js/selection.js"></script>
   <script src="js/workspaces.js"></script>

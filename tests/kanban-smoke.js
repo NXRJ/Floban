@@ -2328,6 +2328,177 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     return window.KB && KB.MultiTab.readOnly() === false && !document.querySelector('.multitab-banner');
   }, 6000, 'main tab resumes editing after the storage-gate tab closes');
 
+  // ---- Date Desk: calendar workspace ----
+  await page.setViewport({ width: 1280, height: 800 });
+  await page.evaluate(() => {
+    // Neutralize any policies the earlier sections piled onto this board so
+    // the seed cards are guaranteed to land.
+    const board = KB.State.activeBoard();
+    board.columns.forEach((col) => {
+      col.wipLimit = 0;
+      col.policy = col.policy || {};
+      col.policy.wipMode = 'off';
+      col.policy.entryCriteria = '';
+      col.policy.exitCriteria = '';
+      col.policy.defaultLabelIds = [];
+      col.policy.defaultAssignee = '';
+    });
+    const col = board.columns[0];
+    KB.State.addCard(col.id, { title: 'Cal past due', due: '2020-01-15' });
+    KB.State.addCard(col.id, { title: 'Cal today', due: KB.Core.Date.isoDate(new Date()) });
+    KB.State.addCard(col.id, { title: 'Cal plus three', due: KB.Core.Date.addDaysISO(new Date(), 3) });
+    KB.State.addCard(col.id, { title: 'Cal no due' });
+    KB.App.refresh();
+  });
+  await page.evaluate(() => KB.Workspaces.set('calendar'));
+  await waitFor(() => document.querySelectorAll('.cal-day').length === 42, 3000, 'calendar grid renders');
+  check('calendar renders a 42-cell month grid', await page.$$eval('.cal-day', els => els.length) === 42);
+  check('calendar marks today', await page.$$eval('.cal-day.today', els => els.length) === 1);
+  check('overdue strip lists the past-due card', await page.$$eval('.cal-overdue .cal-chip', els => els.some(e => e.textContent.includes('Cal past due'))));
+  const calCells = await page.$$eval('.cal-day', els => {
+    const todayEl = els.find(e => e.classList.contains('today'));
+    const todayISO = todayEl.dataset.date;
+    const plus3 = new Date(new Date(todayISO + 'T12:00:00').getTime() + 3 * 86400000).toISOString().slice(0, 10);
+    const todayCell = els.find(e => e.dataset.date === todayISO);
+    const plus3Cell = els.find(e => e.dataset.date === plus3);
+    return {
+      plus3ISO: plus3,
+      todayHas: todayCell ? Array.prototype.map.call(todayCell.querySelectorAll('.cal-chip'), c => c.textContent) : [],
+      plus3Has: plus3Cell ? Array.prototype.map.call(plus3Cell.querySelectorAll('.cal-chip'), c => c.textContent) : [],
+      noDueVisible: els.some(e => Array.prototype.some.call(e.querySelectorAll('.cal-chip'), c => c.textContent === 'Cal no due'))
+    };
+  });
+  check('today cell holds the due-today card', calCells.todayHas.includes('Cal today'));
+  check('+3 day cell holds the future card', calCells.plus3Has.includes('Cal plus three'));
+  check('cards without due dates are excluded', !calCells.noDueVisible);
+
+  // Drag-to-reschedule via synthetic DragEvents (deterministic in headless).
+  await page.evaluate(() => {
+    const chip = Array.prototype.find.call(document.querySelectorAll('.cal-chip'), c => c.textContent.includes('Cal plus three'));
+    const target = document.querySelector('.cal-day.today');
+    const dt = new window.DataTransfer();
+    chip.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+    target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    chip.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+  });
+  await sleep(150);
+  const draggedDue = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    const card = board.columns[0].cards.find(c => c.title === 'Cal plus three');
+    return card ? card.due : null;
+  });
+  const todayISO = await page.evaluate(() => KB.Core.Date.isoDate(new Date()));
+  check('drag reschedules the card to today', draggedDue === todayISO);
+  await blur();
+  await pressUndo();
+  const undidDrag = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.id === b.activeBoardId);
+    return board.columns[0].cards.find(c => c.title === 'Cal plus three').due;
+  });
+  check('one undo restores the original due date', undidDrag === calCells.plus3ISO);
+
+  // Keyboard: arrows walk the grid, Enter opens the day's first card.
+  // (Trusted-key focus delivery to the custom cell is unreliable in headless;
+  // the handler itself is exercised via synthetic dispatch, same code path.)
+  await page.evaluate(() => { document.querySelector('.cal-day.today').focus(); });
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowLeft');
+  const focusAfterArrows = await page.evaluate(() => document.activeElement && document.activeElement.classList.contains('cal-day'));
+  check('calendar arrows move the focused day', focusAfterArrows === true);
+  await page.evaluate(() => {
+    const cell = document.querySelector('.cal-day.today');
+    cell.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  });
+  await waitFor(() => !!document.querySelector('#cf-title'), 3000, 'calendar keyboard opens editor');
+  check('calendar Enter opens the focused day\'s card', (await page.$eval('#cf-title', el => el.value.trim())) !== '');
+  await page.keyboard.press('Escape');
+
+  // ---- Day Sheet: Start My Day ritual ----
+  await page.evaluate(() => {
+    KB.State.addBoard('Day Sheet Test');
+    KB.State.addColumn('To Do', false, true, 'queue');
+    KB.State.addColumn('In Progress', false, true, 'active');
+    KB.State.addColumn('Done', true, true, 'done');
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    KB.State.addCard(col.id, { title: 'Day overdue', due: '2020-01-15' });
+    KB.State.addCard(col.id, { title: 'Day today', due: KB.Core.Date.isoDate(new Date()) });
+    KB.State.addCard(col.id, { title: 'Day no due' });
+    KB.Workspaces.set('board');
+    KB.App.refresh();
+  });
+  await waitFor(() => !!document.querySelector('.day-banner'), 3000, 'start-my-day banner');
+  check('unplanned day shows the start-my-day banner', (await page.$eval('.day-banner', el => el.textContent)).includes('START MY DAY'));
+
+  await page.evaluate(() => KB.Modal.daySheet());
+  await waitFor(() => document.querySelectorAll('.day-candidate').length >= 2, 3000, 'pick band renders');
+  check('pick band ranks candidates', await page.$$eval('.day-candidate', els => els.length) >= 2);
+  check('overdue candidate leads the pick band', /^OVERDUE/.test(await page.$eval('.day-candidate .day-reason', el => el.textContent)));
+  // Digit and Enter keys go through the modal's keydown handler; dispatch
+  // synthetically on the sheet form (trusted-key focus delivery to the
+  // modal is unreliable in headless, the handler itself is the target).
+  const pressDayKey = (key) => page.evaluate((k) => {
+    document.querySelector('.day-sheet').dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  }, key);
+  await pressDayKey('1');
+  await pressDayKey('2');
+  await waitFor(() => {
+    const p = document.querySelector('.day-progress');
+    return p && p.textContent === '2 of 3 SLOTS';
+  }, 3000, 'slot progress');
+  check('picking fills slots from the keyboard', (await page.$eval('.day-progress', el => el.textContent)) === '2 of 3 SLOTS');
+  await pressDayKey('Enter');
+  await waitFor(() => document.querySelectorAll('.day-row').length === 2, 3000, 'stamped sheet');
+  check('stamp commits the picked commitments', await page.$$eval('.day-row', els => els.length) === 2);
+  await page.keyboard.press('Escape');
+  await waitFor(() => !document.querySelector('.day-banner'), 3000, 'banner hides after stamp');
+  check('banner hides once the day is stamped', (await page.$('.day-banner')) === null);
+
+  await page.reload({ waitUntil: 'load' });
+  await waitBoard();
+  check('day sheet persists across reloads', await page.evaluate(() => KB.State.daySheetFor(KB.Core.Date.isoDate(new Date())) !== null));
+
+  // Complete one commitment through the sheet, then roll the rest.
+  await page.evaluate(() => KB.Modal.daySheet());
+  await waitFor(() => document.querySelectorAll('.day-row .day-box').length === 2, 3000, 'sheet reopens');
+  await page.evaluate(() => { document.querySelectorAll('.day-row .day-box')[1].click(); }); // complete "Day today"
+  await waitFor(() => document.querySelectorAll('.day-row.done').length === 1, 3000, 'sheet completion');
+  check('sheet completion moves the card to done', await page.$$eval('.day-row.done', els => els.length) === 1);
+  await page.evaluate(() => {
+    Array.prototype.find.call(document.querySelectorAll('.modal-actions .btn'), b => b.textContent.includes('END DAY')).click();
+  });
+  await waitFor(() => document.querySelectorAll('.roll-row').length === 1, 3000, 'roll band');
+  check('roll band lists only unfinished commitments', await page.$$eval('.roll-row', els => els.length) === 1);
+  await page.evaluate(() => {
+    document.querySelector('.day-sheet').dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true, cancelable: true }));
+  }); // push +1d on the focused row
+  await page.evaluate(() => {
+    Array.prototype.find.call(document.querySelectorAll('.modal-actions .btn'), b => b.textContent.includes('END DAY')).click();
+  });
+  await waitFor(() => !document.querySelector('.modal-panel'), 3000, 'roll applied');
+  const rollState = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.name === 'Day Sheet Test');
+    const card = board.columns[0].cards.find(c => c.title === 'Day overdue');
+    const plan = b.dayplans[KB.Core.Date.isoDate(new Date())];
+    const entry = plan ? plan.commitments.find(c => c.cardId === card.id) : null;
+    return { due: card ? card.due : null, rolled: plan ? plan.rolledAt !== null : false, status: entry ? entry.status : null };
+  });
+  check('roll pushes the unfinished commitment by one day', rollState.due === '2020-01-16' && rollState.rolled && rollState.status === 'pushed');
+  await blur();
+  await pressUndo();
+  const undidRoll = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    const board = b.boards.find(x => x.name === 'Day Sheet Test');
+    const card = board.columns[0].cards.find(c => c.title === 'Day overdue');
+    const plan = b.dayplans[KB.Core.Date.isoDate(new Date())];
+    return { due: card ? card.due : null, rolled: plan ? plan.rolledAt : 'missing' };
+  });
+  check('one undo reverts the entire roll', undidRoll.due === '2020-01-15' && undidRoll.rolled === null);
+
   // ---- Reduced motion: palette still opens without animation ----
   const reducedPage = await browser.newPage();
   await reducedPage.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);

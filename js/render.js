@@ -410,6 +410,25 @@
       el.appendChild(columnEl(column, filters));
     });
     boardPager();
+
+    // Soft nudge: when today's sheet is not stamped, offer the ritual. Lives
+    // in board-area (outside #board) so the column flex/scroll layout — and
+    // every .column:nth-child() selector — stays untouched.
+    var area = KB.el('board-area');
+    var oldBanner = area.querySelector('.day-banner');
+    if (oldBanner) oldBanner.remove();
+    if (KB.Modal.daySheet && !KB.State.daySheetFor(KB.Core.Date.isoDate(new Date()))) {
+      var banner = h('div', { class: 'day-banner' });
+      var bannerText = h('span');
+      bannerText.textContent = 'TODAY IS UNPLANNED';
+      var bannerBtn = h('button', { type: 'button', class: 'btn primary sm' });
+      bannerBtn.textContent = 'START MY DAY';
+      bannerBtn.addEventListener('click', function () { KB.Modal.daySheet(); });
+      banner.appendChild(bannerText);
+      banner.appendChild(h('span', { class: 'spacer' }));
+      banner.appendChild(bannerBtn);
+      area.insertBefore(banner, area.firstChild);
+    }
   }
 
   function isMobilePager() {
