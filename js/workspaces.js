@@ -33,7 +33,7 @@
   }
 
   function isValidWorkspace(name) {
-    return ['board', 'mydesk', 'inbox', 'review'].indexOf(name) !== -1;
+    return ['board', 'mydesk', 'inbox', 'review', 'calendar'].indexOf(name) !== -1;
   }
 
   function current() {
@@ -475,12 +475,200 @@
     }
   }
 
+  // ---------------- Date Desk (calendar) ----------------
+
+  var calMonth = null; // 'YYYY-MM'; lazily set to the current month
+
+  function calCurrentMonthKey() {
+    if (!calMonth) {
+      var d = new Date();
+      calMonth = KB.Core.Calendar.monthKeyOf(d.getFullYear(), d.getMonth());
+    }
+    return calMonth;
+  }
+
+  function findCardRef(boardId, columnId, cardId) {
+    var state = KB.State.data();
+    var board = state.boards.find(function (b) { return b.id === boardId; });
+    if (!board) return null;
+    var column = board.columns.find(function (c) { return c.id === columnId; });
+    if (!column) return null;
+    return column.cards.find(function (c) { return c.id === cardId; }) || null;
+  }
+
+  function calCardColor(board, card) {
+    var labelId = Array.isArray(card.labels) ? card.labels[0] : null;
+    if (!labelId) return null;
+    var label = board.labels.find(function (l) { return l.id === labelId; });
+    return label ? label.color : null;
+  }
+
+  function calChip(ref) {
+    var chip = h('button', {
+      type: 'button',
+      class: 'cal-chip' + (ref.completedAt ? ' done' : ''),
+      draggable: 'true',
+      'data-id': ref.id,
+      'data-board': ref.boardId,
+      'data-column': ref.columnId,
+      'data-due': ref.due,
+      title: (ref.completedAt ? 'Completed \u00B7 ' : '') + ref.title + ' \u00B7 drag to reschedule'
+    });
+    chip.textContent = ref.title;
+    if (ref.color) chip.style.borderColor = ref.color;
+    chip.addEventListener('click', function () {
+      var card = findCardRef(ref.boardId, ref.columnId, ref.id);
+      if (card) KB.Modal.cardEditor(ref.columnId, card, null, ref.boardId);
+    });
+    chip.addEventListener('dragstart', function (e) {
+      e.dataTransfer.setData('text/plain', JSON.stringify({
+        boardId: ref.boardId, columnId: ref.columnId, cardId: ref.id, fromDue: ref.due
+      }));
+      e.dataTransfer.effectAllowed = 'move';
+      chip.classList.add('dragging');
+    });
+    chip.addEventListener('dragend', function () {
+      chip.classList.remove('dragging');
+    });
+    return chip;
+  }
+
+  function renderCalendar() {
+    var el = KB.el('ws-calendar');
+    el.innerHTML = '';
+    var state = KB.State.data();
+    var cards = [];
+    (state.boards || []).forEach(function (board) {
+      (board.columns || []).forEach(function (column) {
+        (column.cards || []).forEach(function (card) {
+          cards.push({
+            id: card.id, boardId: board.id, columnId: column.id, title: card.title || '',
+            color: calCardColor(board, card), priority: card.priority || 'none',
+            due: card.due || '', completedAt: card.completedAt || null
+          });
+        });
+      });
+    });
+    var grid = KB.Core.Calendar.calendarGrid(calCurrentMonthKey(), cards, Date.now());
+
+    var head = h('div', { class: 'ws-head' });
+    var title = h('h2', { class: 'desk-section-title' });
+    title.textContent = 'Date Desk';
+    head.appendChild(title);
+    var prev = h('button', { type: 'button', class: 'btn ghost sm', 'aria-label': 'Previous month' });
+    prev.textContent = '\u2039';
+    var next = h('button', { type: 'button', class: 'btn ghost sm', 'aria-label': 'Next month' });
+    next.textContent = '\u203A';
+    var label = h('span', { class: 'cal-label' });
+    label.textContent = grid.label;
+    var todayBtn = h('button', { type: 'button', class: 'btn ghost sm', 'aria-label': 'Jump to today' });
+    todayBtn.textContent = 'TODAY';
+    head.appendChild(prev);
+    head.appendChild(next);
+    head.appendChild(label);
+    head.appendChild(h('span', { class: 'spacer' }));
+    head.appendChild(todayBtn);
+    el.appendChild(head);
+
+    var refresh = function () { KB.App.refresh(); };
+    prev.addEventListener('click', function () {
+      calMonth = KB.Core.Calendar.shiftMonth(calCurrentMonthKey(), -1, Date.now());
+      refresh();
+    });
+    next.addEventListener('click', function () {
+      calMonth = KB.Core.Calendar.shiftMonth(calCurrentMonthKey(), 1, Date.now());
+      refresh();
+    });
+    todayBtn.addEventListener('click', function () {
+      var d = new Date();
+      calMonth = KB.Core.Calendar.monthKeyOf(d.getFullYear(), d.getMonth());
+      refresh();
+    });
+
+    if (grid.overdue.length > 0) {
+      var strip = h('div', { class: 'cal-overdue' });
+      var stripLabel = h('span', { class: 'cal-overdue-label' });
+      stripLabel.textContent = 'OVERDUE';
+      strip.appendChild(stripLabel);
+      grid.overdue.forEach(function (ref) { strip.appendChild(calChip(ref)); });
+      el.appendChild(strip);
+    }
+
+    var gridEl = h('div', { class: 'cal-grid' });
+    ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].forEach(function (d) {
+      var hd = h('div', { class: 'cal-head' });
+      hd.textContent = d;
+      gridEl.appendChild(hd);
+    });
+    grid.weeks.forEach(function (week) {
+      week.forEach(function (day) {
+        var cell = h('div', {
+          class: 'cal-day' + (day.inMonth ? '' : ' out') + (day.isToday ? ' today' : ''),
+          tabindex: day.inMonth ? 0 : -1,
+          'data-date': day.dateISO,
+          'aria-label': day.dateISO
+        });
+        var stamp = h('span', { class: 'cal-stamp' });
+        stamp.textContent = String(Number(day.dateISO.slice(8, 10)));
+        cell.appendChild(stamp);
+        day.cards.forEach(function (ref) { cell.appendChild(calChip(ref)); });
+        if (day.inMonth) {
+          cell.addEventListener('dragover', function (e) {
+            if (e.dataTransfer.types.indexOf('text/plain') !== -1) {
+              e.preventDefault();
+              cell.classList.add('drop-target');
+            }
+          });
+          cell.addEventListener('dragleave', function () { cell.classList.remove('drop-target'); });
+          cell.addEventListener('drop', function (e) {
+            e.preventDefault();
+            cell.classList.remove('drop-target');
+            var payload = null;
+            try { payload = JSON.parse(e.dataTransfer.getData('text/plain')); } catch (err) { return; }
+            if (!payload || !payload.cardId || !payload.columnId) return;
+            if (payload.fromDue === day.dateISO) return;
+            var moved = KB.State.updateCard(payload.columnId, payload.cardId, { due: day.dateISO });
+            if (moved) {
+              KB.UI.toast('Due moved to ' + KB.Dom.fmtShortDate(day.dateISO), 'success', 'Undo', KB.UI.undoAction);
+              refresh();
+            }
+          });
+        }
+        gridEl.appendChild(cell);
+      });
+    });
+    el.appendChild(gridEl);
+
+    // Keyboard: arrows walk the in-month cells, Enter opens the first card.
+    gridEl.addEventListener('keydown', function (e) {
+      var cells = Array.prototype.slice.call(gridEl.querySelectorAll('.cal-day:not(.out)'));
+      var index = cells.indexOf(document.activeElement);
+      if (index === -1) return;
+      var step = null;
+      if (e.key === 'ArrowRight') step = 1;
+      else if (e.key === 'ArrowLeft') step = -1;
+      else if (e.key === 'ArrowDown') step = 7;
+      else if (e.key === 'ArrowUp') step = -7;
+      if (step !== null) {
+        e.preventDefault();
+        var target = (index + step + cells.length) % cells.length;
+        cells[target].focus();
+        return;
+      }
+      if (e.key === 'Enter') {
+        var chip = cells[index].querySelector('.cal-chip');
+        if (chip) chip.click();
+      }
+    });
+  }
+
   function render() {
     var isBoard = workspace === 'board';
     KB.el('board-area').hidden = !isBoard;
     KB.el('ws-mydesk').hidden = workspace !== 'mydesk';
     KB.el('ws-inbox').hidden = workspace !== 'inbox';
     KB.el('ws-review').hidden = workspace !== 'review';
+    KB.el('ws-calendar').hidden = workspace !== 'calendar';
     document.querySelectorAll('.ws-btn').forEach(function (btn) {
       btn.classList.toggle('active', btn.dataset.workspace === workspace);
     });
@@ -492,6 +680,7 @@
     if (workspace === 'review') renderReview();
     else if (workspace === 'mydesk') renderMyDesk();
     else if (workspace === 'inbox') renderInbox();
+    else if (workspace === 'calendar') renderCalendar();
   }
 
   function openBoard() {

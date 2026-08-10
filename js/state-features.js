@@ -217,6 +217,81 @@
     })();
   }
 
+  // ---- Day Sheet (daily planning ritual) ----
+
+  function dayplans() {
+    return (KB.State.data().dayplans) || {};
+  }
+
+  function daySheetFor(dayISO) {
+    return KB.Core.DayPlan.sheetFor(dayplans(), dayISO);
+  }
+
+  function stampDay(dayISO, cardIds) {
+    return commit(function (current) {
+      var next = cloneState(current);
+      var plan = KB.Core.DayPlan.stampDay(dayISO, cardIds, now(), 3);
+      if (!next.dayplans) next.dayplans = {};
+      next.dayplans[dayISO] = plan;
+      return { changed: true, state: next, value: plan };
+    });
+  }
+
+  // Live cards flattened with their board/column context (dayplan core needs
+  // boardId+columnId to emit reschedule ops). Card ids are globally unique.
+  function allLiveCards(state) {
+    var out = [];
+    (state.boards || []).forEach(function (board) {
+      (board.columns || []).forEach(function (column) {
+        (column.cards || []).forEach(function (card) {
+          out.push({
+            boardId: board.id,
+            columnId: column.id,
+            cardId: card.id,
+            title: card.title || '',
+            due: card.due || '',
+            priority: card.priority || 'none',
+            completedAt: card.completedAt || null
+          });
+        });
+      });
+    });
+    return out;
+  }
+
+  // The entire evening roll is ONE transaction: due changes and archives go
+  // through the same Bulk machinery as multi-select actions, and the plan
+  // update rides along — one undo entry reverts the whole day's roll.
+  function applyDayRoll(dayISO, actions) {
+    return commit(function (current) {
+      var next = cloneState(current);
+      var plan = KB.Core.DayPlan.sheetFor(next.dayplans || {}, dayISO);
+      if (!plan) return noop(current, 'no-sheet');
+      var result = KB.Core.DayPlan.rollPlan(plan, actions, allLiveCards(next), now());
+
+      // Apply due changes grouped by their target value (Bulk applies one
+      // patch per call; chaining inside this single commit keeps it atomic).
+      var byValue = {};
+      result.ops.forEach(function (op) {
+        if (op.type !== 'due') return;
+        if (!byValue[op.due]) byValue[op.due] = [];
+        byValue[op.due].push({ boardId: op.boardId, columnId: op.columnId, cardId: op.cardId });
+      });
+      Object.keys(byValue).forEach(function (due) {
+        next = KB.Core.Bulk.bulkUpdate(next, byValue[due], { due: due }, deps()).state;
+      });
+
+      var archiveRefs = result.ops.filter(function (op) { return op.type === 'archive'; })
+        .map(function (op) { return { boardId: op.boardId, columnId: op.columnId, cardId: op.cardId }; });
+      if (archiveRefs.length > 0) {
+        next = KB.Core.Bulk.bulkArchive(next, archiveRefs, deps()).state;
+      }
+
+      next.dayplans[dayISO] = result.plan;
+      return { changed: true, state: next, value: result.plan };
+    });
+  }
+
   KB.State.processRecurrences = processRecurrences;
   KB.State.addRecurrence = addRecurrence;
   KB.State.updateRecurrence = updateRecurrence;
@@ -241,4 +316,8 @@
   KB.State.bulkSetLabels = bulkSetLabels;
   KB.State.bulkSetFlow = bulkSetFlow;
   KB.State.bulkArchive = bulkArchive;
+  KB.State.dayplans = dayplans;
+  KB.State.daySheetFor = daySheetFor;
+  KB.State.stampDay = stampDay;
+  KB.State.applyDayRoll = applyDayRoll;
 })(window.KB = window.KB || {});

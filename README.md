@@ -72,7 +72,7 @@ sheets replace hover-only menus. Desktop is untouched.
 
 ## Workspaces
 
-The header switches between four workspaces:
+The header switches between five workspaces:
 
 - **Board** — the classic board experience.
 - **My Desk** — a cross-board focus view with default sections (Blocked, Due
@@ -80,6 +80,12 @@ The header switches between four workspaces:
   saved **lenses** (saved ways of looking at original cards).
 - **Inbox** — global capture and triage (press `I` anywhere to capture).
 - **Review** — flow health and an actionable attention queue.
+- **Date Desk** — a month calendar of every card with a due date (all boards):
+  colour-labelled card chips in day cells, a dither-highlighted **overdue
+  strip**, drag a chip onto another day to reschedule (one undo step), arrows
+  walk the grid and Enter opens the day's first card. Press `T` to jump here.
+  Mobile renders the same grid; tapping a chip opens the card editor (with
+  type-to-snooze) instead of drag.
 
 Your current workspace is remembered across reloads.
 
@@ -305,6 +311,24 @@ Your current workspace is remembered across reloads.
   lens edits the original board card. Lenses can never be accidentally deleted
   (built-ins are code-defined), and deleting a board trims lens scopes safely.
 
+### Day Sheet ("Start My Day")
+- When today's sheet is unstamped, a dither-marked **START MY DAY** banner
+  appears on the board. It opens a bounded two-minute planning ritual: a
+  **Pick band** of at most 9 ranked candidates with reason chips (`CARRIED
+  OVER` from yesterday's sheet → `OVERDUE Nd` oldest first → `DUE TODAY P1`
+  by priority → top of the Review queue), press `1-9` to fill up to **3
+  slots**, Enter (or **STAMP DAY**) to commit.
+- The stamped sheet is the day: checkbox squares tick cards into the Done
+  column (through the normal placement pipeline — policies and lifecycle
+  apply), with a `n of 3 DONE` progress line. It persists per date in the
+  normal save path (IndexedDB + mirror + backups, included in exports).
+- **End the day** forces a decision on every unfinished commitment: `K`
+  keep (carries over to tomorrow's pick band), `P` push +1d, `D` drop the
+  due date, `X` archive — applied as **one atomic, undoable roll**. The
+  sheet is deliberately local, keyboard-first and bounded: the anti-bloat
+  guardrail made concrete (never a 50-item "Today" flood, no $200/yr
+  planner subscription needed).
+
 ### Backup & recovery
 - Application data lives in **IndexedDB** (primary). Every save also writes an
   atomic localStorage crash-mirror envelope (`kanban.mirror.v1`) so a tab that
@@ -348,6 +372,7 @@ shortcuts" lists them from the live registry.
 | Arrow keys / Home / End (move mode) | Choose destination |
 | Enter / Escape (move mode) | Commit / cancel move |
 | `Ctrl/Cmd+Enter` (card editor) | Save the card |
+| `T` | Open the Date Desk (calendar) |
 
 ## Code structure
 
@@ -360,6 +385,8 @@ that use them.
 | --- | --- | --- |
 | Core | `js/core/date.js` | Deterministic date logic: ISO formatting, day offsets, due-date classification, due-filter matching, card aging. No browser access. |
 | Core | `js/core/nlparse.js` | Natural-language capture grammar: deterministic parsing of due dates, priority and labels out of quick-add lines and snooze phrases, with token spans for live preview. No browser access. |
+| Core | `js/core/calendar.js` | Calendar projection: a pure function of (monthKey, cards, now) producing the 6×7 month grid, today/overdue classification and the overdue strip. No browser access. |
+| Core | `js/core/dayplan.js` | Day Sheet rules: candidate ranking (carry-over → overdue → due-today → Review), stamping (bounded slots, dedupe, order), and the end-of-day roll planner (keep/push/drop/archive ops as one atomic list). No browser access. |
 | Core | `js/core/model.js` | Factories for cards, columns, labels, boards, templates, inbox items, lenses and recurrences, with injectable `{ uid, now }` dependencies. |
 | Core | `js/core/migration.js` | Deterministic, idempotent, reference-independent normalization for **state version 3** (v1/v2/v3 loads, board imports, corrupt payloads, cross-board reference repair). |
 | Core | `js/core/lifecycle.js` | Card transitions: role-based `startedAt`/`completedAt`, capped transition log, flow-state periods, durations, cycle time and age. |
@@ -393,6 +420,7 @@ that use them.
 | Browser | `js/dom.js` | Tiny helpers: `h()` element builder, inline SVG pixel-icon set, presentation date formatting, `KB.el` selector shortcut. |
 | Browser | `js/dragdrop.js` | HTML5 drag-and-drop wiring; every drop routes through the shared policy-gated move path. |
 | Browser | `js/modals/core.js` | Modal system (overlay, focus, prompt/dialog helpers) plus the card, column, recurrence, triage, labels, backup, capture/merge and lens editors. |
+| Browser | `js/modals/day.js` | The Day Sheet ritual modal: pick band with 1-9 key badges and reason chips, stamping, commitment checkboxes, and the end-of-day roll band (K/P/D/X) applied as one atomic undo entry. |
 | Browser | `js/moveto.js` | Move-to menu (board/column/position with cross-board label mapping) and keyboard move mode with `aria-live` announcements. |
 | Browser | `js/selection.js` | Ephemeral multi-select (Ctrl/Shift-click, Escape) and the bulk-action toolbar. |
 | Browser | `js/workspaces.js` | Workspace switching, My Desk / Inbox / Review rendering, lens bar, UI preference persistence. |
@@ -421,6 +449,8 @@ State **version 3** (persisted to IndexedDB; an atomic localStorage envelope
   activeBoardId: '…',
   inbox: { items: [ { id, title, note, url, archived, capturedAt, updatedAt } ] },
   lenses: [ { id, name, scope, boardIds, query, sort, display, createdAt, updatedAt } ],
+  dayplans: { 'YYYY-MM-DD': { dateISO, stampedAt, rolledAt,
+              commitments: [ { cardId, order, status } ] } },
   recurrences: [ { id, enabled, mode, schedule, target, template, dueOffsetDays,
                    overlapPolicy, missedPolicy, activeCardRef, nextRunAt,
                    lastRunAt, lastCompletedAt, endAt, remainingOccurrences,

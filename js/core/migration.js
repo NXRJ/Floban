@@ -509,6 +509,35 @@
       return state;
     }
 
+    function normalizeDayplans(value) {
+      var out = {};
+      if (!value || typeof value !== 'object') return out;
+      var DAYPLAN_STATUSES = ['open', 'done', 'kept', 'pushed', 'dropped', 'archived'];
+      Object.keys(value).forEach(function (key) {
+        var plan = value[key];
+        if (!plan || typeof plan !== 'object') return;
+        if (typeof plan.dateISO !== 'string' || plan.dateISO !== key) return;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(plan.dateISO)) return;
+        if (!Array.isArray(plan.commitments)) return;
+        var commitments = plan.commitments
+          .filter(function (c) { return c && typeof c === 'object' && typeof c.cardId === 'string' && c.cardId; })
+          .map(function (c, index) {
+            return {
+              cardId: c.cardId,
+              order: typeof c.order === 'number' ? c.order : index,
+              status: DAYPLAN_STATUSES.indexOf(c.status) !== -1 ? c.status : 'open'
+            };
+          });
+        out[key] = {
+          dateISO: plan.dateISO,
+          stampedAt: typeof plan.stampedAt === 'number' ? plan.stampedAt : null,
+          rolledAt: typeof plan.rolledAt === 'number' ? plan.rolledAt : null,
+          commitments: commitments
+        };
+      });
+      return out;
+    }
+
     function normalizeState(state, deps) {
       var out = cloneShallow(state);
       out.version = STATE_VERSION;
@@ -527,6 +556,7 @@
       out.lenses = out.lenses.map(function (l) { return normalizeLens(l, deps); }).filter(Boolean);
       if (!Array.isArray(out.recurrences)) out.recurrences = [];
       out.recurrences = out.recurrences.map(function (r) { return normalizeRecurrence(r, deps); }).filter(Boolean);
+      out.dayplans = normalizeDayplans(out.dayplans);
       repairDependencies(out);
       repairRecurrences(out, deps);
       repairLenses(out);

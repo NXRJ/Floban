@@ -81,6 +81,29 @@
   workspaceCommand('workspace.mydesk', 'My Desk', 'mydesk');
   workspaceCommand('workspace.inbox', 'Inbox', 'inbox');
   workspaceCommand('workspace.review', 'Review', 'review');
+  C.register({
+    id: 'workspace.calendar',
+    title: 'Date Desk',
+    keywords: ['calendar', 'month', 'due dates', 'schedule'],
+    category: 'Workspace',
+    icon: 'doc',
+    shortcut: 't',
+    order: 1,
+    run: function () {
+      KB.Workspaces.set('calendar');
+    }
+  });
+  C.register({
+    id: 'day.start',
+    title: 'Start My Day',
+    keywords: ['day sheet', 'plan', 'ritual', 'commit', 'stamp'],
+    category: 'App',
+    icon: 'doc',
+    order: 4,
+    run: function () {
+      KB.Modal.daySheet();
+    }
+  });
 
   // ---------- Board ----------
 
