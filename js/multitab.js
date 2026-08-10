@@ -40,6 +40,11 @@
   var readOnly = false;
   var banner = null;
   var channel = null;
+  // A takeover reload must NOT release the lease on pagehide: this tab
+  // claims the lock and reloads to re-claim it on boot, and releasing in
+  // between lets a bystander tab win the freed lease and boot this one
+  // read-only (an infinite handoff churn on slow machines).
+  var relocating = false;
 
   function generateId() {
     return 'tab-' + Math.random().toString(36).slice(2, 10);
@@ -132,6 +137,7 @@
         // the lease). The stale window covers the residual race either way.
         writeClaim();
         broadcastTakeover();
+        relocating = true;
         setTimeout(function () { location.reload(); }, 250);
       });
       banner.appendChild(msg);
@@ -156,6 +162,7 @@
   // Take the lease and reload fresh state (never save the stale in-memory
   // state over the owner's last writes).
   function takeOver() {
+    relocating = true;
     writeClaim();
     broadcastTakeover();
     setReadOnly(false);
@@ -241,8 +248,11 @@
     });
     // Graceful close: release the lease (unless the page enters the
     // back-forward cache and may resume) and tell surviving tabs instantly.
+    // A takeover reload keeps the claim: it re-claims on boot, and releasing
+    // mid-flight would let another read-only tab take over instead.
     window.addEventListener('pagehide', function (e) {
       if (e && e.persisted) return;
+      if (relocating) return;
       if (ownsLease()) {
         try { localStorage.removeItem(OWNER_KEY); } catch (err) {}
         if (channel) {

@@ -2139,6 +2139,84 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await waitBoard();
   check('first tab resumes editing after the owner closes', await page.evaluate(() => KB.MultiTab.readOnly() === false && !document.querySelector('.multitab-banner')));
 
+  // The storage layer is the last line of defense. This needs a tab whose
+  // IndexedDB is NOT degraded (the mid-session degrade tests above flipped
+  // idbOk off in the main tab forever) and a real lease to lose, so spin a
+  // third tab: take over, then lose the lease and bypass the state-level
+  // gate with a direct Storage.save() of stale state. The engine write must
+  // never start — neither the meta stamp nor the primary record may move.
+  const storagePage = await browser.newPage();
+  await storagePage.goto(URL, { waitUntil: 'load' });
+  await storagePage.waitForFunction(() => document.documentElement.dataset.ready === '1', { timeout: 8000 });
+  await storagePage.evaluate(() => { document.querySelector('.mt-takeover').click(); });
+  await storagePage.waitForFunction(() => document.documentElement.dataset.ready === '1' && KB.MultiTab.readOnly() === false, { timeout: 8000 });
+  check('storage-gate tab becomes the owner', await storagePage.evaluate(() => !KB.MultiTab.readOnly()));
+  const storageGate = await storagePage.evaluate(async () => {
+    const readMeta = () => new Promise((resolve) => {
+      const req = indexedDB.open('kanban-store', 1);
+      req.onerror = () => resolve(null);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('meta', 'readonly');
+        const get = tx.objectStore('meta').get('lastSavedAt');
+        get.onsuccess = () => {
+          const at = get.result && get.result.at;
+          db.close();
+          resolve(typeof at === 'number' ? at : null);
+        };
+        get.onerror = () => { db.close(); resolve(null); };
+      };
+    });
+    const probeLanded = () => new Promise((resolve) => {
+      const req = indexedDB.open('kanban-store', 1);
+      req.onerror = () => resolve(false);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('state', 'readonly');
+        const get = tx.objectStore('state').get('current');
+        get.onsuccess = () => {
+          const payload = get.result;
+          db.close();
+          try {
+            const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
+            resolve(parsed && parsed.boards ? parsed.boards.some((b) =>
+              b.columns.some((c) => c.cards.some((x) => x.title === 'STORAGE-GATE-PROBE'))) : false);
+          } catch (err) { resolve(false); }
+        };
+        get.onerror = () => { db.close(); resolve(false); };
+      };
+    });
+    // A stale payload derived from the live state, marked so we can tell it
+    // apart from anything the owner legitimately wrote.
+    const stale = JSON.parse(JSON.stringify(KB.State.data()));
+    const model = stale.boards[0].columns[0].cards[0];
+    stale.boards[0].columns[0].cards.push(Object.assign({}, model, {
+      id: 'storage-gate-probe',
+      title: 'STORAGE-GATE-PROBE'
+    }));
+    // Lose the lease: a foreign tab replaces the claim (no storage event
+    // fires in this tab — exactly the suspended-former-owner scenario).
+    localStorage.setItem('kanban.owner.v1', JSON.stringify({ id: 'tab-foreign', ts: Date.now() }));
+    const stampBefore = await readMeta();
+    KB.Storage.save(stale, 'storage-lease-loss');
+    await KB.Storage.flush();
+    const stampAfter = await readMeta();
+    const landed = await probeLanded();
+    return { stampBefore, stampAfter, landed };
+  });
+  check('storage gate blocks a former owner from the primary store',
+    storageGate.landed === false && storageGate.stampAfter === storageGate.stampBefore);
+  // The storage-gate tab never legitimately owned the lease at close time
+  // (its claim was replaced by the phantom), so its pagehide will not
+  // release anything. Drop the phantom claim from this tab instead: the
+  // removal fires the storage event in the main tab, which takes over and
+  // reloads immediately. Wait so nothing races it.
+  await storagePage.evaluate(() => { localStorage.removeItem('kanban.owner.v1'); });
+  await storagePage.close();
+  await waitFor(() => {
+    return window.KB && KB.MultiTab.readOnly() === false && !document.querySelector('.multitab-banner');
+  }, 6000, 'main tab resumes editing after the storage-gate tab closes');
+
   // ---- Reduced motion: palette still opens without animation ----
   const reducedPage = await browser.newPage();
   await reducedPage.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
