@@ -83,7 +83,6 @@
   workspaceCommand('workspace.review', 'Review', 'review');
   workspaceCommand('workspace.tuning', 'Tuning', 'tuning');
   workspaceCommand('workspace.ping', 'Ping', 'ping');
-  workspaceCommand('workspace.power', 'Power', 'power');
   C.register({
     id: 'workspace.calendar',
     title: 'Date Desk',
@@ -291,36 +290,6 @@
         KB.UI.toast('Poked \u2014 next follow-up scheduled', 'success', 'Undo', KB.UI.undoAction);
         KB.App.refresh();
       }
-    }
-  });
-
-  C.register({
-    id: 'power.open',
-    title: 'POWER METER',
-    keywords: ['power', 'energy', 'now pick', 'mood', 'state', 'what can i do'],
-    category: 'Workspace',
-    icon: 'doc',
-    shortcut: 'shift+p',
-    order: 1,
-    run: function () {
-      KB.Workspaces.set('power');
-    }
-  });
-  C.register({
-    id: 'power.cycle',
-    title: 'Cycle power band',
-    keywords: ['power', 'band', 'energy', 'cycle'],
-    category: 'App',
-    icon: 'doc',
-    shortcut: 'b',
-    order: 7,
-    run: function () {
-      var power = KB.State.powerState();
-      var bands = KB.Core.Power.BANDS;
-      var next = bands[(bands.indexOf(power.band) + 1) % bands.length];
-      KB.State.setPowerBand(next);
-      KB.UI.toast('Power band: ' + next.toUpperCase(), 'success');
-      KB.App.refresh();
     }
   });
 

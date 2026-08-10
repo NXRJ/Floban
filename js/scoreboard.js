@@ -40,8 +40,8 @@
     value.textContent = info.current + (info.best > info.current ? ' / ' + info.best : '');
     btn.appendChild(value);
     var strip = h('span', { class: 'sr-strip', 'aria-hidden': 'true' });
-    info.week.forEach(function (done) {
-      var dot = h('i', { class: 'sr-dot' + (done ? ' on' : '') });
+    info.week.forEach(function (day) {
+      var dot = h('i', { class: 'sr-dot' + (day.done ? ' on' : (day.rest ? ' rest' : '')) });
       strip.appendChild(dot);
     });
     btn.appendChild(strip);
@@ -51,11 +51,22 @@
     btn.classList.toggle('at-milestone', KB.Core.Streak.milestoneFor(info.current) === info.current);
   }
 
+  var DAY_LABELS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+  function restLabel(restDays) {
+    var days = (restDays || []).slice().sort();
+    if (days.length === 0) return 'NO DAYS';
+    if (days.length === 2 && days[0] === 0 && days[1] === 6) return 'WEEKENDS';
+    return days.map(function (n) { return DAY_LABELS[n]; }).join('/');
+  }
+
   function weekStrip(week) {
     var strip = h('div', { class: 'sb-week', role: 'img', 'aria-label': 'Last 7 days' });
-    week.forEach(function (done) {
-      var cell = h('span', { class: 'sb-day' + (done ? ' on' : '') });
-      cell.textContent = done ? '\u2588' : '\u00B7';
+    week.forEach(function (day) {
+      // Three states, not two: shipped, rest (skipped, never a miss), missed.
+      var cell = h('span', { class: 'sb-day' + (day.done ? ' on' : (day.rest ? ' rest' : '')) });
+      cell.textContent = day.done ? '\u2588' : (day.rest ? '\u2013' : '\u00B7');
+      cell.title = day.dateISO + (day.done ? ' \u2014 shipped' : (day.rest ? ' \u2014 rest day' : ' \u2014 nothing completed'));
       strip.appendChild(cell);
     });
     return strip;
@@ -83,14 +94,18 @@
     best.textContent = 'BEST ' + String(Math.max(info.best, stored.best)).padStart(3, '0');
     content.appendChild(best);
 
+    // The week strip is the honest part of the readout \u2014 show it either way,
+    // so a reset is legible ("which day did I miss?") instead of just scolding.
+    content.appendChild(weekStrip(info.week));
     if (info.current > 0) {
-      content.appendChild(weekStrip(info.week));
       var goal = h('div', { class: 'sb-goal' });
-      goal.textContent = 'GOAL \u2265 ' + info.goal + ' CARD' + (info.goal === 1 ? '' : 'S') + ' / DAY';
+      goal.textContent = 'GOAL \u2265 ' + info.goal + ' CARD' + (info.goal === 1 ? '' : 'S') + ' / DAY' +
+        (info.restDays.length > 0 ? ' \u00b7 ' + restLabel(info.restDays) + ' OFF' : '');
       content.appendChild(goal);
     } else {
       var over = h('div', { class: 'sb-over' });
-      over.textContent = 'NO CARD COMPLETED YESTERDAY. COMPLETE ONE TODAY TO LIGHT THE MACHINE AGAIN.';
+      over.textContent = 'NO WORKING DAY COMPLETED YET. ' + restLabel(info.restDays) +
+        ' ARE REST DAYS AND NEVER BREAK THE CHAIN.';
       content.appendChild(over);
     }
 

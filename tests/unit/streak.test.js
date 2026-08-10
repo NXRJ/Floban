@@ -54,7 +54,7 @@ test('empty cards yield zero streak', () => {
   assert.equal(info.current, 0);
   assert.equal(info.best, 0);
   assert.equal(info.todayDone, false);
-  assert.deepEqual(info.week, [false, false, false, false, false, false, false]);
+  assert.deepEqual(info.week.map(d => d.done), [false, false, false, false, false, false, false]);
 });
 
 test('cards with null or missing completedAt are ignored', () => {
@@ -77,7 +77,13 @@ test('week strip is oldest-first over the last 7 days', () => {
   const info = Streak.compute(cards(8, 10, 11, 12), NOW, {});
   // [Mon6, Tue7, Wed8, Thu9, Fri10, Sat11, Sun12] -> wait: last 7 days are
   // Wed6..Tue12? No: week is today-6 .. today = 2026-08-06 .. 2026-08-12.
-  assert.deepEqual(info.week, [false, false, true, false, true, true, true]);
+  assert.deepEqual(info.week.map(d => d.done), [false, false, true, false, true, true, true]);
+  assert.deepEqual(info.week.map(d => d.dateISO), [
+    '2026-08-06', '2026-08-07', '2026-08-08', '2026-08-09',
+    '2026-08-10', '2026-08-11', '2026-08-12'
+  ]);
+  // Sat 8 and Sun 9 are rest days.
+  assert.deepEqual(info.week.map(d => d.rest), [false, false, true, true, false, false, false]);
 });
 
 // ---- goal variant ----------------------------------------------------------
@@ -149,7 +155,55 @@ test('doneDays sorts deterministically and filters below goal', () => {
   assert.deepEqual(days, ['2026-08-10', '2026-08-11', '2026-08-12']);
 });
 
-test('runEndingAt returns 0 for out-of-range indexes', () => {
-  assert.equal(Streak.runEndingAt([], 0), 0);
-  assert.equal(Streak.runEndingAt(['2026-08-10'], 1), 0);
+test('runEndingAt returns 0 without an end day', () => {
+  assert.equal(Streak.runEndingAt({}, '', [], '2026-08-01'), 0);
+  assert.equal(Streak.runEndingAt({}, null, [], '2026-08-01'), 0);
+});
+
+// ---- rest days -------------------------------------------------------------
+//
+// August 2026: the 1st is a Saturday, so 8/9 and 15/16 are weekends and
+// 10-14 (Mon-Fri) are working days.
+
+test('a quiet weekend does not break the chain', () => {
+  // Done Thu 6 and Fri 7, nothing on Sat 8 / Sun 9, then Mon 10.
+  const info = Streak.compute(cards(6, 7, 10), at(2026, 8, 10, 9), {});
+  assert.equal(info.current, 3);
+  assert.equal(info.best, 3);
+});
+
+test('a missed working day still breaks the chain', () => {
+  // Done Mon 10 and Tue 11, nothing Wed 12, then Thu 13.
+  const info = Streak.compute(cards(10, 11, 13), at(2026, 8, 13, 9), {});
+  assert.equal(info.current, 1);
+  assert.equal(info.best, 2);
+});
+
+test('completing on a rest day still counts toward the streak', () => {
+  // Rest days are skipped when empty but never penalised when worked.
+  const info = Streak.compute(cards(7, 8, 9, 10), at(2026, 8, 10, 9), {});
+  assert.equal(info.current, 4);
+});
+
+test('restDays is configurable and validated', () => {
+  // Treat Wednesday as the rest day instead: Tue 11 -> (skip Wed 12) -> Thu 13.
+  const info = Streak.compute(cards(11, 13), at(2026, 8, 13, 9), { restDays: [3] });
+  assert.equal(info.current, 2);
+  assert.deepEqual(info.restDays, [3]);
+  // Garbage falls back to the weekend default rather than throwing.
+  assert.deepEqual(Streak.compute([], NOW, { restDays: 'nope' }).restDays, [0, 6]);
+  assert.deepEqual(Streak.compute([], NOW, { restDays: [9, -1] }).restDays, []);
+  // Every day off would make the streak meaningless.
+  assert.deepEqual(Streak.compute([], NOW, { restDays: [0, 1, 2, 3, 4, 5, 6] }).restDays, [0, 6]);
+});
+
+test('an all-rest-days walk terminates at the earliest sample', () => {
+  const info = Streak.compute(cards(10), at(2026, 8, 10, 9), { restDays: [0, 1, 2, 3, 4, 5] });
+  assert.equal(info.current, 1);
+});
+
+test('isRestDay reads the weekday without DST drift', () => {
+  assert.equal(Streak.isRestDay('2026-08-08', [0, 6]), true);  // Saturday
+  assert.equal(Streak.isRestDay('2026-08-09', [0, 6]), true);  // Sunday
+  assert.equal(Streak.isRestDay('2026-08-10', [0, 6]), false); // Monday
 });

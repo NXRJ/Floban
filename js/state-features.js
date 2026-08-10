@@ -386,13 +386,12 @@
     var current = KB.State.data();
     var info = KB.Core.Streak.compute(allCompletedCards(current), now(), {});
     var stored = current.streaks || { best: 0, lastSeen: null };
-    return {
-      current: info.current,
-      best: Math.max(info.best, stored.best || 0),
-      todayDone: info.todayDone,
-      week: info.week,
-      goal: info.goal
-    };
+    // Pass the computed projection through wholesale and override only what
+    // this layer owns. Hand-copying each field meant a new one (restDays)
+    // silently arrived as undefined at the renderer.
+    return Object.assign({}, info, {
+      best: Math.max(info.best, stored.best || 0)
+    });
   }
 
   // Observe the current streak: bump the persisted high score and record
@@ -567,39 +566,6 @@
   KB.State.pokeCard = pokeCard;
   KB.State.setPingContact = setPingContact;
   KB.State.pingCards = pingCards;
-
-  // ---- POWER METER: state-aware picking ----
-
-  function powerState() {
-    var power = KB.State.data().power || { band: 'mid', timeBudgetMin: null };
-    return { band: power.band, timeBudgetMin: power.timeBudgetMin };
-  }
-
-  function setPowerBand(band) {
-    if (KB.Core.Power.BANDS.indexOf(band) === -1) return null;
-    return commit(function (current) {
-      var next = cloneState(current);
-      if (!next.power) next.power = { band: 'mid', timeBudgetMin: null };
-      if (next.power.band === band) return noop(current, 'no-change');
-      next.power.band = band;
-      return { changed: true, state: next, value: next.power };
-    });
-  }
-
-  function setPowerTimeBudget(minutes) {
-    return commit(function (current) {
-      var next = cloneState(current);
-      if (!next.power) next.power = { band: 'mid', timeBudgetMin: null };
-      var value = typeof minutes === 'number' && minutes > 0 ? minutes : null;
-      if (next.power.timeBudgetMin === value) return noop(current, 'no-change');
-      next.power.timeBudgetMin = value;
-      return { changed: true, state: next, value: next.power };
-    });
-  }
-
-  KB.State.powerState = powerState;
-  KB.State.setPowerBand = setPowerBand;
-  KB.State.setPowerTimeBudget = setPowerTimeBudget;
 
   KB.State.processRecurrences = processRecurrences;
   KB.State.addRecurrence = addRecurrence;
