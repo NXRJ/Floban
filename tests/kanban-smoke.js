@@ -2329,6 +2329,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   }, 6000, 'main tab resumes editing after the storage-gate tab closes');
 
   // ---- Date Desk: calendar workspace ----
+  // The storage-gate handshake above ends with the main tab reloading itself
+  // via a storage event; that navigation can commit asynchronously after the
+  // section's last check, so land on a stable, fully-loaded document before
+  // mutating anything.
+  await page.reload({ waitUntil: 'load' });
+  await waitBoard();
   await page.setViewport({ width: 1280, height: 800 });
   await page.evaluate(() => {
     // Neutralize any policies the earlier sections piled onto this board so
