@@ -184,15 +184,6 @@
 
   function cardEl(card, column) {
     var el = h('article', { class: 'card' + (column.isDone ? ' done' : ''), draggable: 'true', 'data-id': card.id, tabindex: '0' });
-    // POWER METER LOW POWER MODE: dim cards too heavy for the declared band.
-    if (KB.Core.Power && KB.Core.Power.lowPowerActive(KB.State.data())) {
-      var size = String(card.size || 'none').toLowerCase();
-      var demand = KB.Core.Power.SIZE_DEMAND[size] !== undefined ? KB.Core.Power.SIZE_DEMAND[size] : 0.5;
-      var band = (KB.State.data().power && KB.State.data().power.band) || 'mid';
-      var tolerance = KB.Core.Power.BAND_TOLERANCE[band] !== undefined ? KB.Core.Power.BAND_TOLERANCE[band] : 0.75;
-      if (demand > tolerance) el.classList.add('power-dim');
-    }
-
     var top = h('div', { class: 'card-top' });
     var title = h('p', { class: 'card-title' });
     title.textContent = card.title;

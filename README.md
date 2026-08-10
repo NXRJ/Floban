@@ -72,7 +72,7 @@ sheets replace hover-only menus. Desktop is untouched.
 
 ## Workspaces
 
-The header switches between six workspaces:
+The header switches between eight workspaces:
 
 - **Board** — the classic board experience.
 - **My Desk** — a cross-board focus view with default sections (Blocked, Due

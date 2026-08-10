@@ -104,7 +104,6 @@
       focusSession: null,
       streaks: { best: 0, lastSeen: null },
       templates: [],
-      power: { band: 'mid', timeBudgetMin: null },
       boards: [board]
     };
   }

@@ -31,6 +31,8 @@
 
     var MILESTONES = [7, 14, 30, 50, 100, 365];
     var DEFAULT_GOAL = 1;
+    // Saturday and Sunday. See isRestDay for why these are skipped, not missed.
+    var DEFAULT_REST_DAYS = [0, 6];
 
     function dayKey(ms) {
       return DateCore.isoDate(new Date(ms));
@@ -52,57 +54,91 @@
         .sort();
     }
 
-    // Length of the consecutive run ending at days[index], walking back.
-    function runEndingAt(days, index) {
-      if (index < 0 || index >= days.length) return 0;
-      var run = 1;
-      for (var i = index - 1; i >= 0; i--) {
-        if (DateCore.addDaysISO(new Date(days[i + 1] + 'T00:00:00'), -1) === days[i]) {
-          run++;
-        } else {
-          break;
-        }
-      }
-      return run;
-    }
-
     function shiftDays(ms, offset) {
       var d = new Date(ms);
       d.setDate(d.getDate() + offset);
       return d;
     }
 
+    function prevDay(dayISO) {
+      return DateCore.addDaysISO(new Date(dayISO + 'T00:00:00'), -1);
+    }
+
+    // Rest days are the point of the whole design. A personal board is not a
+    // language app: the goal is shipping work, not touching the machine daily.
+    // A day you were never going to work must not read as a failure, so a rest
+    // day with no completions is SKIPPED — it neither extends nor breaks the
+    // chain. The rule is deliberately asymmetric: a rest day you DID complete
+    // on still counts, so weekend workers are not penalised either way.
+    function isRestDay(dayISO, restDays) {
+      var d = new Date(dayISO + 'T12:00:00'); // noon: DST-proof weekday read
+      return restDays.indexOf(d.getDay()) !== -1;
+    }
+
+    function normalizeRestDays(value) {
+      if (!Array.isArray(value)) return DEFAULT_REST_DAYS.slice();
+      var out = [];
+      value.forEach(function (n) {
+        if (typeof n === 'number' && n >= 0 && n <= 6 && out.indexOf(n) === -1) out.push(n);
+      });
+      // Every day off would make the streak meaningless; fall back to default.
+      return out.length >= 7 ? DEFAULT_REST_DAYS.slice() : out;
+    }
+
+    // Length of the run ending at endISO, walking the calendar backwards.
+    // `doneSet` maps 'YYYY-MM-DD' -> true; `earliestISO` bounds the walk so a
+    // tail of rest days cannot run past the data.
+    function runEndingAt(doneSet, endISO, restDays, earliestISO) {
+      if (!endISO) return 0;
+      var rest = normalizeRestDays(restDays);
+      var run = 0;
+      var cursor = endISO;
+      while (cursor >= earliestISO) {
+        if (doneSet[cursor]) run++;
+        else if (!isRestDay(cursor, rest)) break;
+        cursor = prevDay(cursor);
+      }
+      return run;
+    }
+
     function compute(cards, now, opts) {
       var goal = opts && typeof opts.goal === 'number' && opts.goal >= 1 ? opts.goal : DEFAULT_GOAL;
+      var restDays = normalizeRestDays(opts && opts.restDays);
       var days = doneDays(cards, goal);
+      var doneSet = {};
+      days.forEach(function (key) { doneSet[key] = true; });
+      var earliest = days.length > 0 ? days[0] : dayKey(now);
       var today = dayKey(now);
-      var yesterday = dayKey(shiftDays(now, -1));
+      var todayDone = Boolean(doneSet[today]);
 
-      var todayIdx = days.indexOf(today);
-      var yesterdayIdx = days.indexOf(yesterday);
-
-      var current = 0;
-      var todayDone = false;
-      if (todayIdx !== -1) {
-        todayDone = true;
-        current = runEndingAt(days, todayIdx);
-      } else if (yesterdayIdx !== -1) {
-        current = runEndingAt(days, yesterdayIdx);
-      }
+      // Today is in progress, not yet missed: when nothing is done yet the
+      // chain is measured through yesterday rather than broken.
+      var current = runEndingAt(doneSet, todayDone ? today : prevDay(today), restDays, earliest);
 
       var best = 0;
-      for (var i = 0; i < days.length; i++) {
-        var run = runEndingAt(days, i);
+      days.forEach(function (key) {
+        var run = runEndingAt(doneSet, key, restDays, earliest);
         if (run > best) best = run;
-      }
+      });
 
       var week = [];
       for (var w = 6; w >= 0; w--) {
         var key = dayKey(shiftDays(now, -w));
-        week.push(days.indexOf(key) !== -1);
+        week.push({
+          dateISO: key,
+          done: Boolean(doneSet[key]),
+          rest: isRestDay(key, restDays)
+        });
       }
 
-      return { current: current, best: best, todayDone: todayDone, week: week, goal: goal };
+      return {
+        current: current,
+        best: best,
+        todayDone: todayDone,
+        week: week,
+        goal: goal,
+        restDays: restDays
+      };
     }
 
     // Highest milestone at or below n, or null.
@@ -131,12 +167,14 @@
 
     return {
       DEFAULT_GOAL: DEFAULT_GOAL,
+      DEFAULT_REST_DAYS: DEFAULT_REST_DAYS,
       MILESTONES: MILESTONES,
       compute: compute,
       milestoneFor: milestoneFor,
       crossed: crossed,
       doneDays: doneDays,
-      runEndingAt: runEndingAt
+      runEndingAt: runEndingAt,
+      isRestDay: isRestDay
     };
   }
 );

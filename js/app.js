@@ -829,7 +829,7 @@
 
     var tabIcons = {
       board: 'board', mydesk: 'star', inbox: 'box', review: 'check',
-      calendar: 'clock', log: 'doc', tuning: 'clock', ping: 'doc', power: 'doc'
+      calendar: 'clock', log: 'doc', tuning: 'clock', ping: 'doc'
     };
     KB.el('mobile-tabs').querySelectorAll('.mt-btn').forEach(function (btn) {
       btn.querySelector('.mt-icon').innerHTML = icon(tabIcons[btn.dataset.workspace] || 'doc');
