@@ -2321,9 +2321,13 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   // (its claim was replaced by the phantom), so its pagehide will not
   // release anything. Drop the phantom claim from this tab instead: the
   // removal fires the storage event in the main tab, which takes over and
-  // reloads immediately. Wait so nothing races it.
+  // reloads immediately. Wait for that navigation deterministically (armed
+  // BEFORE the removal) so downstream sections start on a stable document —
+  // racing it was the source of the CI-only 'state is null' flake.
+  const handshakeNav = page.waitForNavigation({ waitUntil: 'load', timeout: 10000 }).catch(() => null);
   await storagePage.evaluate(() => { localStorage.removeItem('kanban.owner.v1'); });
   await storagePage.close();
+  await handshakeNav;
   await waitFor(() => {
     return window.KB && KB.MultiTab.readOnly() === false && !document.querySelector('.multitab-banner');
   }, 6000, 'main tab resumes editing after the storage-gate tab closes');
