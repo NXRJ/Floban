@@ -70,6 +70,7 @@
       <button type="button" class="ws-btn" data-workspace="log">Log</button>
       <button type="button" class="ws-btn" data-workspace="tuning">Tuning</button>
       <button type="button" class="ws-btn" data-workspace="ping">Ping</button>
+      <button type="button" class="ws-btn" data-workspace="power">Power</button>
     </nav>
     <button id="board-switch" class="btn" type="button" title="Switch board">
       <span class="btn-icon"></span><span id="board-name" class="board-name"></span><span class="btn-caret"></span>
@@ -162,6 +163,9 @@
     <button type="button" class="mt-btn" data-workspace="ping">
       <span class="mt-icon"></span><span class="mt-label">Ping</span>
     </button>
+    <button type="button" class="mt-btn" data-workspace="power">
+      <span class="mt-icon"></span><span class="mt-label">Power</span>
+    </button>
   </nav>
 
   <section id="ws-mydesk" class="workspace" aria-label="My Desk" hidden></section>
@@ -171,6 +175,7 @@
   <section id="ws-log" class="workspace" aria-label="Work log" hidden></section>
   <section id="ws-tuning" class="workspace" aria-label="Tuning" hidden></section>
   <section id="ws-ping" class="workspace" aria-label="Ping" hidden></section>
+  <section id="ws-power" class="workspace" aria-label="Power" hidden></section>
 
   <div id="focus-hud" class="focus-hud" hidden></div>
 
@@ -184,6 +189,7 @@
   <div id="live-region" class="live-region" role="status" aria-live="polite"></div>
 
   <script src="js/core/date.js"></script>
+  <script src="js/core/when.js"></script>
   <script src="js/core/nlparse.js"></script>
   <script src="js/core/calendar.js"></script>
   <script src="js/core/dayplan.js"></script>
@@ -200,6 +206,7 @@
   <script src="js/core/weekly.js"></script>
   <script src="js/core/template.js"></script>
   <script src="js/core/ping.js"></script>
+  <script src="js/core/power.js"></script>
   <script src="js/core/pipeline.js"></script>
   <script src="js/core/importer.js"></script>
   <script src="js/core/exporter.js"></script>

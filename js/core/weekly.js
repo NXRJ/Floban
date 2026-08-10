@@ -100,6 +100,10 @@
           overdue.push(card);
         } else if (card.due && inISO(card.due, thisWeek.fromISO, thisWeek.toISO)) {
           upcoming.push(card);
+        } else if (card.when && inISO(card.when, thisWeek.fromISO, thisWeek.toISO)) {
+          // Do-date lands this week — it's time to start, even if the
+          // deadline is further out.
+          upcoming.push(card);
         }
         focusRank.push(card);
       });

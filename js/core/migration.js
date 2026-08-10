@@ -172,6 +172,7 @@
       if (typeof out.columnId !== 'string') out.columnId = '';
       if (typeof out.title !== 'string') out.title = '';
       if (typeof out.due !== 'string') out.due = '';
+      if (typeof out.when !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(out.when)) out.when = '';
       out.checklist = normalizeChecklist(out.checklist, deps);
       if (!Array.isArray(out.labels)) out.labels = [];
       out.labels = out.labels.filter(function (id) { return typeof id === 'string'; });
@@ -638,6 +639,7 @@
       out.focusSession = normalizeFocusSession(out.focusSession);
       out.streaks = normalizeStreaks(out.streaks);
       out.templates = normalizeTemplates(out.templates);
+      out.power = normalizePower(out.power);
       repairDependencies(out);
       repairRecurrences(out, deps);
       repairLenses(out);
@@ -694,6 +696,20 @@
           }) : []
         };
       }).filter(Boolean);
+    }
+
+    // POWER METER user state: declared band + optional time budget. The
+    // learned energy curve itself is derived (never persisted); this only
+    // stores the user's explicit choices.
+    var POWER_BANDS = ['full', 'mid', 'low', 'drained'];
+    function normalizePower(value) {
+      if (!value || typeof value !== 'object') {
+        return { band: 'mid', timeBudgetMin: null };
+      }
+      return {
+        band: POWER_BANDS.indexOf(value.band) !== -1 ? value.band : 'mid',
+        timeBudgetMin: typeof value.timeBudgetMin === 'number' && value.timeBudgetMin > 0 ? value.timeBudgetMin : null
+      };
     }
 
     function adoptBoardShape(raw, name, deps) {

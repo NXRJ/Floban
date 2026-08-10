@@ -67,6 +67,17 @@
     dueBlock.appendChild(snoozeRow);
     form.appendChild(dueBlock);
 
+    // WHEN/DEADLINE: optional do-date — when you plan to BEGIN, separate from
+    // the hard deadline. A card with only a due date behaves exactly as
+    // before; a card with both plans on `when` and commits on `due`.
+    var whenInput = h('input', { type: 'date', id: 'cf-when', 'aria-label': 'Do date' });
+    whenInput.value = initial.when || '';
+    var whenHint = h('span', { class: 'cf-when-hint' });
+    whenHint.textContent = 'Optional — the day you plan to start. The due date stays the deadline.';
+    var whenBlock = fieldBlock('Do date (start)', whenInput);
+    whenBlock.appendChild(whenHint);
+    form.appendChild(whenBlock);
+
     function updateSnoozePreview() {
       var text = snoozeInput.value.trim();
       if (!text) {
@@ -473,6 +484,7 @@
         title: titleInput.value.trim(),
         assignee: assigneeInput.value.trim(),
         due: dueInput.value || '',
+        when: whenInput.value || '',
         priority: priorityInput.value,
         size: sizeInput.value,
         description: descInput.value.trim(),

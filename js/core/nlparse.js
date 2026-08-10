@@ -288,12 +288,41 @@
     // Quick-add parsing: "fix api bug in 3 days p2 #launch"
     //   -> { title: 'fix api bug', due: 'YYYY-MM-DD', priority: 'high',
     //        labelIds: ['…'], spans: [...] }
+    // Also recognizes a WHEN/DEADLINE do-date: "do fri", "start 08/14"
+    //   -> { when: 'YYYY-MM-DD' } with the phrase stripped from the title.
     // opts: { now, labels: [{ id, name }] }
     function parseQuickAdd(input, opts) {
-      var result = resolve(String(input || ''), opts);
+      var text = String(input || '');
+      var when = null;
+      var mainInput = text;
+
+      // The do-verb must come FIRST and its remainder must parse as a date —
+      // so "do laundry" is never mistaken for a do-date, and "do fri ship
+      // landing page" treats "fri" as the when-date, not a due date.
+      var verb = /^(do|start|begin|work)\s+(.+)$/i.exec(text);
+      if (verb) {
+        var whenResult = resolve(verb[2], { now: opts && opts.now, bareOffsets: true });
+        if (whenResult.due) {
+          when = whenResult.due;
+          // Drop the matched date phrase from the remainder; keep the rest of
+          // the line for the main grammar (due/priority/labels).
+          var dueSpan = null;
+          whenResult.spans.forEach(function (s) {
+            if (s.kind === 'due' && (dueSpan === null || s.start < dueSpan.start)) dueSpan = s;
+          });
+          if (dueSpan) {
+            mainInput = (verb[2].slice(0, dueSpan.start) + ' ' + verb[2].slice(dueSpan.end)).replace(/\s+/g, ' ').trim();
+          } else {
+            mainInput = '';
+          }
+        }
+      }
+
+      var result = resolve(mainInput, opts);
       return {
         title: result.title,
         due: result.due,
+        when: when,
         priority: result.priority,
         labelIds: result.labelIds,
         spans: result.spans
@@ -317,9 +346,35 @@
       };
     }
 
+    // WHEN/DEADLINE: parse an explicit "do date" phrase. Explicit verbs only —
+    //   "do fri"      -> when = next Friday
+    //   "start 08/14" -> when = Aug 14 (current year, future)
+    //   "begin in 3 days" -> when = today + 3
+    // A bare date with no verb still means `due` (backward compatible).
+    // Returns { when (ISO|null), consumed, remainder }.
+    function parseWhenPhrase(input, opts) {
+      opts = opts || {};
+      var now = typeof opts.now === 'number' ? opts.now : Date.now();
+      var text = String(input || '');
+
+      // "do/start/begin <rest>" — resolve the rest with the due grammar, then
+      // re-label it as the when-date. Relative offsets resolve from today.
+      var m = /\b(?:do|start|begin|work)\s+(.+)$/i.exec(text);
+      if (!m) return { when: null, consumed: '', remainder: text };
+      var phrase = m[1];
+      var result = resolve(phrase, { now: now, bareOffsets: true });
+      if (!result.due) return { when: null, consumed: '', remainder: text };
+      return {
+        when: result.due,
+        consumed: m[0].trim(),
+        remainder: stripTokens(text, [{ start: m.index, end: m.index + m[0].length }])
+      };
+    }
+
     return {
       parseQuickAdd: parseQuickAdd,
       parseDuePhrase: parseDuePhrase,
+      parseWhenPhrase: parseWhenPhrase,
       PRIORITIES: PRIORITIES
     };
   }

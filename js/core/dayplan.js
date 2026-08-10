@@ -130,7 +130,9 @@
           });
       }
 
-      // 2. Overdue, oldest first.
+      // 2. Overdue, oldest first. A card with a `when` in the past is due to
+      //    be STARTED — still overdue pressure, but deadline-grounded cards
+      //    (due past, no when) rank by the harder commitment first.
       cards.filter(function (c) {
         return c.due && ISO_RE.test(c.due) && c.due < dayISO;
       }).sort(function (a, b) {
@@ -140,13 +142,18 @@
         add({ cardId: c.cardId, boardId: c.boardId, columnId: c.columnId, title: c.title, reason: 'OVERDUE ' + (age === null ? '?' : age) + 'D' });
       });
 
-      // 3. Due today, priority then Review rank then id.
+      // 3. Due today — but a card whose DO-date is today (when === dayISO)
+      //    ranks above one whose deadline merely lands today: the do-date is
+      //    the "time to start" signal.
       var reviewIndex = {};
       (opts.review || []).forEach(function (r, i) {
         if (r && r.boardId && r.cardId) reviewIndex[cardKey(r)] = i;
       });
-      cards.filter(function (c) { return c.due === dayISO; })
+      cards.filter(function (c) { return c.due === dayISO || c.when === dayISO; })
         .sort(function (a, b) {
+          var aw = a.when === dayISO ? 1 : 0;
+          var bw = b.when === dayISO ? 1 : 0;
+          if (bw !== aw) return bw - aw;
           var pa = PRIORITY_WEIGHT[a.priority] || 0;
           var pb = PRIORITY_WEIGHT[b.priority] || 0;
           if (pb !== pa) return pb - pa;
@@ -158,7 +165,7 @@
         .forEach(function (c) {
           add({
             cardId: c.cardId, boardId: c.boardId, columnId: c.columnId, title: c.title,
-            reason: 'DUE TODAY' + (c.priority && c.priority !== 'none' ? ' ' + c.priority.toUpperCase() : '')
+            reason: c.when === dayISO ? 'DO TODAY' : 'DUE TODAY' + (c.priority && c.priority !== 'none' ? ' ' + c.priority.toUpperCase() : '')
           });
         });
 

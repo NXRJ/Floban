@@ -206,15 +206,16 @@ test('exportCsv escapes quotes, commas and newlines', () => {
   const csv = Exporter.exportCsv(sampleBoard());
   const records = Importer.parseCsv(csv);
   assert.equal(records.length, 3); // header + 2 cards
-  assert.deepEqual(records[0], ['Title', 'Due Date', 'Priority', 'Labels', 'Assignee', 'Status', 'Notes']);
+  assert.deepEqual(records[0], ['Title', 'Do Date', 'Due Date', 'Priority', 'Labels', 'Assignee', 'Status', 'Notes']);
   const quoted = records[1];
   assert.equal(quoted[0], 'Quoted, "card"');
-  assert.equal(quoted[5], 'In progress'); // queue column role -> status
-  assert.match(quoted[6], /\[x\] a/);     // checklist embedded in notes
-  assert.match(quoted[6], /Line one\nLine two/);
+  assert.equal(quoted[2], '2026-08-15');
+  assert.equal(quoted[6], 'In progress'); // queue column role -> status
+  assert.match(quoted[7], /\[x\] a/);     // checklist embedded in notes
+  assert.match(quoted[7], /Line one\nLine two/);
   const shipped = records[2];
   assert.equal(shipped[0], 'Shipped');
-  assert.equal(shipped[5], 'Completed'); // done column role -> status
+  assert.equal(shipped[6], 'Completed'); // done column role -> status
 });
 
 test('exportCsv round-trips through the CSV parser', () => {

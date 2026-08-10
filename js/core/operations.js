@@ -99,6 +99,9 @@
       if (typeof fields.due === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(fields.due)) {
         out.due = fields.due;
       }
+      if (typeof fields.when === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(fields.when)) {
+        out.when = fields.when;
+      }
       if (FIELD_PRIORITIES.indexOf(fields.priority) !== -1) {
         out.priority = fields.priority;
       }
