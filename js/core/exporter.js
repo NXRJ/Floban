@@ -70,12 +70,13 @@
       (board.columns || []).forEach(function (column) {
         out.push('## ' + column.title);
         out.push('');
-        if (column.cards.length === 0) {
+        var cards = column.cards || [];
+        if (cards.length === 0) {
           out.push('_Empty_');
           out.push('');
           return;
         }
-        column.cards.forEach(function (card) {
+        cards.forEach(function (card) {
           var chips = [];
           if (card.when) chips.push('do ' + card.when);
           if (card.due) chips.push('due ' + card.due);

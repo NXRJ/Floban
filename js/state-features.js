@@ -601,7 +601,8 @@
   KB.State.setPowerBand = setPowerBand;
   KB.State.setPowerTimeBudget = setPowerTimeBudget;
 
-  KB.State.processRecurrences = processRecurrences;  KB.State.addRecurrence = addRecurrence;
+  KB.State.processRecurrences = processRecurrences;
+  KB.State.addRecurrence = addRecurrence;
   KB.State.updateRecurrence = updateRecurrence;
   KB.State.deleteRecurrence = deleteRecurrence;
   KB.State.pauseRecurrence = pauseRecurrence;

@@ -158,3 +158,24 @@ test('nextFollowUp multiplies cadence by escalation factor', () => {
   assert.equal(Ping.nextFollowUp(NOW, 7, 2), NOW + 21 * DAY);
   assert.equal(Ping.nextFollowUp(NOW, 0, 0), NOW + 3 * DAY); // invalid cadence -> default
 });
+
+// ---- Regression: a ping only lives while the card is waiting --------------
+
+test('armPing tolerates a card with no flow object', () => {
+  const result = Ping.armPing({ id: 'c9', title: 'No flow' }, {}, NOW);
+  assert.equal(result.changed, false);
+  assert.equal(result.reason, 'not-waiting');
+});
+
+test('byContact ignores armed cards that are no longer waiting', () => {
+  const armed = Ping.armPing(waitingCard({ id: 'a' }), { contact: 'Sam' }, NOW).card;
+  const resolved = Object.assign({}, armed, {
+    id: 'b',
+    flow: { state: 'normal', reason: '', since: null, periods: [] }
+  });
+  const groups = Ping.byContact([armed, resolved], NOW + 5 * DAY);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].contact, 'Sam');
+  assert.equal(groups[0].items.length, 1);
+  assert.equal(groups[0].items[0].cardId, 'a');
+});

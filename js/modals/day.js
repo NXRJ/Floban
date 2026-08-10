@@ -59,6 +59,7 @@
           cardId: card.id,
           title: card.title || '',
           due: card.due || '',
+          when: card.when || '',
           priority: card.priority || 'none',
           completedAt: card.completedAt || null
         });

@@ -232,11 +232,13 @@
           case 'push':
             next.status = 'pushed';
             if (card) {
+              // Calendar-day step, not +24h: a DST fall-back day is 25 hours
+              // long, so adding 86400000ms to local midnight stays on the same
+              // date and "push +1d" would silently do nothing.
               var base = card.due && ISO_RE.test(card.due) ? parseISO(card.due) : dayStart(now);
-              var pushed = new Date(base.getTime() + 86400000);
               ops.push({
                 type: 'due', boardId: card.boardId, columnId: card.columnId, cardId: card.cardId,
-                due: DateCore.isoDate(pushed)
+                due: DateCore.addDaysISO(base, 1)
               });
             }
             break;

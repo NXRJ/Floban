@@ -45,8 +45,12 @@
     }
 
     // Arm a waiting card with a follow-up date. Pure: returns a card copy.
+    function isWaiting(card) {
+      return Boolean(card && card.flow && card.flow.state === 'waiting');
+    }
+
     function armPing(card, opts, now) {
-      if (!card || card.flow.state !== 'waiting') {
+      if (!isWaiting(card)) {
         return { changed: false, card: card, reason: 'not-waiting' };
       }
       var options = opts || {};
@@ -123,7 +127,7 @@
     // Armed waiting cards past their follow-up date, soonest first.
     function duePings(cards, now) {
       return (cards || []).filter(function (card) {
-        return card && card.ping && card.flow && card.flow.state === 'waiting' && card.ping.followUpAt <= now;
+        return card && card.ping && isWaiting(card) && card.ping.followUpAt <= now;
       }).sort(function (a, b) {
         return a.ping.followUpAt - b.ping.followUpAt;
       });
@@ -133,7 +137,10 @@
     function byContact(cards, now) {
       var groups = {};
       (cards || []).forEach(function (card) {
-        if (!card || !card.ping) return;
+        // Same gate as duePings: a card that is no longer waiting has nothing
+        // outstanding, so it must not sit in a contact's column. (setFlowState
+        // disarms on exit; this also hides pings persisted before that fix.)
+        if (!card || !card.ping || !isWaiting(card)) return;
         var contact = card.ping.contact || '(no contact)';
         if (!groups[contact]) groups[contact] = [];
         groups[contact].push({
@@ -167,7 +174,8 @@
       byContact: byContact,
       escalationLevel: escalationLevel,
       escalationForCount: escalationForCount,
-      nextFollowUp: nextFollowUp
+      nextFollowUp: nextFollowUp,
+      isWaiting: isWaiting
     };
   }
 );

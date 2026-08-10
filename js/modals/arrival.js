@@ -258,8 +258,8 @@
         return;
       }
       var boards = Array.isArray(result) ? result : [];
-      var names = boards.map(function (b) { return b.name; }).join(', ');
-      KB.UI.toast('Imported ' + cardCount + ' cards into ' + names, 'success', 'Undo', KB.UI.undoAction);
+      var names = boards.map(function (b) { return b.name; }).filter(Boolean).join(', ');
+      KB.UI.toast('Imported ' + cardCount + ' cards into ' + (names || 'the board'), 'success', 'Undo', KB.UI.undoAction);
       close();
       KB.App.refresh();
       KB.Workspaces.set('board');
