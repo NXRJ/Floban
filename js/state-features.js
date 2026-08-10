@@ -431,6 +431,143 @@
 
   KB.State.importTasks = importTasks;
 
+  // ---- CARTRIDGE: board templates ----
+
+  function boardTemplates() {
+    return (KB.State.data().templates || []).slice();
+  }
+
+  function saveTemplate(payload) {
+    var tpl = KB.Core.Template.validateTemplate(payload);
+    if (!tpl) return null;
+    return commit(function (current) {
+      var next = cloneState(current);
+      var existing = (next.templates || []).findIndex(function (t) { return t.name === tpl.name; });
+      var saved = Object.assign({}, tpl, { createdAt: tpl.createdAt || now(), starred: false });
+      if (existing !== -1) next.templates[existing] = saved;
+      else next.templates.push(saved);
+      return { changed: true, state: next, value: saved };
+    });
+  }
+
+  function updateTemplate(name, patch) {
+    return commit(function (current) {
+      var next = cloneState(current);
+      var tpl = (next.templates || []).find(function (t) { return t.name === name; });
+      if (!tpl) return noop(current, 'not-found');
+      if (patch.starred !== undefined) tpl.starred = Boolean(patch.starred);
+      if (typeof patch.description === 'string') tpl.description = patch.description;
+      if (typeof patch.name === 'string' && patch.name) tpl.name = patch.name;
+      return { changed: true, state: next, value: tpl };
+    });
+  }
+
+  function deleteTemplate(name) {
+    return commit(function (current) {
+      var next = cloneState(current);
+      var index = (next.templates || []).findIndex(function (t) { return t.name === name; });
+      if (index === -1) return noop(current, 'not-found');
+      next.templates.splice(index, 1);
+      return { changed: true, state: next, value: name };
+    });
+  }
+
+  // Apply a template: create the board + columns + starter cards in ONE
+  // atomic transition (one undo entry reverts the whole instantiation).
+  function applyTemplate(name, boardName) {
+    return commit(function (current) {
+      var tpl = (current.templates || []).find(function (t) { return t.name === name; });
+      if (!tpl) return noop(current, 'template-not-found');
+      return KB.Core.Template.materializeTemplate(current, tpl, { name: boardName }, deps());
+    });
+  }
+
+  KB.State.boardTemplates = boardTemplates;
+  KB.State.saveTemplate = saveTemplate;
+  KB.State.updateTemplate = updateTemplate;
+  KB.State.deleteTemplate = deleteTemplate;
+  KB.State.applyTemplate = applyTemplate;
+
+  // ---- PING: follow-up engine on the waiting flow state ----
+
+  function locateCardLive(state, cardId) {
+    for (var i = 0; i < state.boards.length; i++) {
+      var board = state.boards[i];
+      for (var j = 0; j < board.columns.length; j++) {
+        var column = board.columns[j];
+        var card = column.cards.find(function (c) { return c.id === cardId; });
+        if (card) return { board: board, column: column, card: card };
+      }
+    }
+    return null;
+  }
+
+  // Arm a waiting card with a follow-up date. One undo entry.
+  function armPing(cardId, opts) {
+    return commit(function (current) {
+      var located = locateCardLive(current, cardId);
+      if (!located) return noop(current, 'card-not-found');
+      var result = KB.Core.Ping.armPing(located.card, opts || {}, now());
+      if (!result.changed) return noop(current, result.reason || 'not-waiting');
+      var next = cloneState(current);
+      var nextCard = findCardById(next, cardId);
+      if (!nextCard) return noop(current, 'card-not-found');
+      nextCard.card.ping = result.card.ping;
+      nextCard.card.updatedAt = now();
+      return { changed: true, state: next, value: nextCard.card.ping };
+    });
+  }
+
+  // Poke: record the follow-up and roll the next date. One undo entry.
+  function pokeCard(cardId, note) {
+    return commit(function (current) {
+      var located = locateCardLive(current, cardId);
+      if (!located) return noop(current, 'card-not-found');
+      var result = KB.Core.Ping.poke(located.card, now(), note);
+      if (!result.changed) return noop(current, result.reason || 'not-armed');
+      var next = cloneState(current);
+      var nextCard = findCardById(next, cardId);
+      if (!nextCard) return noop(current, 'card-not-found');
+      nextCard.card.ping = result.card.ping;
+      nextCard.card.updatedAt = now();
+      return { changed: true, state: next, value: result.card.ping };
+    });
+  }
+
+  function pingCards() {
+    var state = KB.State.data();
+    var out = [];
+    (state.boards || []).forEach(function (board) {
+      (board.columns || []).forEach(function (column) {
+        (column.cards || []).forEach(function (card) {
+          if (card.ping) {
+            out.push(Object.assign({}, card, { _boardId: board.id, _columnId: column.id }));
+          }
+        });
+      });
+    });
+    return out;
+  }
+
+  // Update the contact on an armed ping without recording a poke.
+  function setPingContact(cardId, contact) {
+    return commit(function (current) {
+      var located = locateCardLive(current, cardId);
+      if (!located || !located.card.ping) return noop(current, 'not-armed');
+      if (located.card.ping.contact === contact) return noop(current, 'no-change');
+      var next = cloneState(current);
+      var nextCard = findCardById(next, cardId);
+      nextCard.card.ping.contact = contact;
+      nextCard.card.updatedAt = now();
+      return { changed: true, state: next, value: nextCard.card.ping };
+    });
+  }
+
+  KB.State.armPing = armPing;
+  KB.State.pokeCard = pokeCard;
+  KB.State.setPingContact = setPingContact;
+  KB.State.pingCards = pingCards;
+
   KB.State.processRecurrences = processRecurrences;  KB.State.addRecurrence = addRecurrence;
   KB.State.updateRecurrence = updateRecurrence;
   KB.State.deleteRecurrence = deleteRecurrence;

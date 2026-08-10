@@ -2974,6 +2974,136 @@ input[type="search"]::-webkit-search-cancel-button {
   .cp-focus-picks { width: 100%; justify-content: space-between; }
 }
 
+/* ---------- CARTRIDGE: board templates ---------- */
+
+.tpl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+}
+.tpl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 2px solid var(--border);
+  background: var(--surface-2);
+}
+.tpl-row.starred { border-color: var(--warn); }
+.tpl-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.tpl-name {
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+.tpl-meta {
+  font-size: 13px;
+  color: var(--muted);
+}
+.tpl-desc {
+  font-size: 13px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tpl-none { margin-top: 10px; }
+
+/* ---------- PING: waiting-card follow-up engine ---------- */
+
+.ping-band {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+}
+.ping-band-label {
+  font-family: var(--font-chrome);
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--warn);
+  border-bottom: 2px dashed var(--border-strong);
+  padding-bottom: 4px;
+}
+.ping-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 2px solid var(--border);
+  background: var(--surface-2);
+  min-width: 0;
+}
+.ping-row.overdue {
+  border-color: var(--danger);
+  background: var(--surface);
+}
+.ping-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+}
+.ping-contact-chip, .ping-status, .ping-pokes {
+  flex: none;
+  font-size: 11px;
+  padding: 1px 6px;
+}
+.ping-status { color: var(--warn); }
+.ping-row.overdue .ping-status { color: var(--danger); border-color: var(--danger); }
+.ping-pokes { color: var(--muted); }
+.ping-poke { flex: none; }
+
+.ping-group-band {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.ping-group {
+  border: 2px solid var(--border);
+  background: var(--surface-2);
+  padding: 8px;
+}
+.ping-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.ping-contact {
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+.ping-group-meta {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--muted);
+}
+.ping-row.quiet { border: none; background: transparent; padding: 5px 4px; }
+
+/* Card chip */
+.chip-static.ping { color: var(--warn); border-color: var(--warn); background: transparent; }
+.chip-static.ping.ping-overdue { color: var(--danger); border-color: var(--danger); }
+.chip-static.ping svg { width: 11px; height: 11px; }
+
+@media (max-width: 640px) {
+  .ping-poke { min-height: 40px; }
+  .tpl-row { flex-wrap: wrap; }
+  .tpl-row .btn { flex: none; }
+}
+
+
 
 
 /* The hidden attribute must always win over component display rules. */

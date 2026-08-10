@@ -82,6 +82,7 @@
   workspaceCommand('workspace.inbox', 'Inbox', 'inbox');
   workspaceCommand('workspace.review', 'Review', 'review');
   workspaceCommand('workspace.tuning', 'Tuning', 'tuning');
+  workspaceCommand('workspace.ping', 'Ping', 'ping');
   C.register({
     id: 'workspace.calendar',
     title: 'Date Desk',
@@ -213,6 +214,82 @@
     order: 5,
     run: function () {
       KB.Checkpoint.start();
+    }
+  });
+
+  C.register({
+    id: 'templates.gallery',
+    title: 'Cartridges\u2026',
+    keywords: ['template', 'cartridge', 'board template', 'reuse', 'workflow'],
+    category: 'Board',
+    icon: 'doc',
+    order: 8,
+    run: function () {
+      KB.Modal.templateGallery();
+    }
+  });
+  C.register({
+    id: 'templates.save',
+    title: 'Save board as template\u2026',
+    keywords: ['save template', 'cartridge', 'capture setup'],
+    category: 'Board',
+    icon: 'plus',
+    order: 9,
+    run: function () {
+      KB.Modal.saveBoardTemplate();
+    }
+  });
+
+  C.register({
+    id: 'ping.open',
+    title: 'PING',
+    keywords: ['ping', 'waiting', 'follow up', 'follow-up', 'chase', 'contact', 'ball'],
+    category: 'Workspace',
+    icon: 'doc',
+    shortcut: 'p',
+    order: 1,
+    run: function () {
+      KB.Workspaces.set('ping');
+    }
+  });
+  C.register({
+    id: 'ping.arm',
+    title: 'Arm PING follow-up',
+    keywords: ['ping', 'follow up', 'follow-up', 'waiting', 'poke'],
+    category: 'Card',
+    icon: 'clock',
+    scope: 'card',
+    available: function (ctx) {
+      return Boolean(ctx && ctx.cardId && !ctx.archived);
+    },
+    run: function (ctx) {
+      if (!ctx || !ctx.cardId) return;
+      var result = KB.State.armPing(ctx.cardId, {});
+      if (result) {
+        KB.UI.toast('PING armed \u2014 follow-up in 3 days', 'success', 'Undo', KB.UI.undoAction);
+        KB.App.refresh();
+      } else {
+        KB.UI.toast('Card must be Waiting to arm a ping', 'error');
+      }
+    }
+  });
+  C.register({
+    id: 'ping.poke',
+    title: 'Poke (log follow-up)',
+    keywords: ['ping', 'poke', 'follow up', 'follow-up'],
+    category: 'Card',
+    icon: 'clock',
+    scope: 'card',
+    available: function (ctx) {
+      return Boolean(ctx && ctx.cardId && !ctx.archived);
+    },
+    run: function (ctx) {
+      if (!ctx || !ctx.cardId) return;
+      var result = KB.State.pokeCard(ctx.cardId, '');
+      if (result) {
+        KB.UI.toast('Poked \u2014 next follow-up scheduled', 'success', 'Undo', KB.UI.undoAction);
+        KB.App.refresh();
+      }
     }
   });
 

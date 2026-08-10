@@ -103,6 +103,7 @@
       focusDays: {},
       focusSession: null,
       streaks: { best: 0, lastSeen: null },
+      templates: [],
       boards: [board]
     };
   }

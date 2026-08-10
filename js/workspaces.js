@@ -33,7 +33,7 @@
   }
 
   function isValidWorkspace(name) {
-    return ['board', 'mydesk', 'inbox', 'review', 'calendar', 'log', 'tuning'].indexOf(name) !== -1;
+    return ['board', 'mydesk', 'inbox', 'review', 'calendar', 'log', 'tuning', 'ping'].indexOf(name) !== -1;
   }
 
   function current() {
@@ -864,6 +864,7 @@
     KB.el('ws-calendar').hidden = workspace !== 'calendar';
     KB.el('ws-log').hidden = workspace !== 'log';
     KB.el('ws-tuning').hidden = workspace !== 'tuning';
+    KB.el('ws-ping').hidden = workspace !== 'ping';
     document.querySelectorAll('.ws-btn').forEach(function (btn) {
       btn.classList.toggle('active', btn.dataset.workspace === workspace);
     });
@@ -878,6 +879,7 @@
     else if (workspace === 'calendar') renderCalendar();
     else if (workspace === 'log') renderLog();
     else if (workspace === 'tuning') renderTuning();
+    else if (workspace === 'ping') renderPing();
   }
 
   // ---------------- TUNING (estimate-vs-actual calibration) ----------------
@@ -1005,6 +1007,137 @@
     var line = h('p', { class: 'tune-hint' });
     line.textContent = 'The Day Sheet now shows "3 PICKS \u2248 5.2D \u2014 YOUR REALISTIC DAY \u2248 1.4D" when a pick band is overloaded. Sizes are honest here.';
     el.appendChild(line);
+  }
+
+  // ---------------- PING (waiting-card follow-up engine) ----------------
+
+  function renderPing() {
+    var el = KB.el('ws-ping');
+    el.innerHTML = '';
+    var now = Date.now();
+    var cards = KB.State.pingCards();
+
+    var head = h('div', { class: 'ws-head' });
+    var title = h('h2', { class: 'desk-section-title' });
+    title.textContent = 'PING \u00B7 WHO OWNS THE BALL';
+    head.appendChild(title);
+    head.appendChild(h('span', { class: 'spacer' }));
+    var hintBtn = h('span', { class: 'tune-asof' });
+    hintBtn.textContent = 'WAITING CARDS WITH A FOLLOW-UP CLOCK';
+    head.appendChild(hintBtn);
+    el.appendChild(head);
+
+    var due = KB.Core.Ping.duePings(cards, now);
+    var fresh = cards.filter(function (card) {
+      return KB.Core.Ping.pingStatus(card, now).state === 'fresh';
+    });
+
+    if (due.length > 0) {
+      var band = h('div', { class: 'ping-band' });
+      var bandLabel = h('span', { class: 'ping-band-label' });
+      bandLabel.textContent = 'DUE PINGS';
+      band.appendChild(bandLabel);
+      due.forEach(function (card) {
+        band.appendChild(pingRow(card, now));
+      });
+      el.appendChild(band);
+    }
+
+    var groups = KB.Core.Ping.byContact(cards, now);
+    if (groups.length > 0) {
+      var groupBand = h('div', { class: 'ping-group-band' });
+      var groupLabel = h('span', { class: 'ping-band-label' });
+      groupLabel.textContent = 'WHOSE BALL';
+      groupBand.appendChild(groupLabel);
+      groups.forEach(function (group) {
+        var g = h('div', { class: 'ping-group' });
+        var gHead = h('div', { class: 'ping-group-head' });
+        var contact = h('span', { class: 'ping-contact' });
+        contact.textContent = group.contact;
+        gHead.appendChild(contact);
+        var meta = h('span', { class: 'ping-group-meta' });
+        meta.textContent = group.items.length + ' CARD' + (group.items.length === 1 ? '' : 'S') +
+          (group.worstDaysOverdue !== null ? ' \u00B7 RADIO SILENCE ' + group.worstDaysOverdue + 'D' : '');
+        gHead.appendChild(meta);
+        g.appendChild(gHead);
+        group.items.forEach(function (item) {
+          var row = h('div', { class: 'ping-row quiet' });
+          var t = h('span', { class: 'ping-row-title' });
+          t.textContent = item.title;
+          row.appendChild(t);
+          var st = h('span', { class: 'chip chip-static ping-status' });
+          st.textContent = item.status.state.toUpperCase() + (item.status.daysOverdue !== null ? ' ' + item.status.daysOverdue + 'D' : '');
+          row.appendChild(st);
+          row.appendChild(h('span', { class: 'spacer' }));
+          var pokeBtn = h('button', { type: 'button', class: 'btn sm primary ping-poke', 'data-ping-id': item.cardId });
+          pokeBtn.textContent = 'POKE';
+          row.appendChild(pokeBtn);
+          g.appendChild(row);
+        });
+        groupBand.appendChild(g);
+      });
+      el.appendChild(groupBand);
+    }
+
+    if (fresh.length > 0) {
+      var freshBand = h('div', { class: 'ping-band' });
+      var freshLabel = h('span', { class: 'ping-band-label' });
+      freshLabel.textContent = 'ARMED \u00B7 FRESH';
+      freshBand.appendChild(freshLabel);
+      fresh.forEach(function (card) {
+        freshBand.appendChild(pingRow(card, now));
+      });
+      el.appendChild(freshBand);
+    }
+
+    if (due.length === 0 && groups.length === 0 && fresh.length === 0) {
+      el.appendChild(emptyNote('No waiting cards with a follow-up. Set a card to Waiting, then arm it with PING from the card editor.'));
+    }
+
+    // One delegated POKE handler.
+    el.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-ping-id]');
+      if (!btn) return;
+      var cardId = btn.dataset.pingId;
+      var result = KB.State.pokeCard(cardId, '');
+      if (result) {
+        KB.UI.toast('Poked \u2014 next follow-up scheduled', 'success', 'Undo', KB.UI.undoAction);
+        KB.App.refresh();
+      }
+    });
+  }
+
+  function pingRow(card, now) {
+    var status = KB.Core.Ping.pingStatus(card, now);
+    var row = h('div', { class: 'ping-row' + (status.state === 'overdue' ? ' overdue' : '') });
+    var t = h('span', { class: 'ping-row-title' });
+    t.textContent = card.title || '';
+    row.appendChild(t);
+    if (card.ping.contact) {
+      var c = h('span', { class: 'chip chip-static ping-contact-chip' });
+      c.textContent = card.ping.contact;
+      row.appendChild(c);
+    }
+    var st = h('span', { class: 'chip chip-static ping-status' });
+    if (status.state === 'overdue') {
+      st.textContent = 'OVERDUE ' + status.daysOverdue + 'D';
+    } else if (status.state === 'due') {
+      st.textContent = 'DUE ' + status.daysUntil + 'D';
+    } else {
+      st.textContent = '+' + status.daysUntil + 'D';
+    }
+    row.appendChild(st);
+    if (card.ping.pokedCount > 0) {
+      var p = h('span', { class: 'chip chip-static ping-pokes' });
+      p.textContent = card.ping.pokedCount + ' POKE' + (card.ping.pokedCount === 1 ? '' : 'S');
+      row.appendChild(p);
+    }
+    row.appendChild(h('span', { class: 'spacer' }));
+    var pokeBtn = h('button', { type: 'button', class: 'btn sm primary ping-poke', 'data-ping-id': card.id });
+    pokeBtn.textContent = 'POKE';
+    pokeBtn.title = 'Record a follow-up and roll the next date';
+    row.appendChild(pokeBtn);
+    return row;
   }
 
   function openBoard() {
