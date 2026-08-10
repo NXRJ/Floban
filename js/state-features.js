@@ -292,6 +292,72 @@
     });
   }
 
+  // ---- Focus sessions (task-tied timer + effort logging) ----
+
+  function findCardById(state, cardId) {
+    for (var i = 0; i < state.boards.length; i++) {
+      var board = state.boards[i];
+      for (var j = 0; j < board.columns.length; j++) {
+        var column = board.columns[j];
+        var card = column.cards.find(function (c) { return c.id === cardId; });
+        if (card) return { board: board, column: column, card: card };
+      }
+    }
+    return null;
+  }
+
+  function focusSession() {
+    return KB.State.data().focusSession || null;
+  }
+
+  function focusTotals(sinceISO) {
+    return KB.Core.Focus.focusTotals(KB.State.data().focusDays, sinceISO);
+  }
+
+  function startFocus(cardId, kind) {
+    return commit(function (current) {
+      var next = cloneState(current);
+      if (next.focusSession) return noop(current, 'session-active');
+      var located = findCardById(next, cardId);
+      if (!located) return noop(current, 'card-not-found');
+      next.focusSession = {
+        cardId: cardId,
+        startedAt: now(),
+        kind: kind === 'stopwatch' ? 'stopwatch' : 'pomodoro'
+      };
+      return { changed: true, state: next, value: next.focusSession };
+    });
+  }
+
+  // Ends the running session and stamps card effort + the per-day focus log
+  // in ONE atomic transaction (one undo entry reverts the whole stamp).
+  function endFocus() {
+    return commit(function (current) {
+      var next = cloneState(current);
+      var session = next.focusSession;
+      if (!session) return noop(current, 'no-session');
+      var result = KB.Core.Focus.computeEnd(session, now());
+      next.focusSession = null;
+      if (!result.logged) return { changed: true, state: next, value: { logged: false } };
+      var located = findCardById(next, session.cardId);
+      if (located) {
+        var effort = located.card.effort || { pomodoros: 0, minutes: 0 };
+        located.card.effort = {
+          pomodoros: (effort.pomodoros || 0) + result.pomodoros,
+          minutes: (effort.minutes || 0) + result.minutes
+        };
+        located.card.updatedAt = now();
+      }
+      if (!next.focusDays) next.focusDays = {};
+      var day = next.focusDays[result.dayISO] || { minutes: 0, pomodoros: 0 };
+      next.focusDays[result.dayISO] = {
+        minutes: (day.minutes || 0) + result.minutes,
+        pomodoros: (day.pomodoros || 0) + result.pomodoros
+      };
+      return { changed: true, state: next, value: result };
+    });
+  }
+
   KB.State.processRecurrences = processRecurrences;
   KB.State.addRecurrence = addRecurrence;
   KB.State.updateRecurrence = updateRecurrence;
@@ -320,4 +386,8 @@
   KB.State.daySheetFor = daySheetFor;
   KB.State.stampDay = stampDay;
   KB.State.applyDayRoll = applyDayRoll;
+  KB.State.focusSession = focusSession;
+  KB.State.focusTotals = focusTotals;
+  KB.State.startFocus = startFocus;
+  KB.State.endFocus = endFocus;
 })(window.KB = window.KB || {});

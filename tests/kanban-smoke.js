@@ -2505,6 +2505,118 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   check('one undo reverts the entire roll', undidRoll.due === '2020-01-15' && undidRoll.rolled === null);
 
+  // ---- Focus sessions: task-tied timer ----
+  await page.evaluate(() => { KB.Workspaces.set('board'); KB.App.refresh(); });
+  const focusCardId = await page.evaluate(() => {
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    const card = KB.State.addCard(col.id, { title: 'Focus me' });
+    KB.App.refresh();
+    return card.id;
+  });
+  await page.evaluate((cid) => {
+    const board = KB.State.activeBoard();
+    const col = board.columns[0];
+    const card = col.cards.find(c => c.id === cid);
+    KB.Modal.cardEditor(col.id, card, null, board.id);
+  }, focusCardId);
+  await waitFor(() => !!document.querySelector('#cf-focus'), 3000, 'editor focus button');
+  check('card editor exposes a focus button', (await page.$eval('#cf-focus', el => el.textContent)) === 'START FOCUS');
+  await page.click('#cf-focus');
+  await waitFor(() => !document.querySelector('.modal-panel') && !document.querySelector('#focus-hud').hidden, 3000, 'hud after start');
+  check('focus HUD appears with the card title', await page.evaluate(() =>
+    !document.querySelector('#focus-hud').hidden && document.querySelector('#focus-hud').textContent.includes('Focus me')));
+  // Backdate the running session so the effort lands (sub-minute sessions log
+  // nothing by design).
+  await page.evaluate(() => { KB.State.data().focusSession.startedAt = Date.now() - 61000; });
+  await page.evaluate(() => KB.Commands.run('focus.toggle', null));
+  await waitFor(() => document.querySelector('#focus-hud').hidden, 3000, 'hud hides on stop');
+  check('stopping focus hides the HUD', await page.evaluate(() => document.querySelector('#focus-hud').hidden));
+  const effortChip = await page.$$eval('.column:nth-child(1) .card', els => {
+    const last = els[els.length - 1];
+    const chip = last.querySelector('.chip-static.effort');
+    return chip ? chip.textContent : null;
+  });
+  check('effort chip renders on the focused card', effortChip !== null && /m/.test(effortChip));
+  check('per-day focus log recorded', await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
+    return b.focusDays ? Object.keys(b.focusDays).length >= 1 : false;
+  }));
+  await blur();
+  await pressUndo();
+  check('one undo reverts the effort stamp', await page.$$eval('.column:nth-child(1) .card', els => {
+    const last = els[els.length - 1];
+    return last.querySelector('.chip-static.effort') ? false : true;
+  }));
+  // The undo restored the running session: a reload must resume it.
+  await page.reload({ waitUntil: 'load' });
+  await waitBoard();
+  const hudResumed = await waitFor(() => !document.querySelector('#focus-hud').hidden, 4000, 'hud resumes after reload');
+  check('focus session resumes across reloads', hudResumed && await page.evaluate(() =>
+    document.querySelector('#focus-hud').textContent.includes('Focus me')));
+  await page.evaluate(() => KB.Commands.run('focus.toggle', null));
+
+  // ---- Work Log: weekly ledger ----
+  await page.evaluate(() => {
+    // Each state op commits a fresh state object, so re-resolve the board
+    // from the LIVE state after the moves (stale references are detached).
+    const first = KB.State.activeBoard();
+    const todo = first.columns[0];
+    const doneId = first.columns.find(c => c.role === 'done').id;
+    for (let i = 1; i <= 3; i++) {
+      const card = KB.State.addCard(todo.id, { title: 'Log item ' + i });
+      KB.State.moveCardChecked(todo.id, card.id, doneId);
+    }
+    const board = KB.State.data().boards.find(x => x.id === first.id);
+    const doneCol = board.columns.find(c => c.role === 'done');
+    // Backdate one completion to the previous day when that day is still in
+    // the current ISO week (from a Monday, yesterday is last week — keep it
+    // simple and leave all three on today).
+    const week = KB.Core.Worklog.weekRange(Date.now(), 0);
+    const c2 = doneCol.cards.find(c => c.title === 'Log item 2');
+    const yesterdayISO = KB.Core.Date.isoDate(new Date(Date.now() - 86400000));
+    if (c2 && yesterdayISO >= week.fromISO) c2.completedAt = Date.now() - 86400000;
+    // An unstamped card: pushed straight onto the done column (bypassing the
+    // lifecycle) — the exact rot pattern the UNSTAMPED band exists for.
+    doneCol.cards.push({
+      id: 'unstamped-probe', columnId: doneCol.id, title: 'Skipped stamp', description: '', labels: [],
+      assignee: '', createdAt: Date.now(), updatedAt: Date.now(), movedAt: Date.now(), due: '',
+      checklist: [], archivedAt: null, fromColumn: '', priority: 'none', size: 'none',
+      startedAt: null, completedAt: null, flow: { state: 'normal', reason: '', since: null, periods: [] },
+      dependencies: { blockers: [], related: [] }, recurrenceId: null, transitions: []
+    });
+    KB.Workspaces.set('log');
+    KB.App.refresh();
+  });
+  await waitFor(() => document.querySelectorAll('.log-days .log-day').length >= 1, 3000, 'log days render');
+  const logState = await page.evaluate(() => ({
+    mast: document.querySelector('.log-masthead .log-done') ? document.querySelector('.log-masthead .log-done').textContent : '',
+    titles: Array.prototype.map.call(document.querySelectorAll('.log-row-title'), e => e.textContent),
+    dayGroups: document.querySelectorAll('.log-days .log-day').length,
+    unstamped: document.querySelectorAll('.log-unstamped-row').length
+  }));
+  check('log masthead counts completed cards', /DONE/.test(logState.mast) && parseInt(logState.mast, 10) >= 3);
+  check('log lists the seeded completed cards', ['Log item 1', 'Log item 2', 'Log item 3'].every(t => logState.titles.includes(t)));
+  check('log renders day groups', logState.dayGroups >= 1);
+  check('log flags unstamped done-column cards', logState.unstamped >= 1 && logState.titles.includes('Skipped stamp'));
+  await page.evaluate(() => { document.querySelector('.ws-head [data-log="copy"]').click(); });
+  await waitFor(() => Array.prototype.some.call(document.querySelectorAll('.toast'), t => t.textContent.indexOf('Log copied') !== -1), 3000, 'copy toast');
+  check('copy composes and reports the log', true);
+  const unstampedBefore = await page.$$eval('.log-unstamped-row', els => els.length);
+  await page.evaluate(() => {
+    const rows = Array.prototype.slice.call(document.querySelectorAll('.log-unstamped-row'));
+    const row = rows.find(r => {
+      const t = r.querySelector('.log-row-title');
+      return t && t.textContent === 'Skipped stamp';
+    });
+    if (row) row.querySelector('[data-log="stamp"]').click();
+  });
+  await waitFor(() => document.querySelectorAll('.log-unstamped-row').length < unstampedBefore, 3000, 'unstamped band shrinks');
+  check('stamp clears the stamped row from the band', await page.$$eval('.log-unstamped-row .log-row-title', els => !els.some(e => e.textContent === 'Skipped stamp')));
+  await blur();
+  await pressUndo();
+  check('undo restores the unstamped card', await page.$$eval('.log-unstamped-row .log-row-title', els => els.some(e => e.textContent === 'Skipped stamp')));
+
   // ---- Reduced motion: palette still opens without animation ----
   const reducedPage = await browser.newPage();
   await reducedPage.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);

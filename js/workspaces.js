@@ -33,7 +33,7 @@
   }
 
   function isValidWorkspace(name) {
-    return ['board', 'mydesk', 'inbox', 'review', 'calendar'].indexOf(name) !== -1;
+    return ['board', 'mydesk', 'inbox', 'review', 'calendar', 'log'].indexOf(name) !== -1;
   }
 
   function current() {
@@ -662,6 +662,199 @@
     });
   }
 
+  // ---------------- Work Log (weekly ledger) ----------------
+
+  var logWeekOffset = 0;
+
+  function logCards() {
+    var state = KB.State.data();
+    var out = [];
+    (state.boards || []).forEach(function (board) {
+      var labelNames = {};
+      (board.labels || []).forEach(function (l) { labelNames[l.id] = l.name; });
+      function pushCard(column, card, archived) {
+        out.push({
+          boardId: board.id,
+          boardName: board.name,
+          columnId: column.id,
+          cardId: card.id,
+          title: card.title || '',
+          labels: (card.labels || []).map(function (id) { return labelNames[id]; }).filter(Boolean),
+          priority: card.priority || 'none',
+          size: card.size || 'none',
+          completedAt: typeof card.completedAt === 'number' ? card.completedAt : null,
+          startedAt: typeof card.startedAt === 'number' ? card.startedAt : null,
+          columnRole: column.role || 'queue',
+          archived: Boolean(archived)
+        });
+      }
+      (board.columns || []).forEach(function (column) {
+        (column.cards || []).forEach(function (card) { pushCard(column, card, false); });
+      });
+      (board.archive && board.archive.columns || []).forEach(function (archivedColumn) {
+        (archivedColumn.cards || []).forEach(function (card) { pushCard(archivedColumn, card, true); });
+      });
+      // Individually archived cards keep no column; they were completed when
+      // archived, so they belong in the log's day groups (never the
+      // UNSTAMPED band — archived cards are excluded there).
+      (board.archive && board.archive.cards || []).forEach(function (card) {
+        out.push({
+          boardId: board.id,
+          boardName: board.name,
+          columnId: card.columnId || '',
+          cardId: card.id,
+          title: card.title || '',
+          labels: (card.labels || []).map(function (id) { return labelNames[id]; }).filter(Boolean),
+          priority: card.priority || 'none',
+          size: card.size || 'none',
+          completedAt: typeof card.completedAt === 'number' ? card.completedAt : null,
+          startedAt: typeof card.startedAt === 'number' ? card.startedAt : null,
+          columnRole: 'done',
+          archived: true
+        });
+      });
+    });
+    return out;
+  }
+
+  function copyText(text, onDone) {
+    var done = function () { if (onDone) onDone(); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { fallback(); });
+      return;
+    }
+    fallback();
+    function fallback() {
+      // file:// is not a secure context — execCommand is the offline path.
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try { document.execCommand('copy'); } catch (err) { /* clipboard unavailable */ }
+      ta.remove();
+      done();
+    }
+  }
+
+  function renderLog() {
+    var el = KB.el('ws-log');
+    el.innerHTML = '';
+    var range = KB.Core.Worklog.weekRange(Date.now(), logWeekOffset);
+    var log = KB.Core.Worklog.buildWorkLog(logCards(), range);
+
+    var head = h('div', { class: 'ws-head' });
+    var title = h('h2', { class: 'desk-section-title' });
+    title.textContent = 'Work Log';
+    head.appendChild(title);
+    var prev = h('button', { type: 'button', class: 'btn ghost sm', 'aria-label': 'Previous week' });
+    prev.textContent = '\u2039';
+    var next = h('button', { type: 'button', class: 'btn ghost sm', 'aria-label': 'Next week' });
+    next.textContent = '\u203A';
+    var label = h('span', { class: 'log-range' });
+    label.textContent = range.label;
+    var copyBtn = h('button', { type: 'button', class: 'btn primary sm', 'data-log': 'copy' });
+    copyBtn.textContent = 'COPY (C)';
+    var printBtn = h('button', { type: 'button', class: 'btn ghost sm', 'data-log': 'print' });
+    printBtn.textContent = 'PRINT (P)';
+    head.appendChild(prev);
+    head.appendChild(next);
+    head.appendChild(label);
+    head.appendChild(h('span', { class: 'spacer' }));
+    head.appendChild(printBtn);
+    head.appendChild(copyBtn);
+    el.appendChild(head);
+
+    var refresh = function () { KB.App.refresh(); };
+    prev.addEventListener('click', function () { logWeekOffset -= 1; refresh(); });
+    next.addEventListener('click', function () { logWeekOffset += 1; refresh(); });
+    copyBtn.addEventListener('click', function () {
+      var text = KB.Core.Worklog.composeLog(log, {});
+      copyText(text, function () { KB.UI.toast('Log copied to clipboard', 'success'); });
+    });
+    printBtn.addEventListener('click', function () { window.print(); });
+
+    var masthead = h('div', { class: 'log-masthead' });
+    var done = h('span', { class: 'log-done' });
+    done.textContent = log.stats.total + (log.stats.total === 1 ? ' CARD DONE' : ' CARDS DONE');
+    masthead.appendChild(done);
+    log.stats.perBoard.forEach(function (b) {
+      var chip = h('span', { class: 'chip chip-static log-board-count' });
+      chip.textContent = b.boardName + ' \u00B7 ' + b.count;
+      masthead.appendChild(chip);
+    });
+    el.appendChild(masthead);
+
+    if (log.unstamped.length > 0) {
+      var band = h('div', { class: 'log-unstamped' });
+      var bandLabel = h('span', { class: 'log-unstamped-label' });
+      bandLabel.textContent = 'UNSTAMPED';
+      band.appendChild(bandLabel);
+      log.unstamped.forEach(function (card) {
+        var row = h('div', { class: 'log-unstamped-row' });
+        var t = h('span', { class: 'log-row-title' });
+        t.textContent = card.title;
+        row.appendChild(t);
+        var b = h('span', { class: 'log-board' });
+        b.textContent = card.boardName;
+        row.appendChild(b);
+        row.appendChild(h('span', { class: 'spacer' }));
+        var stampBtn = h('button', { type: 'button', class: 'btn ghost sm', 'data-log': 'stamp' });
+        stampBtn.textContent = 'STAMP';
+        stampBtn.title = 'Complete through the lifecycle so it lands in the log';
+        stampBtn.addEventListener('click', function () {
+          // The card is already sitting in a done-role column (that is what
+          // put it in the band); same-column moves never run the lifecycle
+          // transition, so stamp completedAt directly — one history entry.
+          var stamped = KB.State.updateCard(card.columnId, card.cardId, { completedAt: Date.now() });
+          if (stamped) {
+            KB.UI.toast('Stamped', 'success', 'Undo', KB.UI.undoAction);
+            refresh();
+          } else {
+            KB.UI.toast('Could not stamp this card', 'error');
+          }
+        });
+        row.appendChild(stampBtn);
+        band.appendChild(row);
+      });
+      el.appendChild(band);
+    }
+
+    if (log.days.length === 0) {
+      el.appendChild(emptyNote('Nothing completed in this range. Move cards into a Done column to grow the log.'));
+    } else {
+      var cols = h('div', { class: 'log-days' });
+      log.days.forEach(function (day) {
+        var col = h('div', { class: 'log-day' });
+        var stamp = h('span', { class: 'log-day-stamp' });
+        stamp.textContent = KB.Dom.fmtShortDate(day.dateISO);
+        col.appendChild(stamp);
+        day.items.forEach(function (item) {
+          var row = h('div', { class: 'log-row' });
+          var t = h('span', { class: 'log-row-title' });
+          t.textContent = item.title;
+          row.appendChild(t);
+          if (item.labels.length > 0) {
+            var lc = h('span', { class: 'chip chip-static log-label' });
+            lc.textContent = item.labels[0];
+            row.appendChild(lc);
+          }
+          var cycle = KB.Core.Worklog.cycleDays(item);
+          if (cycle !== null && cycle >= 3) {
+            var cc = h('span', { class: 'chip chip-static log-cycle' });
+            cc.textContent = cycle + 'd';
+            row.appendChild(cc);
+          }
+          col.appendChild(row);
+        });
+        cols.appendChild(col);
+      });
+      el.appendChild(cols);
+    }
+  }
+
   function render() {
     var isBoard = workspace === 'board';
     KB.el('board-area').hidden = !isBoard;
@@ -669,6 +862,7 @@
     KB.el('ws-inbox').hidden = workspace !== 'inbox';
     KB.el('ws-review').hidden = workspace !== 'review';
     KB.el('ws-calendar').hidden = workspace !== 'calendar';
+    KB.el('ws-log').hidden = workspace !== 'log';
     document.querySelectorAll('.ws-btn').forEach(function (btn) {
       btn.classList.toggle('active', btn.dataset.workspace === workspace);
     });
@@ -681,6 +875,7 @@
     else if (workspace === 'mydesk') renderMyDesk();
     else if (workspace === 'inbox') renderInbox();
     else if (workspace === 'calendar') renderCalendar();
+    else if (workspace === 'log') renderLog();
   }
 
   function openBoard() {

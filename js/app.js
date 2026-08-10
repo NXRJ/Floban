@@ -63,6 +63,7 @@
     KB.Workspaces.render();
     KB.Workspaces.inboxBadge();
     updateMobileTabs();
+    renderFocusHud();
     if (KB.Workspaces.current() !== 'board') {
       KB.Render.boardPager();
       return;
@@ -913,6 +914,62 @@
     bootSequence();
   }
 
+  // ---- Focus HUD (task-tied timer) ----
+
+  function focusCardTitle(cardId) {
+    var state = KB.State.data();
+    if (!state) return '';
+    for (var i = 0; i < state.boards.length; i++) {
+      var board = state.boards[i];
+      for (var j = 0; j < board.columns.length; j++) {
+        var card = board.columns[j].cards.find(function (c) { return c.id === cardId; });
+        if (card) return card.title || '';
+      }
+    }
+    return '';
+  }
+
+  function formatClock(totalSeconds) {
+    var m = Math.floor(totalSeconds / 60);
+    var s = totalSeconds % 60;
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  // Corner HUD showing the running session. The source of truth is the
+  // session's startedAt timestamp — this renderer may tick as often as it
+  // likes without drift.
+  function renderFocusHud() {
+    var hud = KB.el('focus-hud');
+    if (!hud) return;
+    var session = KB.State.focusSession();
+    if (!session) {
+      hud.hidden = true;
+      hud.innerHTML = '';
+      return;
+    }
+    var now = Date.now();
+    hud.innerHTML = '';
+    var title = h('span', { class: 'focus-hud-title' });
+    title.textContent = focusCardTitle(session.cardId) || 'Focus';
+    title.title = 'Focusing on this card';
+    hud.appendChild(title);
+    var time = h('span', { class: 'focus-hud-time' });
+    if (session.kind === 'pomodoro') {
+      var left = Math.max(0, Math.ceil((KB.Core.Focus.DEFAULT_POMODORO_MS - (now - session.startedAt)) / 1000));
+      time.textContent = formatClock(left) + ' POMO';
+    } else {
+      time.textContent = KB.Core.Focus.formatEffort(Math.round((now - session.startedAt) / 60000)) + ' FOCUS';
+    }
+    hud.appendChild(time);
+    var stop = h('button', { type: 'button', class: 'btn sm focus-hud-stop', title: 'End focus (F)' });
+    stop.textContent = 'STOP';
+    stop.addEventListener('click', function () {
+      KB.Commands.run('focus.toggle', null);
+    });
+    hud.appendChild(stop);
+    hud.hidden = false;
+  }
+
   function init() {
     // The cross-tab guard must know whether this tab is read-only before the
     // first save (e.g. the defaults save on a fresh profile).
@@ -936,6 +993,8 @@
       toggleArchive(false);
       tickClock();
       setInterval(tickClock, 10000);
+      renderFocusHud();
+      setInterval(renderFocusHud, 1000);
       processRecurrences();
       setInterval(processRecurrences, 60000);
       document.addEventListener('visibilitychange', function () {
