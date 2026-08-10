@@ -3211,58 +3211,6 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   });
   check('quick-add do <date> sets the when field', whenAdded && /^\d{4}-\d{2}-\d{2}$/.test(whenAdded.when) && whenAdded.title === 'ship landing page');
 
-  // ---- POWER METER: state-aware picking ----
-  const powerSeed = await page.evaluate(() => {
-    const b = JSON.parse(localStorage.getItem('kanban.mirror.v1')).payload;
-    b.boards = [b.boards.find(x => x.id === b.activeBoardId)];
-    const board = b.boards[0];
-    board.columns.forEach(function (c) { c.cards = []; });
-    if (board.archive) { board.archive.cards = []; board.archive.columns = []; }
-    const now = Date.now();
-    function mk(id, title, size, extra) {
-      return Object.assign({
-        id: id, columnId: board.columns[0].id, title: title, description: '', labels: [],
-        assignee: '', createdAt: now, updatedAt: now, movedAt: now, due: '', checklist: [],
-        priority: 'none', size: size, startedAt: null, completedAt: null,
-        flow: { state: 'normal', reason: '', since: null, periods: [] },
-        dependencies: { blockers: [], related: [] }, recurrenceId: null, transitions: []
-      }, extra || {});
-    }
-    board.columns[0].cards = [
-      mk('pwr-xs', 'Quick win', 'xs'),
-      mk('pwr-xl', 'Deep work', 'xl'),
-      mk('pwr-blocked', 'Blocked thing', 'xs', { flow: { state: 'blocked', reason: 'x', since: now, periods: [] } })
-    ];
-    return b;
-  });
-  await seedLocalStorage(powerSeed);
-  await page.goto(URL, { waitUntil: 'load' });
-  await waitBoard();
-  await page.evaluate(() => KB.Workspaces.set('power'));
-  await waitFor(() => !!document.querySelector('.power-pick'), 3000, 'power pick renders');
-  const powerState = await page.evaluate(() => ({
-    top: document.querySelector('.power-top-title') ? document.querySelector('.power-top-title').textContent : '',
-    bands: document.querySelectorAll('.power-band-btn').length,
-    curveBars: document.querySelectorAll('.power-bar').length
-  }));
-  check('power workspace renders the pick and 4 bands', powerState.bands === 4 && powerState.curveBars === 24);
-  check('default mid band picks the balanced card', powerState.top !== '');
-  // LOW POWER excludes the heavy card and dims it on the board.
-  await page.evaluate(() => { document.querySelector('.power-band-btn[data-band="low"]').click(); });
-  await waitFor(() => {
-    const t = document.querySelector('.power-top-title');
-    return t && t.textContent === 'Quick win';
-  }, 3000, 'low power pick');
-  check('low power picks the quick win', true);
-  await page.evaluate(() => { KB.Workspaces.set('board'); KB.App.refresh(); });
-  const dimmed = await page.$$eval('.card.power-dim .card-title', els => els.map(e => e.textContent));
-  check('LOW POWER MODE dims the heavy card', dimmed.includes('Deep work') && !dimmed.includes('Quick win'));
-  // Undo restores the band.
-  await blur();
-  await pressUndo();
-  const bandUndone = await page.evaluate(() => KB.State.powerState().band === 'mid');
-  check('one undo reverts the band change', bandUndone);
-
   // ---- Reduced motion: palette still opens without animation ----
   const reducedPage = await browser.newPage();
   await reducedPage.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);

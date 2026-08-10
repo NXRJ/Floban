@@ -2433,6 +2433,8 @@ input[type="search"]::-webkit-search-cancel-button {
   background: var(--border);
 }
 .sr-dot.on { background: var(--primary); box-shadow: 1px 1px 0 var(--shadow-ink); }
+/* Rest day: visibly "not counted" rather than "missed" — no alarm colour. */
+.sr-dot.rest { background: transparent; box-shadow: inset 0 0 0 1px var(--muted); }
 
 .modal-panel.scoreboard { width: min(440px, 100%); }
 
@@ -2502,6 +2504,12 @@ input[type="search"]::-webkit-search-cancel-button {
   border-color: var(--primary);
   color: var(--primary);
   box-shadow: 2px 2px 0 var(--shadow-ink);
+}
+/* Rest day reads as deliberately skipped, not as a gap in the record. */
+.sb-day.rest {
+  border-style: dashed;
+  border-color: var(--border);
+  background: transparent;
 }
 
 .sb-goal {
@@ -2980,126 +2988,6 @@ input[type="search"]::-webkit-search-cancel-button {
   .cp-content { padding: 12px; }
   .cp-row { flex-wrap: wrap; }
   .cp-focus-picks { width: 100%; justify-content: space-between; }
-}
-
-/* ---------- POWER METER: state-aware picking ---------- */
-
-.card.power-dim {
-  opacity: 0.45;
-  filter: saturate(0.4);
-}
-.card.power-dim:hover { opacity: 0.8; }
-
-.power-bands {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin: 10px 0;
-}
-.power-band-btn, .power-budget-btn {
-  border: 2px solid var(--border-strong);
-  background: var(--input);
-  color: var(--muted);
-  font-family: var(--font-chrome);
-  font-size: 10px;
-  letter-spacing: 1px;
-  padding: 8px 12px;
-  cursor: pointer;
-}
-.power-band-btn.active { border-color: var(--primary); color: var(--primary-hi); box-shadow: 2px 2px 0 var(--shadow-ink); }
-.power-band-btn[data-band="low"].active { border-color: var(--warn); color: var(--warn); }
-.power-band-btn[data-band="drained"].active { border-color: var(--danger); color: var(--danger); }
-.power-budget-btn.active { border-color: var(--accent); color: var(--accent); }
-
-.power-pick {
-  border: 2px solid var(--primary);
-  background: var(--surface-2);
-  padding: 12px;
-  margin: 4px 0 12px;
-}
-.power-pick-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.power-pick-label {
-  font-family: var(--font-chrome);
-  font-size: 12px;
-  letter-spacing: 2px;
-  color: var(--primary-hi);
-}
-.power-band { flex: none; }
-.power-budget { flex: none; color: var(--accent); border-color: var(--accent); }
-.power-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.power-top-title {
-  font-size: 17px;
-  font-weight: 700;
-  flex: 1;
-  min-width: 0;
-}
-.power-size { flex: none; }
-.power-reason {
-  width: 100%;
-  font-size: 14px;
-  color: var(--muted);
-}
-.power-none {
-  font-size: 15px;
-  color: var(--faint);
-  padding: 10px 0;
-}
-.power-alts {
-  margin-top: 10px;
-  border-top: 2px dashed var(--border);
-  padding-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.power-alts-label {
-  font-family: var(--font-chrome);
-  font-size: 9px;
-  letter-spacing: 1px;
-  color: var(--muted);
-}
-.power-alt-row { font-size: 14px; color: var(--text); }
-
-.power-curve {
-  border: 2px solid var(--border);
-  background: var(--surface-2);
-  padding: 10px;
-  margin-top: 12px;
-}
-.power-curve-label {
-  display: block;
-  font-family: var(--font-chrome);
-  font-size: 9px;
-  letter-spacing: 1px;
-  color: var(--muted);
-  margin-bottom: 8px;
-}
-.power-bars {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 60px;
-}
-.power-bar {
-  flex: 1;
-  background: var(--border);
-  display: block;
-}
-.power-bar.peak { background: var(--primary); }
-.power-bar:hover { background: var(--accent); }
-
-@media (max-width: 640px) {
-  .power-band-btn, .power-budget-btn { min-height: 40px; }
 }
 
 /* ---------- CARTRIDGE: board templates ---------- */

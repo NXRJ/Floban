@@ -639,7 +639,9 @@
       out.focusSession = normalizeFocusSession(out.focusSession);
       out.streaks = normalizeStreaks(out.streaks);
       out.templates = normalizeTemplates(out.templates);
-      out.power = normalizePower(out.power);
+      // POWER METER was removed; drop any slice persisted by an older build
+      // so it cannot linger as unnormalized junk in state version 3.
+      delete out.power;
       repairDependencies(out);
       repairRecurrences(out, deps);
       repairLenses(out);
@@ -696,20 +698,6 @@
           }) : []
         };
       }).filter(Boolean);
-    }
-
-    // POWER METER user state: declared band + optional time budget. The
-    // learned energy curve itself is derived (never persisted); this only
-    // stores the user's explicit choices.
-    var POWER_BANDS = ['full', 'mid', 'low', 'drained'];
-    function normalizePower(value) {
-      if (!value || typeof value !== 'object') {
-        return { band: 'mid', timeBudgetMin: null };
-      }
-      return {
-        band: POWER_BANDS.indexOf(value.band) !== -1 ? value.band : 'mid',
-        timeBudgetMin: typeof value.timeBudgetMin === 'number' && value.timeBudgetMin > 0 ? value.timeBudgetMin : null
-      };
     }
 
     function adoptBoardShape(raw, name, deps) {
