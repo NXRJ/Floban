@@ -301,3 +301,40 @@ test('createCards leaves plain lines untouched', () => {
   assert.equal(card.due, '');
   assert.equal(card.priority, 'none');
 });
+
+// ---- Regression: weekday abbreviations and DST-safe day arithmetic ---------
+
+test('every weekday abbreviation the grammar matches also resolves', () => {
+  // WEEKDAY_RE accepts tues/thur/thurs; a missing entry in the WEEKDAYS map
+  // used to yield due="NaN-NaN-NaN", eating the token and setting no date.
+  const cases = {
+    sun: '2026-08-16', mon: '2026-08-17', tue: '2026-08-18', tues: '2026-08-18',
+    wed: '2026-08-19', thu: '2026-08-13', thur: '2026-08-13', thurs: '2026-08-13',
+    fri: '2026-08-14', sat: '2026-08-15'
+  };
+  Object.keys(cases).forEach((name) => {
+    const parsed = qa('ship it ' + name);
+    assert.equal(parsed.due, cases[name], name + ' should resolve to ' + cases[name]);
+    assert.equal(parsed.title, 'ship it');
+  });
+});
+
+test('day phrases step calendar days across a DST fall-back boundary', () => {
+  // Europe/London 2026-10-25 is 25 hours long. Fixed +86400000ms arithmetic
+  // landed at 23:00 the same day, so "tomorrow" resolved to today.
+  const original = process.env.TZ;
+  process.env.TZ = 'Europe/London';
+  try {
+    const dstNow = new Date(2026, 9, 25, 12, 0).getTime();
+    const at = (input) => Nlparse.parseQuickAdd(input, { now: dstNow }).due;
+    assert.equal(at('ship tomorrow'), '2026-10-26');
+    assert.equal(at('ship in 1 days'), '2026-10-26');
+    assert.equal(at('ship in 3 days'), '2026-10-28');
+    assert.equal(at('ship next week'), '2026-11-01');
+    // 2026-10-25 is a Sunday; a bare weekday is always strictly in the future.
+    assert.equal(at('ship sun'), '2026-11-01');
+  } finally {
+    if (original === undefined) delete process.env.TZ;
+    else process.env.TZ = original;
+  }
+});

@@ -665,6 +665,9 @@
   // ---------------- Work Log (weekly ledger) ----------------
 
   var logWeekOffset = 0;
+  // Set by renderLog, cleared whenever another workspace renders. Keeps the
+  // Work Log's advertised C/P keys out of the global shortcut namespace.
+  var logKeyHandler = null;
 
   function logCards() {
     var state = KB.State.data();
@@ -775,6 +778,14 @@
       copyText(text, function () { KB.UI.toast('Log copied to clipboard', 'success'); });
     });
     printBtn.addEventListener('click', function () { window.print(); });
+    // The buttons advertise C and P. Without this the global dispatcher would
+    // claim them first — C opens the column editor, P jumps to PING — so the
+    // Work Log registers them for the duration of this render.
+    logKeyHandler = function (key) {
+      if (key === 'c') { copyBtn.click(); return true; }
+      if (key === 'p') { printBtn.click(); return true; }
+      return false;
+    };
 
     var masthead = h('div', { class: 'log-masthead' });
     var done = h('span', { class: 'log-done' });
@@ -874,6 +885,7 @@
     KB.el('add-column').style.display = globalWs ? 'none' : '';
     KB.el('manage-labels').style.display = globalWs ? 'none' : '';
     KB.el('toggle-archive').style.display = globalWs ? 'none' : '';
+    logKeyHandler = null; // renderLog re-arms it; every other workspace clears it
     if (workspace === 'review') renderReview();
     else if (workspace === 'mydesk') renderMyDesk();
     else if (workspace === 'inbox') renderInbox();
@@ -1316,11 +1328,19 @@
     KB.Workspaces.set('board');
   }
 
+  // Workspace-scoped shortcuts get first refusal, before the global command
+  // dispatcher. Returns true when the key was consumed.
+  function handleKey(key) {
+    if (current() === 'log' && logKeyHandler) return logKeyHandler(key);
+    return false;
+  }
+
   KB.Workspaces = {
     loadPrefs: loadPrefs,
     current: current,
     set: set,
     render: render,
+    handleKey: handleKey,
     openCard: openCard,
     openBoard: openBoard,
     inboxBadge: inboxBadge

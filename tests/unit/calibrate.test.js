@@ -42,7 +42,7 @@ test('collectSamples excludes negative or NaN durations', () => {
 
 // ---- calibrate -------------------------------------------------------------
 
-test('calibrate computes per-size medians, p85 and drift', () => {
+test('calibrate computes per-size medians and p85', () => {
   const cards = [
     card({ size: 'M', startedAt: NOW - 10 * DAY, completedAt: NOW - 10 * DAY + 2.3 * DAY }),
     card({ size: 'M', startedAt: NOW - 8 * DAY, completedAt: NOW - 8 * DAY + 1.9 * DAY }),

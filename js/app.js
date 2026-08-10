@@ -799,7 +799,14 @@
       var tag = document.activeElement && document.activeElement.tagName;
       var typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
       if (typing || KB.Modal.isOpen()) return;
-      var shortcut = KB.Commands.normalizeShortcut(keyCombo(e));
+      // A workspace may claim a plain letter it advertises on screen (the Work
+      // Log's COPY (C) / PRINT (P)) before the global registry sees it.
+      var bare = keyCombo(e);
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && KB.Workspaces.handleKey(bare)) {
+        e.preventDefault();
+        return;
+      }
+      var shortcut = KB.Commands.normalizeShortcut(bare);
       var command = KB.Commands.findByShortcut(shortcut);
       if (!command) return;
       e.preventDefault();
@@ -820,7 +827,10 @@
     KB.el('app-menu').querySelector('.btn-icon').innerHTML = icon('menu');
     KB.el('search-input').previousElementSibling.innerHTML = icon('search');
 
-    var tabIcons = { board: 'board', mydesk: 'star', inbox: 'box', review: 'check', tuning: 'clock', ping: 'doc', power: 'doc' };
+    var tabIcons = {
+      board: 'board', mydesk: 'star', inbox: 'box', review: 'check',
+      calendar: 'clock', log: 'doc', tuning: 'clock', ping: 'doc', power: 'doc'
+    };
     KB.el('mobile-tabs').querySelectorAll('.mt-btn').forEach(function (btn) {
       btn.querySelector('.mt-icon').innerHTML = icon(tabIcons[btn.dataset.workspace] || 'doc');
     });

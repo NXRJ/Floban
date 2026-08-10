@@ -83,12 +83,10 @@
       var bySize = {};
       SIZES.forEach(function (size) {
         var values = samples.bySize[size];
-        var median = medianDays(values);
         bySize[size] = {
           n: values.length,
-          medianDays: median,
-          p85Days: p85Days(values),
-          drift: median === null ? null : median / 1 // days per "one day" plan
+          medianDays: medianDays(values),
+          p85Days: p85Days(values)
         };
       });
       var all = [];

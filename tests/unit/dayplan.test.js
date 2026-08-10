@@ -230,3 +230,39 @@ test('malformed dayplans entries are sanitized, valid ones preserved', () => {
   assert.ok(!sheets['not-a-date']);
   assert.ok(!sheets['2026-08-12']); // invalid plan shape dropped
 });
+
+// ---- Regression: push steps a calendar day, not a fixed 24 hours ----------
+
+test('push advances the due date across a DST fall-back boundary', () => {
+  // Europe/London 2026-10-25 is 25 hours long, so local-midnight + 86400000ms
+  // stayed on 2026-10-25 and "push +1d" silently did nothing.
+  const original = process.env.TZ;
+  process.env.TZ = 'Europe/London';
+  try {
+    const dstNow = new Date(2026, 9, 25, 12, 0).getTime();
+    const cards = [card({ cardId: 'dst', due: '2026-10-25' })];
+    const plan = {
+      dateISO: '2026-10-25',
+      stampedAt: dstNow,
+      rolledAt: null,
+      commitments: [{ cardId: 'dst', order: 0, status: 'open' }]
+    };
+    const rolled = DayPlan.rollPlan(plan, [{ cardId: 'dst', kind: 'push' }], cards, dstNow);
+    assert.equal(rolled.ops.length, 1);
+    assert.equal(rolled.ops[0].due, '2026-10-26');
+    assert.equal(rolled.plan.commitments[0].status, 'pushed');
+  } finally {
+    if (original === undefined) delete process.env.TZ;
+    else process.env.TZ = original;
+  }
+});
+
+test('push on a card with no due date lands on tomorrow', () => {
+  const cards = [card({ cardId: 'nodue', due: '' })];
+  const plan = {
+    dateISO: DAY, stampedAt: NOW, rolledAt: null,
+    commitments: [{ cardId: 'nodue', order: 0, status: 'open' }]
+  };
+  const rolled = DayPlan.rollPlan(plan, [{ cardId: 'nodue', kind: 'push' }], cards, NOW);
+  assert.equal(rolled.ops[0].due, '2026-08-13');
+});

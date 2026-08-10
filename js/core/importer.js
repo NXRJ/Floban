@@ -198,6 +198,14 @@
       var columns = lists.map(function (l) {
         return { name: String(l.name || 'List'), roleHint: inferRole(String(l.name || '')) };
       });
+      // A Trello export can have no Done-shaped list at all. Add the target
+      // column BEFORE routing cards, so a closed card actually lands in it
+      // rather than in whichever list happened to be last.
+      var doneColumn = columns.find(function (c) { return c.roleHint === 'done'; });
+      if (!doneColumn) {
+        doneColumn = { name: 'Done', roleHint: 'done' };
+        columns.push(doneColumn);
+      }
       var cardsOut = cards.map(function (c) {
         var list = lists.find(function (l) { return l.id === c.idList; });
         var checklist = [];
@@ -219,17 +227,12 @@
           sourceId: String(c.id),
           recurrence: null
         };
-        if (c.closed && list && inferRole(list.name) !== 'done') {
-          card.columnName = columns[columns.length - 1] ? columns[columns.length - 1].name : card.columnName;
+        // A closed card belongs in Done regardless of which list it sat in.
+        if (c.closed) {
+          card.columnName = doneColumn.name;
         }
         return card;
       });
-      // A closed card with no Done list lands in the last column; mark it
-      // completed at import time so the Work Log sees it.
-      var doneColumn = columns.find(function (c) { return c.roleHint === 'done'; });
-      if (!doneColumn) {
-        columns.push({ name: 'Done', roleHint: 'done' });
-      }
       return {
         boards: [{
           name: String(data.name || 'Trello import'),
@@ -434,9 +437,14 @@
       var now = typeof d.now === 'function' ? d.now() : 0;
       var next = cloneState(state);
       var issues = (mapped.issues || []).slice();
-      var created = [];
+      // Kept apart deliberately: `createdBoards` is the caller's summary
+      // ("imported into X, Y"), `cardCount` is the placement tally. Mixing
+      // them into one list made both wrong.
+      var createdBoards = [];
+      var cardCount = 0;
 
       (mapped.boards || []).forEach(function (board) {
+        var hadActiveBoard = Boolean(next.activeBoardId);
         var newBoard = Model.createBoard(board.name, { uid: uid, now: function () { return now; } });
         var labelIds = {};
         var colorIndex = 0;
@@ -483,10 +491,10 @@
             applyDefaults: false
           }, { uid: uid, now: function () { return now; } });
           if (!placed.changed) {
-            issues.push({ cardIndex: created.length, message: 'Card "' + card.title + '" was not placed (' + (placed.reason || 'unknown') + ').', severity: 'error' });
+            issues.push({ cardIndex: cardCount, message: 'Card "' + card.title + '" was not placed (' + (placed.reason || 'unknown') + ').', severity: 'error' });
             return;
           }
-          created.push(placed.value);
+          cardCount++;
           if (card.recurrence) {
             var rec = Model.createRecurrence({
               enabled: true,
@@ -520,15 +528,19 @@
         // skeleton boards behind or count them as created.
         if (newBoard.columns.every(function (c) { return c.cards.length === 0; })) {
           next.boards = next.boards.filter(function (b) { return b.id !== newBoard.id; });
+          // Never leave activeBoardId pointing at a board we just discarded.
+          if (!hadActiveBoard && next.activeBoardId === newBoard.id) {
+            next.activeBoardId = next.boards.length > 0 ? next.boards[0].id : '';
+          }
         } else {
-          created.push({ boardId: newBoard.id, name: newBoard.name });
+          createdBoards.push({ boardId: newBoard.id, name: newBoard.name });
         }
       });
 
-      if (created.length === 0) {
+      if (createdBoards.length === 0) {
         return { changed: false, state: state, value: null, reason: 'nothing-created', issues: issues };
       }
-      return { changed: true, state: next, value: created, issues: issues };
+      return { changed: true, state: next, value: createdBoards, cardCount: cardCount, issues: issues };
     }
 
     return {

@@ -249,3 +249,46 @@ test('csvEscape guards nulls and empty values', () => {
   assert.equal(Exporter.csvEscape('a,b'), '"a,b"');
   assert.equal(Exporter.csvEscape('say "hi"'), '"say ""hi"""');
 });
+
+// ---- Regression: import result shape and Trello closed-card routing -------
+
+test('applyImport returns board summaries and a separate card count', () => {
+  // `value` used to mix placed cards and board descriptors into one array, so
+  // the wizard's success toast read "imported into , , , Work".
+  const inter = Importer.parseSource(todoistFixture(), 'todoist');
+  const mapped = Importer.mapStructure(inter, {});
+  const result = Importer.applyImport(baseState(), mapped, deps);
+  assert.equal(result.value.length, 1);
+  assert.deepEqual(result.value.map(b => b.name), ['Work']);
+  result.value.forEach((b) => {
+    assert.equal(typeof b.boardId, 'string');
+    assert.ok(b.boardId);
+  });
+  assert.equal(result.cardCount, 3);
+});
+
+test('a closed Trello card lands in Done even with no Done-shaped list', () => {
+  const trello = JSON.stringify({
+    name: 'Trip',
+    lists: [{ id: 'l1', name: 'Ideas' }, { id: 'l2', name: 'Booked' }],
+    cards: [
+      { id: 'c1', name: 'Open item', idList: 'l1', closed: false },
+      { id: 'c2', name: 'Finished item', idList: 'l1', closed: true }
+    ]
+  });
+  const inter = Importer.parseSource(trello, 'trello');
+  const doneColumn = inter.boards[0].columns.find(c => c.roleHint === 'done');
+  assert.ok(doneColumn, 'a Done column is synthesised');
+  const closed = inter.boards[0].cards.find(c => c.title === 'Finished item');
+  assert.equal(closed.columnName, doneColumn.name);
+  const open = inter.boards[0].cards.find(c => c.title === 'Open item');
+  assert.equal(open.columnName, 'Ideas');
+
+  const result = Importer.applyImport(baseState(), Importer.mapStructure(inter, {}), {
+    uid: uid('trello'), now: function () { return NOW; }
+  });
+  const board = result.state.boards[0];
+  const done = board.columns.find(c => c.role === 'done');
+  assert.deepEqual(done.cards.map(c => c.title), ['Finished item']);
+  assert.equal(typeof done.cards[0].completedAt, 'number');
+});

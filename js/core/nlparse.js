@@ -37,9 +37,12 @@
     //    TODAY. Bare/`next` weekdays are STRICTLY in the future ("fri" on a
     //    Friday means next Friday); `this` weekdays may be today.
 
-    var MS_PER_DAY = 86400000;
+    // Every alternative in WEEKDAY_RE must have an entry here. A name the
+    // regex matches but this map misses resolves to NaN, which silently eats
+    // the token: the word leaves the title and no date is ever set.
     var WEEKDAYS = {
-      sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6,
+      sun: 0, mon: 1, tue: 2, tues: 2, wed: 3, thu: 4, thur: 4, thurs: 4,
+      fri: 5, sat: 6,
       sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4,
       friday: 5, saturday: 6
     };
@@ -76,6 +79,15 @@
       return new Date(base.getFullYear(), base.getMonth() + months, base.getDate());
     }
 
+    // Calendar-day arithmetic, not fixed 24h steps. A DST fall-back day is 25
+    // hours long, so `midnight + 86400000ms` lands at 23:00 the SAME day and
+    // "tomorrow" would resolve to today. setDate() shifts the calendar day.
+    function addDays(base, days) {
+      var copy = new Date(base.getTime());
+      copy.setDate(copy.getDate() + days);
+      return copy;
+    }
+
     // Collect every non-overlapping match of a regex in the input.
     function collect(input, re) {
       var out = [];
@@ -93,17 +105,17 @@
         case 'today':
           return new Date(today.getTime());
         case 'tomorrow':
-          return new Date(today.getTime() + MS_PER_DAY);
+          return addDays(today, 1);
         case 'weekday': {
           var todayDow = today.getDay();
           var offset = (desc.weekday - todayDow + 7) % 7;
           if (desc.prefix !== 'this' && offset === 0) offset = 7; // bare/next: strictly future
-          return new Date(today.getTime() + offset * MS_PER_DAY);
+          return addDays(today, offset);
         }
         case 'rel': {
           if (desc.unit === 'month') return addMonthsISO(base, desc.amount);
           var days = desc.amount * (desc.unit === 'week' ? 7 : 1);
-          return new Date(base.getTime() + days * MS_PER_DAY);
+          return addDays(base, days);
         }
         case 'monthday': {
           var y = today.getFullYear();
