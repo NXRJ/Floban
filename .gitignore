@@ -2,6 +2,8 @@
 node_modules/
 .opencode/
 .impeccable/
+# per-round research notes (subagent scratch space, not committed)
+research/
 # hygiene tool snapshots (regenerated on every audit)
 .pi/
 # handoff documents are not tracked
