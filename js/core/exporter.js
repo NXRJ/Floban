@@ -38,7 +38,7 @@
     // Emits rows grouped by column; Status mirrors the column role so a
     // round-trip import lands completed cards back in Done.
     function exportCsv(board) {
-      var lines = ['Title,Due Date,Priority,Labels,Assignee,Status,Notes'];
+      var lines = ['Title,Do Date,Due Date,Priority,Labels,Assignee,Status,Notes'];
       (board.columns || []).forEach(function (column) {
         (column.cards || []).forEach(function (card) {
           var status = column.role === 'done' || card.completedAt ? 'Completed' : 'In progress';
@@ -50,6 +50,7 @@
           }
           lines.push([
             csvEscape(card.title),
+            csvEscape(card.when || ''),
             csvEscape(card.due || ''),
             csvEscape(card.priority || 'none'),
             csvEscape(cardLabels(board, card).join(';')),
@@ -76,6 +77,7 @@
         }
         column.cards.forEach(function (card) {
           var chips = [];
+          if (card.when) chips.push('do ' + card.when);
           if (card.due) chips.push('due ' + card.due);
           if (card.priority && card.priority !== 'none') chips.push(card.priority);
           var names = cardLabels(board, card);

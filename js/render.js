@@ -184,6 +184,14 @@
 
   function cardEl(card, column) {
     var el = h('article', { class: 'card' + (column.isDone ? ' done' : ''), draggable: 'true', 'data-id': card.id, tabindex: '0' });
+    // POWER METER LOW POWER MODE: dim cards too heavy for the declared band.
+    if (KB.Core.Power && KB.Core.Power.lowPowerActive(KB.State.data())) {
+      var size = String(card.size || 'none').toLowerCase();
+      var demand = KB.Core.Power.SIZE_DEMAND[size] !== undefined ? KB.Core.Power.SIZE_DEMAND[size] : 0.5;
+      var band = (KB.State.data().power && KB.State.data().power.band) || 'mid';
+      var tolerance = KB.Core.Power.BAND_TOLERANCE[band] !== undefined ? KB.Core.Power.BAND_TOLERANCE[band] : 0.75;
+      if (demand > tolerance) el.classList.add('power-dim');
+    }
 
     var top = h('div', { class: 'card-top' });
     var title = h('p', { class: 'card-title' });
@@ -235,8 +243,13 @@
       meta.appendChild(moreLabels);
     }
     if (card.assignee) meta.appendChild(assigneeChip(card.assignee));
-    var due = dueChip(card, column.isDone);
-    if (due) meta.appendChild(due);
+    var dateChips = KB.Core.When ? KB.Core.When.dueChips(card, KB.Filters.todayISO()) : [];
+    dateChips.forEach(function (dc) {
+      var chip = h('span', { class: 'chip chip-static ' + dc.class, title: dc.title });
+      chip.innerHTML = icon('calendar');
+      chip.appendChild(document.createTextNode(dc.text));
+      meta.appendChild(chip);
+    });
     var aging = agingChip(card, column.isDone);
     if (aging) meta.appendChild(aging);
     el.appendChild(meta);
@@ -304,6 +317,13 @@
   // of { class, text, title } or null when nothing was recognized.
   function qaPreviewChips(parsed) {
     var chips = [];
+    if (parsed.when) {
+      chips.push({
+        class: 'qa-when',
+        text: 'DO ' + KB.Dom.fmtShortDate(parsed.when),
+        title: 'Do date: ' + parsed.when
+      });
+    }
     if (parsed.due) {
       chips.push({
         class: 'qa-due',

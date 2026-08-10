@@ -256,6 +256,7 @@
         return { boards: [], issues: [{ cardIndex: -1, message: 'CSV is missing a Title/Task column.', severity: 'error' }] };
       }
       var dueIdx = pick(['due date', 'due', 'date', 'deadline']);
+      var whenIdx = pick(['do date', 'start date', 'when', 'planned']);
       var priorityIdx = pick(['priority', 'importance']);
       var labelsIdx = pick(['labels', 'tags', 'label', 'tag']);
       var notesIdx = pick(['notes', 'description', 'note', 'details']);
@@ -270,6 +271,7 @@
           title: title,
           description: notesIdx !== -1 && row[notesIdx] !== undefined ? String(row[notesIdx]) : '',
           due: dueIdx !== -1 && row[dueIdx] !== undefined ? dueIso(String(row[dueIdx])) : '',
+          when: whenIdx !== -1 && row[whenIdx] !== undefined ? dueIso(String(row[whenIdx])) : '',
           priority: priorityIdx !== -1 && row[priorityIdx] !== undefined ? mapPriorityWord(String(row[priorityIdx])) : 'none',
           labels: labelsIdx !== -1 && row[labelsIdx] !== undefined ? String(row[labelsIdx]).split(/[;|]/).map(function (s) { return s.trim(); }).filter(Boolean) : [],
           checklist: [],
@@ -402,6 +404,7 @@
             title: String(card.title || 'Untitled'),
             description: String(card.description || ''),
             due: String(card.due || ''),
+            when: String(card.when || ''),
             priority: card.priority || 'none',
             labels: (card.labels || []).slice(),
             checklist: (card.checklist || []).slice(),
@@ -466,6 +469,7 @@
             title: card.title,
             description: card.description,
             due: card.due,
+            when: card.when || '',
             priority: card.priority,
             assignee: card.assignee,
             checklist: card.checklist.map(function (item) {

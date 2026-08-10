@@ -33,7 +33,7 @@
   }
 
   function isValidWorkspace(name) {
-    return ['board', 'mydesk', 'inbox', 'review', 'calendar', 'log', 'tuning', 'ping'].indexOf(name) !== -1;
+    return ['board', 'mydesk', 'inbox', 'review', 'calendar', 'log', 'tuning', 'ping', 'power'].indexOf(name) !== -1;
   }
 
   function current() {
@@ -544,7 +544,7 @@
           cards.push({
             id: card.id, boardId: board.id, columnId: column.id, title: card.title || '',
             color: calCardColor(board, card), priority: card.priority || 'none',
-            due: card.due || '', completedAt: card.completedAt || null
+            due: card.due || '', when: card.when || '', completedAt: card.completedAt || null
           });
         });
       });
@@ -865,6 +865,7 @@
     KB.el('ws-log').hidden = workspace !== 'log';
     KB.el('ws-tuning').hidden = workspace !== 'tuning';
     KB.el('ws-ping').hidden = workspace !== 'ping';
+    KB.el('ws-power').hidden = workspace !== 'power';
     document.querySelectorAll('.ws-btn').forEach(function (btn) {
       btn.classList.toggle('active', btn.dataset.workspace === workspace);
     });
@@ -880,6 +881,7 @@
     else if (workspace === 'log') renderLog();
     else if (workspace === 'tuning') renderTuning();
     else if (workspace === 'ping') renderPing();
+    else if (workspace === 'power') renderPower();
   }
 
   // ---------------- TUNING (estimate-vs-actual calibration) ----------------
@@ -1138,6 +1140,176 @@
     pokeBtn.title = 'Record a follow-up and roll the next date';
     row.appendChild(pokeBtn);
     return row;
+  }
+
+  // ---------------- POWER METER (state-aware picking) ----------------
+
+  function powerCards() {
+    var state = KB.State.data();
+    var out = [];
+    (state.boards || []).forEach(function (board) {
+      (board.columns || []).forEach(function (column) {
+        (column.cards || []).forEach(function (card) {
+          out.push(Object.assign({}, card, { _boardId: board.id, _columnId: column.id }));
+        });
+      });
+    });
+    return out;
+  }
+
+  function powerCalibration() {
+    var cards = powerCards();
+    return KB.Core.Calibrate.calibrate(cards, Date.now());
+  }
+
+  function powerContext() {
+    var power = KB.State.powerState();
+    var cal = powerCalibration();
+    var cards = powerCards();
+    var tolerance = KB.Core.Power.BAND_TOLERANCE[power.band] !== undefined ? KB.Core.Power.BAND_TOLERANCE[power.band] : 0.75;
+    var curve = KB.Core.Power.powerCurve(cards, KB.State.data().focusDays, Date.now(), {
+      demandFor: function (card) { return KB.Core.Power.energyFor(card, { estimateDays: KB.Core.Calibrate.estimateDays, calibration: cal }); }
+    });
+    return {
+      band: power.band,
+      timeBudgetMin: power.timeBudgetMin,
+      tolerance: tolerance,
+      cal: cal,
+      curve: curve,
+      cards: cards,
+      levelAtHour: curve.levelAtHour,
+      estimateDays: function (card) { return KB.Core.Calibrate.estimateDays(card.size, cal); },
+      demandFor: function (card) { return KB.Core.Power.energyFor(card, { estimateDays: KB.Core.Calibrate.estimateDays, calibration: cal }); }
+    };
+  }
+
+  function powerPickEl() {
+    var ctx = powerContext();
+    var result = KB.Core.Power.pickBest(ctx.cards, ctx);
+    var wrap = h('div', { class: 'power-pick' });
+    var head = h('div', { class: 'power-pick-head' });
+    var label = h('span', { class: 'power-pick-label' });
+    label.textContent = 'NOW PICK';
+    head.appendChild(label);
+    var bandChip = h('span', { class: 'chip chip-static power-band band-' + ctx.band });
+    bandChip.textContent = ctx.band.toUpperCase();
+    head.appendChild(bandChip);
+    if (ctx.timeBudgetMin) {
+      var budgetChip = h('span', { class: 'chip chip-static power-budget' });
+      budgetChip.textContent = ctx.timeBudgetMin + ' MIN';
+      head.appendChild(budgetChip);
+    }
+    wrap.appendChild(head);
+
+    if (!result.top) {
+      var none = h('p', { class: 'power-none' });
+      none.textContent = 'Nothing fits your current state. Switch bands or lower the bar.';
+      wrap.appendChild(none);
+      return wrap;
+    }
+    var top = h('div', { class: 'power-top' });
+    var t = h('span', { class: 'power-top-title' });
+    t.textContent = result.top.title || '';
+    top.appendChild(t);
+    var size = h('span', { class: 'chip chip-static power-size' });
+    size.textContent = String(result.top.size || 'none').toUpperCase();
+    top.appendChild(size);
+    var reason = h('span', { class: 'power-reason' });
+    var demand = ctx.demandFor(result.top);
+    reason.textContent = ctx.band === 'low' || ctx.band === 'drained'
+      ? 'low power \u2014 quick win fits the band'
+      : (demand >= 0.75 ? 'deep-work hour \u2014 this is your heavy lift' : 'balanced \u2014 fits your current state');
+    top.appendChild(reason);
+    wrap.appendChild(top);
+
+    if (result.alternates.length > 0) {
+      var alts = h('div', { class: 'power-alts' });
+      var altsLabel = h('span', { class: 'power-alts-label' });
+      altsLabel.textContent = 'ALTERNATES';
+      alts.appendChild(altsLabel);
+      result.alternates.forEach(function (card) {
+        var row = h('div', { class: 'power-alt-row' });
+        var t2 = h('span', { class: 'power-alt-title' });
+        t2.textContent = card.title || '';
+        row.appendChild(t2);
+        alts.appendChild(row);
+      });
+      wrap.appendChild(alts);
+    }
+    return wrap;
+  }
+
+  function renderPower() {
+    var el = KB.el('ws-power');
+    el.innerHTML = '';
+    var ctx = powerContext();
+
+    var head = h('div', { class: 'ws-head' });
+    var title = h('h2', { class: 'desk-section-title' });
+    title.textContent = 'POWER METER \u00B7 WHAT CAN I DO NOW?';
+    head.appendChild(title);
+    head.appendChild(h('span', { class: 'spacer' }));
+    var curveLabel = h('span', { class: 'tune-asof' });
+    curveLabel.textContent = ctx.curve.learned
+      ? 'PEAK ' + String(ctx.curve.peakHour).padStart(2, '0') + ':00' + (ctx.curve.troughHour !== -1 ? ' \u00B7 TROUGH ' + String(ctx.curve.troughHour).padStart(2, '0') + ':00' : '')
+      : 'LEARNING YOUR CURVE\u2026';
+    head.appendChild(curveLabel);
+    el.appendChild(head);
+
+    var hint = h('p', { class: 'form-hint' });
+    hint.textContent = 'Declare your power band and the board picks the card that fits — from your own completion and focus history, not a quiz.';
+    el.appendChild(hint);
+
+    var bands = h('div', { class: 'power-bands' });
+    KB.Core.Power.BANDS.forEach(function (band) {
+      var btn = h('button', { type: 'button', class: 'power-band-btn' + (ctx.band === band ? ' active' : ''), 'data-band': band });
+      btn.textContent = band.toUpperCase();
+      btn.title = 'Demand tolerance: ' + (KB.Core.Power.BAND_TOLERANCE[band] * 100) + '%';
+      bands.appendChild(btn);
+    });
+    var budgetBtn = h('button', { type: 'button', class: 'power-budget-btn' + (ctx.timeBudgetMin ? ' active' : ''), 'data-budget': 'toggle' });
+    budgetBtn.textContent = ctx.timeBudgetMin ? ctx.timeBudgetMin + ' MIN WINDOW' : '5-MIN WINDOW';
+    bands.appendChild(budgetBtn);
+    el.appendChild(bands);
+
+    bands.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-band]');
+      if (b) {
+        KB.State.setPowerBand(b.dataset.band);
+        KB.App.refresh();
+        return;
+      }
+      var bg = e.target.closest('[data-budget]');
+      if (bg) {
+        KB.State.setPowerTimeBudget(ctx.timeBudgetMin ? null : 5);
+        KB.App.refresh();
+      }
+    });
+
+    el.appendChild(powerPickEl());
+
+    var curveRow = h('div', { class: 'power-curve' });
+    var curveLabel2 = h('span', { class: 'power-curve-label' });
+    curveLabel2.textContent = 'YOUR POWER CURVE (24H)';
+    curveRow.appendChild(curveLabel2);
+    var bars = h('div', { class: 'power-bars' });
+    for (var hi = 0; hi < 24; hi++) {
+      var bar = h('i', { class: 'power-bar' });
+      var level = ctx.levelAtHour(hi);
+      bar.style.height = Math.round(level * 100) + '%';
+      bar.title = String(hi).padStart(2, '0') + ':00 \u00B7 ' + Math.round(level * 100) + '%';
+      if (ctx.curve.peakHour === hi) bar.classList.add('peak');
+      bars.appendChild(bar);
+    }
+    curveRow.appendChild(bars);
+    el.appendChild(curveRow);
+
+    var line = h('p', { class: 'tune-hint' });
+    var focusDays = KB.State.data().focusDays;
+    line.textContent = ctx.curve.learned
+      ? 'Curve learned from your ' + (focusDays ? Object.keys(focusDays).length : 0) + ' focus day(s) and completed cards.'
+      : 'Complete sized cards and run focus sessions \u2014 the curve learns your best hours.';
+    el.appendChild(line);
   }
 
   function openBoard() {

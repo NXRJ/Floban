@@ -69,6 +69,16 @@
       };
     }
 
+    // The day a card sits on in the grid: its do-date (when) when set, else
+    // its due date. The deadline stays the overdue driver below.
+    function planDay(card) {
+      var when = card && card.when;
+      if (typeof when === 'string' && ISO_RE.test(when)) return when;
+      var due = card && card.due;
+      if (typeof due === 'string' && ISO_RE.test(due)) return due;
+      return null;
+    }
+
     // grid: { year, month, label, todayISO, overdue: [refs], weeks: [[day]] }
     // day: { dateISO, inMonth, isToday, cards: [refs] }
     function calendarGrid(monthKey, cards, now) {
@@ -102,21 +112,24 @@
         grid.weeks.push(week);
       }
 
-      var byDue = {};
+      var byDay = {};
       (cards || []).forEach(function (card) {
-        if (!card || typeof card.due !== 'string' || !ISO_RE.test(card.due)) return;
-        if (!byDue[card.due]) byDue[card.due] = [];
-        byDue[card.due].push(cardRef(card));
+        if (!card) return;
+        var placed = planDay(card);
+        if (placed) {
+          if (!byDay[placed]) byDay[placed] = [];
+          byDay[placed].push(cardRef(card));
+        }
+        // Overdue stays deadline-grounded: only a hard due date in the past
+        // lands on the strip, and only for cards not yet completed.
+        if (!card.completedAt && isPast(card.due, todayISO)) {
+          grid.overdue.push(cardRef(card));
+        }
       });
       grid.weeks.forEach(function (week) {
         week.forEach(function (day) {
-          day.cards = byDue[day.dateISO] || [];
+          day.cards = byDay[day.dateISO] || [];
         });
-      });
-
-      (cards || []).forEach(function (card) {
-        if (!card || card.completedAt) return;
-        if (isPast(card.due, todayISO)) grid.overdue.push(cardRef(card));
       });
       return grid;
     }
@@ -125,7 +138,8 @@
       calendarGrid: calendarGrid,
       shiftMonth: shiftMonth,
       monthKeyOf: monthKeyOf,
-      isPast: isPast
+      isPast: isPast,
+      planDay: planDay
     };
   }
 );

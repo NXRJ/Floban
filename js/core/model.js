@@ -31,6 +31,7 @@
         updatedAt: d.now(),
         movedAt: d.now(),
         due: '',
+        when: '',
         checklist: [],
         archivedAt: null,
         fromColumn: '',

@@ -326,6 +326,7 @@
       var parsed = KB.Core.Nlparse.parseQuickAdd(line, { now: Date.now(), labels: labels });
       var fields = {};
       if (parsed.due) fields.due = parsed.due;
+      if (parsed.when) fields.when = parsed.when;
       if (parsed.priority) fields.priority = parsed.priority;
       if (parsed.labelIds.length > 0) fields.labels = parsed.labelIds;
       return { title: parsed.title || line, fields: fields, raw: line };
@@ -819,7 +820,7 @@
     KB.el('app-menu').querySelector('.btn-icon').innerHTML = icon('menu');
     KB.el('search-input').previousElementSibling.innerHTML = icon('search');
 
-    var tabIcons = { board: 'board', mydesk: 'star', inbox: 'box', review: 'check', tuning: 'clock', ping: 'doc' };
+    var tabIcons = { board: 'board', mydesk: 'star', inbox: 'box', review: 'check', tuning: 'clock', ping: 'doc', power: 'doc' };
     KB.el('mobile-tabs').querySelectorAll('.mt-btn').forEach(function (btn) {
       btn.querySelector('.mt-icon').innerHTML = icon(tabIcons[btn.dataset.workspace] || 'doc');
     });
