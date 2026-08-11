@@ -193,6 +193,7 @@
   <script src="js/core/streak.js"></script>
   <script src="js/core/model.js"></script>
   <script src="js/core/statediff.js"></script>
+  <script src="js/core/ydoc.js"></script>
   <script src="js/core/migration.js"></script>
   <script src="js/core/lifecycle.js"></script>
   <script src="js/core/relations.js"></script>
@@ -218,6 +219,10 @@
 
   <script src="js/dom.js"></script>
   <script src="js/sync.js"></script>
+  <!-- Optional CRDT sync. vendor/yjs.js is deliberately absent: js/sync-session.js
+       fetches it on demand, so a board with sync off never pays for it. -->
+  <script src="js/sync-provider.js"></script>
+  <script src="js/sync-session.js"></script>
   <script src="js/multitab.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/state.js"></script>

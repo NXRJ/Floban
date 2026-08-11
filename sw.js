@@ -15,7 +15,7 @@
  */
 'use strict';
 
-var CACHE = 'kanban-v3';
+var CACHE = 'kanban-v4';
 
 var PRECACHE = [
   './',
@@ -46,6 +46,7 @@ var PRECACHE = [
   './js/core/streak.js',
   './js/core/model.js',
   './js/core/statediff.js',
+  './js/core/ydoc.js',
   './js/core/migration.js',
   './js/core/lifecycle.js',
   './js/core/relations.js',
@@ -70,6 +71,11 @@ var PRECACHE = [
   './js/core/commands.js',
   './js/dom.js',
   './js/sync.js',
+  // vendor/yjs.js is deliberately NOT precached: it is fetched on demand when
+  // sync is switched on, and the cache-first handler below keeps it from then
+  // on — so an offline board with sync off never downloads 93KB it cannot use.
+  './js/sync-provider.js',
+  './js/sync-session.js',
   './js/multitab.js',
   './js/state.js',
   './js/storage.js',
