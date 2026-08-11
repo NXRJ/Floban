@@ -1019,6 +1019,9 @@
       window.addEventListener('focus', processRecurrences);
       refresh();
       KB.PWA.init();
+      // Opt-in CRDT sync. A no-op — no network, no vendor bundle — unless the
+      // user turned it on for a room.
+      KB.SyncSession.init();
       document.documentElement.dataset.ready = '1';
     });
   }
