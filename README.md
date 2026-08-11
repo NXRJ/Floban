@@ -435,7 +435,12 @@ that use them.
 | Browser | `js/state-cards.js` | Card-focused `KB.State` operations (create/edit/archive, checklist, labels, assignee, due, flow, dependencies). |
 | Browser | `js/state-features.js` | Feature-state `KB.State` operations (boards, columns, labels, templates, recurrences, inbox, lenses, bulk). |
 | Browser | `js/storage.js` | IndexedDB adapter for the storage engine plus the atomic localStorage crash-mirror envelope and the boot-time recovery wiring. |
-| Browser | `js/sync.js` | Mutation observer (`KB.Sync.subscribe`): the seam a future optional CRDT sync layer hooks into. No-op today. Contract in [docs/SYNC.md](docs/SYNC.md). |
+| Browser | `js/sync.js` | Mutation observer (`KB.Sync.subscribe`): the seam the optional CRDT sync layer hooks into. A no-op passthrough while sync is off, which is the default. Contract in [docs/SYNC.md](docs/SYNC.md). |
+| Browser | `js/core/ydoc.js` | CRDT binding: replays `KB.Core.StateDiff` ops onto a `Y.Doc` of nested `Y.Map`/`Y.Array`, and materializes it back to a state snapshot. Yjs is injected, not imported. |
+| Browser | `js/sync-provider.js` | WebSocket transport for the sync layer: tagged binary frames, reconnect with jittered backoff, snapshot-on-request. Knows nothing about boards. |
+| Browser | `js/sync-session.js` | Sync lifecycle and glue: opt-in config, on-demand `vendor/yjs.js` load, local saves → ops → document, remote updates → `KB.State.applyRemote`. |
+| Node | `sync-relay.js` | Optional zero-dependency WebSocket relay (hand-rolled RFC 6455) that fans opaque Yjs updates out per room, with a bounded, compactable in-memory log. Attached by `serve.js` only under `npm run serve:sync`. |
+| Vendor | `vendor/yjs.js` | Yjs 13.6.20 bundled to a `window.Y` IIFE by `npm run yjs` and committed. Deliberately outside `index.html` and the precache: loaded on demand when sync is switched on. |
 | Browser | `js/multitab.js` | Cross-tab guard: a localStorage edit lock makes a second tab read-only with a takeover banner (prevents last-writer-wins loss). |
 | Browser | `js/commands.js` | The app's command definitions (single source of truth for the palette, shortcuts, app menu, action sheets). |
 | Browser | `js/palette.js` | Ctrl/Cmd+K command palette overlay: filter, keyboard navigation, combobox/listbox semantics, focus trap. |

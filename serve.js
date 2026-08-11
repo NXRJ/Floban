@@ -60,6 +60,27 @@ const server = http.createServer((req, res) => {
   }
 });
 
+// Optional CRDT sync relay, off unless asked for (npm run serve:sync). The app
+// is local-first: with the relay absent there is no 'upgrade' handler, so Node
+// drops the socket — and a client with sync disabled never opens one anyway.
+// The flag exists as well as the env var because `KB_SYNC_RELAY=1 node serve.js`
+// is not portable to the Windows shells this project is developed on.
+const RELAY_ENABLED = process.env.KB_SYNC_RELAY === '1' || process.argv.indexOf('--sync') !== -1;
+
+if (RELAY_ENABLED) {
+  const origins = (process.env.KB_SYNC_ORIGINS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  require('./sync-relay.js').attach(server, {
+    origins: origins,
+    log: (message) => console.log(message)
+  });
+}
+
 server.listen(PORT, () => {
   console.log('Kanban served at http://localhost:' + PORT + '/');
+  if (RELAY_ENABLED) {
+    console.log('Sync relay listening at ws://localhost:' + PORT + '/sync?room=<id>');
+  }
 });

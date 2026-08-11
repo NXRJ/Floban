@@ -22,6 +22,7 @@
     "test:e2e": "node tests/kanban-smoke.js",
     "test": "npm run test:unit && npm run test:e2e",
     "serve": "node serve.js",
+    "serve:sync": "node serve.js --sync",
     "icons": "node scripts/gen-icons.js",
     "fonts": "node scripts/fetch-fonts.js",
     "yjs": "node scripts/fetch-yjs.js"

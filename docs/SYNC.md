@@ -1,11 +1,65 @@
-# Optional CRDT Sync — Preparation Notes
+# Optional CRDT Sync
 
-This document describes the seam the app already has for a **future, optional,
-opt-in** multi-device sync layer (Yjs or Automerge). It is deliberately not
-implemented: the app is local-first and must stay fully functional with no
-network, no accounts, and no backend. These notes are the contract a sync
-implementation must respect so it can be added later without destabilizing the
-local-first experience.
+An **optional, opt-in** multi-device sync layer built on Yjs. The app is
+local-first and stays fully functional with no network, no accounts, and no
+backend; sync is off by default and costs a cold boot nothing until it is
+switched on. The contract below is what the implementation respects — it was
+written before the code and still governs it.
+
+## The pieces
+
+| File | Role |
+|------|------|
+| `js/core/statediff.js` | Snapshot → granular ops. Recovers the per-field granularity the `save()` funnel throws away. Pure, no CRDT knowledge. |
+| `js/core/ydoc.js` | The binding: StateDiff ops ↔ `Y.Map`/`Y.Array`. Owns merge semantics. |
+| `js/sync-provider.js` | The wire: a WebSocket client speaking a tiny tagged protocol. Knows nothing about boards. |
+| `js/sync-session.js` | The glue and the lifecycle. Subscribes to `KB.Sync`, commits remote changes through `KB.State.applyRemote`. |
+| `sync-relay.js` | The server: a dependency-free WebSocket relay that fans opaque updates out per room. |
+| `vendor/yjs.js` | Yjs 13.6.20, bundled once by `npm run yjs` and committed. Fetched on demand, never precached. |
+
+## Turning it on
+
+Serve with the relay attached, then pair devices on a shared room name:
+
+```bash
+npm run serve:sync
+```
+
+```js
+KB.SyncSession.enable('my-room')   // persists to localStorage, survives reload
+KB.SyncSession.state()             // { enabled, room, status, peers }
+KB.SyncSession.disable()
+```
+
+The relay is same-origin by default (`KB_SYNC_ORIGINS` overrides), keeps each
+room's update log in memory only, and never parses a Yjs update.
+
+## Document shape
+
+The Y.Doc mirrors the state tree, because merge granularity can only ever be as
+fine as the document's structure:
+
+```
+doc.getMap('state')      coarse single-writer slices (inbox, lenses, streaks…)
+doc.getArray('boards')   Y.Array<Y.Map>
+  board.get('columns')   Y.Array<Y.Map>
+    column.get('cards')  Y.Array<Y.Map>   card fields are map keys
+```
+
+Two peers editing different fields of one card touch independent map keys; two
+peers adding cards to one column produce an array conflict Yjs resolves without
+losing either. `theme` and `activeBoardId` are deliberately **not** synced —
+`js/sync-session.js` overlays this device's values before committing.
+
+## Known limits
+
+- **Moves rebuild.** Yjs 13 has no move primitive, so a moved card (or a
+  reordered column/board) is deleted and reinserted as a fresh `Y.Map`. A peer's
+  concurrent edit to that same entity in that instant can be lost.
+- **Coarse slices are last-writer-wins.** `inbox`, `lenses`, `dayplans` and
+  friends are single-writer by nature and are diffed whole.
+- **The relay is not a source of truth.** Its log dies with the process; every
+  peer holds the full document locally, and reconnecting peers repopulate it.
 
 ## The mutation boundary
 
@@ -25,8 +79,9 @@ DOM event / command → KB.State.* → save(source) → KB.Sync.emit({ source, a
 - Imports call `save('import')`; first-run migrations call `save('load')`.
 
 `KB.Sync` (`js/sync.js`) is a tiny pub/sub: `KB.Sync.subscribe(fn)` receives
-`{ source, at, state }` for every save. Nothing subscribes today — the observer
-is a no-op passthrough, so the sync layer is purely additive.
+`{ source, at, state }` for every save. `js/sync-session.js` is its only
+subscriber, and only while sync is enabled — with it off the observer is a
+no-op passthrough, so the sync layer stays purely additive.
 
 ## Entity identity
 
@@ -57,9 +112,10 @@ any id migration.
 
 ## What stays out of scope
 
-- Transport (WebSocket, WebRTC, server, …) — a later experiment.
-- Conflict resolution policy beyond CRDT merge semantics — decide when sync is
-  designed.
+- Peer-to-peer transport (WebRTC) and any hosted/multi-user service. The relay
+  is a localhost courier for your own devices, with no auth and no persistence.
+- Conflict resolution policy beyond CRDT merge semantics, plus the two limits
+  listed above (moves rebuild; coarse slices are last-writer-wins).
 - Multi-tab same-device editing — protected, not synchronized. Each tab runs
   its own serialized write queue, so simultaneous full-state writes would
   overwrite each other (last-writer-wins data loss). `js/multitab.js` ships
