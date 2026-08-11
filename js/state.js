@@ -179,6 +179,29 @@
     return result.value;
   }
 
+  // The single entry point for state that did not originate in this tab.
+  //
+  // docs/SYNC.md requires remote changes to come through the public API rather
+  // than touching `state` directly, so undo, backup and persistence semantics
+  // stay uniform. Everything a local commit does happens here too — validate,
+  // record history, swap, save — with one difference: the save is tagged
+  // 'remote' so the sync adapter can recognise its own application and not
+  // echo it back to the peer it just came from.
+  function applyRemote(nextState) {
+    if (!nextState || typeof nextState !== 'object') return false;
+    // Never trust a peer's payload: a remote document can be older, newer, or
+    // malformed, and normalizeState is the same gate that guards a restored
+    // backup or an imported board.
+    var normalized = KB.Core.Migration.normalizeState(nextState, deps());
+    if (!normalized || !Array.isArray(normalized.boards) || normalized.boards.length === 0) {
+      return false;
+    }
+    pushHistory();
+    state = normalized;
+    save('remote');
+    return true;
+  }
+
   function wrapResult(operation) {
     return function () {
       var result = null;
@@ -549,6 +572,7 @@
   KB.State = {
     load: load,
     data: data,
+    applyRemote: applyRemote,
     activeBoard: activeBoard,
     boardById: boardById,
     findCardInBoard: findCardInBoard,

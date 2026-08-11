@@ -15,7 +15,7 @@
  */
 'use strict';
 
-var CACHE = 'kanban-v3';
+var CACHE = 'kanban-v4';
 
 var PRECACHE = [
   './',
@@ -37,13 +37,28 @@ var PRECACHE = [
   './icons/apple-touch-icon.png',
   './js/boot-theme.js',
   './js/core/date.js',
+  './js/core/when.js',
+  './js/core/nlparse.js',
+  './js/core/calendar.js',
+  './js/core/dayplan.js',
+  './js/core/focus.js',
+  './js/core/worklog.js',
+  './js/core/streak.js',
   './js/core/model.js',
+  './js/core/statediff.js',
+  './js/core/ydoc.js',
   './js/core/migration.js',
   './js/core/lifecycle.js',
   './js/core/relations.js',
   './js/core/policies.js',
   './js/core/metrics.js',
+  './js/core/calibrate.js',
+  './js/core/weekly.js',
+  './js/core/template.js',
+  './js/core/ping.js',
   './js/core/pipeline.js',
+  './js/core/importer.js',
+  './js/core/exporter.js',
   './js/core/recurrence.js',
   './js/core/inbox.js',
   './js/core/filtering.js',
@@ -56,6 +71,11 @@ var PRECACHE = [
   './js/core/commands.js',
   './js/dom.js',
   './js/sync.js',
+  // vendor/yjs.js is deliberately NOT precached: it is fetched on demand when
+  // sync is switched on, and the cache-first handler below keeps it from then
+  // on — so an offline board with sync off never downloads 93KB it cannot use.
+  './js/sync-provider.js',
+  './js/sync-session.js',
   './js/multitab.js',
   './js/state.js',
   './js/storage.js',
@@ -69,6 +89,9 @@ var PRECACHE = [
   './js/modals/recurrence.js',
   './js/modals/dialogs.js',
   './js/modals/triage.js',
+  './js/modals/day.js',
+  './js/modals/arrival.js',
+  './js/modals/templates.js',
   './js/moveto.js',
   './js/selection.js',
   './js/workspaces.js',
@@ -76,6 +99,8 @@ var PRECACHE = [
   './js/commands.js',
   './js/actionsheet.js',
   './js/palette.js',
+  './js/scoreboard.js',
+  './js/checkpoint.js',
   './js/pwa.js',
   './js/app.js'
 ];

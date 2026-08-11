@@ -3266,7 +3266,14 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     // fetches, so the update is triggered by registering a patched worker
     // from a temp file under the same scope (an update by another name).
     const tempSwPath = path.join(__dirname, '..', 'sw-update-test.js');
-    fs.writeFileSync(tempSwPath, fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8').replace(/kanban-v3/g, 'kanban-v3-updated'));
+    // Read the cache name out of sw.js rather than hardcoding it: a bumped
+    // CACHE constant would otherwise turn this into a no-op rewrite, and the
+    // test would hang waiting for a cache that never appears.
+    const swUpdateSource = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
+    const currentCache = (swUpdateSource.match(/var CACHE = '([^']+)'/) || [])[1];
+    if (!currentCache) throw new Error('could not read CACHE from sw.js');
+    const updatedCache = currentCache + '-updated';
+    fs.writeFileSync(tempSwPath, swUpdateSource.split(currentCache).join(updatedCache));
     try {
       await pwaPage.evaluate(() => { window.__updateMarker = true; });
       await pwaPage.evaluate(() => navigator.serviceWorker.register('/sw-update-test.js', { scope: './' }));
@@ -3280,18 +3287,22 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       });
       // The reload wipes the marker; wait for it to be gone.
       await pwaPage.waitForFunction(() => document.documentElement.dataset.ready === '1' && window.__updateMarker === undefined, { timeout: 10000 }).catch(() => {});
-      await pwaPage.waitForFunction(async () => (await caches.keys()).includes('kanban-v3-updated'), { timeout: 10000 });
+      await pwaPage.waitForFunction(
+        async (name) => (await caches.keys()).includes(name),
+        { timeout: 10000 },
+        updatedCache
+      );
       // The updated worker must be active and serving its cache after the
       // consent-driven reload. The old cache may briefly reappear while the
       // dying worker's in-flight fetches complete, so "old cache absent" is
       // not asserted.
-      check('updated worker activates and serves the new cache', await pwaPage.evaluate(async () => {
+      check('updated worker activates and serves the new cache', await pwaPage.evaluate(async (name) => {
         const reg = await navigator.serviceWorker.getRegistration();
         const keys = await caches.keys();
         return window.__updateMarker === undefined &&
           reg && reg.active && reg.active.scriptURL.indexOf('sw-update-test.js') !== -1 &&
-          keys.includes('kanban-v3-updated');
-      }));
+          keys.includes(name);
+      }, updatedCache));
     } finally {
       try { fs.unlinkSync(tempSwPath); } catch (err) {}
     }
