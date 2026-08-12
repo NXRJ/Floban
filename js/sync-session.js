@@ -30,6 +30,11 @@
   var provider = null;
   var baseline = null;
   var ready = false;
+  // `ready` drops on every disconnect; `initialized` latches on the first
+  // successful handshake and marks the moment the document became real. Local
+  // ops are buffered before that and applied directly after it.
+  var initialized = false;
+  var pendingOps = [];
   var pendingCommit = null;
   var blockedByReadOnly = false;
   var peers = 0;
@@ -127,6 +132,18 @@
     }
     var ops = KB.Core.StateDiff.diff(baseline, change.state);
     baseline = clone(change.state);
+
+    // Rule 4: until the first handshake completes, the document is an empty
+    // Y.Doc — the room's history has not replayed yet. An op like
+    // `card.set(title)` against a card the document does not hold silently
+    // does nothing (see js/core/ydoc.js), and `baseline` has already moved
+    // past the edit, so the delta would be unrecoverable the moment the
+    // handshake commits the room's state over the top of it. Hold the ops and
+    // replay them once there is a document to apply them to.
+    if (!initialized) {
+      pendingOps = pendingOps.concat(ops);
+      return;
+    }
     binding.applyOps(ops);
   }
 
@@ -175,16 +192,37 @@
 
   // ---- handshake ------------------------------------------------------------
 
-  function onReady() {
+  function onReady(info) {
     ready = true;
-    if (binding.isEmpty()) {
-      // First peer in the room: the document starts as this device's board.
+    var canSeed = !info || info.canSeed !== false;
+
+    if (binding.isEmpty() && canSeed) {
+      // First peer in an empty room, and the relay confirmed we hold the
+      // seeding right. seed() reads current state, so anything edited while
+      // the handshake was in flight is already captured — the buffered ops
+      // would only re-apply it, and an `add` op would duplicate. Drop them.
       binding.seed(KB.State.data());
       baseline = clone(KB.State.data());
+      pendingOps = [];
     } else {
-      // The room already has a document; merge it into this device.
+      // Either the room already has a document, or another peer owns the
+      // seeding right and its update is still in flight. Merge what is there.
       commit();
+      // Now replay anything edited while connecting, ON TOP of the merged
+      // document — commit() above just overwrote those edits in local state,
+      // and these ops are the only remaining record of them.
+      if (pendingOps.length) {
+        binding.applyOps(pendingOps);
+        pendingOps = [];
+        scheduleCommit();
+      }
     }
+
+    // Only now is there a document worth diffing into; later saves apply
+    // directly. This stays true across a reconnect: the document survives, so
+    // edits made while offline apply locally and republish below.
+    initialized = true;
+
     // Re-publish everything we hold. Idempotent for peers, and it repopulates a
     // relay that restarted empty or dropped history while we were disconnected.
     provider.push(binding.encodeState());
@@ -200,6 +238,8 @@
       binding = KB.Core.YDoc.create({ Y: Y });
       baseline = clone(KB.State.data());
       ready = false;
+      initialized = false;
+      pendingOps = [];
 
       binding.onLocalUpdate(function (update) {
         if (provider) provider.push(update);
@@ -244,6 +284,8 @@
     }
     baseline = null;
     ready = false;
+    initialized = false;
+    pendingOps = [];
     peers = 0;
     blockedByReadOnly = false;
   }

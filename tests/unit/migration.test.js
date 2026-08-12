@@ -105,11 +105,11 @@ test('v1 migration preserves the theme', () => {
   assert.equal(result.theme, 'light');
 });
 
-test('v1 migration falls back to dark theme when missing', () => {
+test('v1 migration falls back to the default world when theme is missing', () => {
   const raw = JSON.parse(JSON.stringify(v1Fixture));
   delete raw.theme;
   const result = Migration.migrateV1(raw, makeDeps());
-  assert.equal(result.theme, 'dark');
+  assert.equal(result.theme, 'atelier');
 });
 
 test('the migrated board becomes active', () => {
@@ -188,7 +188,7 @@ test('v1 migration does not mutate the input state', () => {
 test('normalizeState heals a corrupt version-2 payload', () => {
   const result = Migration.normalizeState(corruptFixture, makeDeps());
   assert.equal(result.version, 3);
-  assert.equal(result.theme, 'dark');
+  assert.equal(result.theme, 'atelier');
   assert.equal(result.activeBoardId, 'board-1');
   const board = result.boards[0];
   assert.deepEqual(board.labels.map(l => l.id), ['l-ok', 'l-bad']);
@@ -211,9 +211,9 @@ test('normalizeState falls back to the first board for an invalid activeBoardId'
   assert.equal(result.activeBoardId, result.boards[0].id);
 });
 
-test('normalizeState falls back to dark for a non-string theme', () => {
+test('normalizeState falls back to the default world for a non-string theme', () => {
   const result = Migration.normalizeState(corruptFixture, makeDeps());
-  assert.equal(result.theme, 'dark');
+  assert.equal(result.theme, 'atelier');
 });
 
 test('normalizeState heals a missing archive structure', () => {

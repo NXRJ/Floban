@@ -39,7 +39,7 @@
     // Single-writer slices: personal, not collaborative. Diffed as a whole so
     // the document still carries them, without pretending they merge per-field.
     var COARSE_KEYS = ['inbox', 'lenses', 'recurrences', 'templates', 'dayplans',
-      'focusDays', 'focusSession', 'streaks', 'theme', 'activeBoardId', 'version'];
+      'focusDays', 'focusSession', 'streaks', 'theme', 'accent', 'activeBoardId', 'version'];
 
     // Deep value equality via canonical JSON. State values are plain JSON, so
     // this is exact rather than approximate.

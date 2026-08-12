@@ -54,7 +54,13 @@
 
   function applyTheme() {
     var current = KB.State.data();
-    document.documentElement.dataset.theme = current ? current.theme : 'dark';
+    var id = KB.Themes.normalize(current ? current.theme : null);
+    var accent = KB.Themes.accent(id, current ? current.accent : null);
+    var root = document.documentElement;
+    root.dataset.theme = id;
+    root.dataset.ground = KB.Themes.get(id).ground;
+    root.style.setProperty('--accent', accent.value);
+    root.style.setProperty('--on-accent', accent.on);
   }
 
   function refresh() {
@@ -458,10 +464,8 @@
         KB.Workspaces.set(btn.dataset.workspace);
       });
     });
-    KB.el('toggle-theme').addEventListener('click', function () {
-      var next = KB.State.data().theme === 'dark' ? 'light' : 'dark';
-      KB.State.setTheme(next);
-      applyTheme();
+    KB.el('open-worlds').addEventListener('click', function () {
+      KB.Worlds.show();
     });
     KB.el('board-switch').addEventListener('click', function () {
       openBoardMenu(KB.el('board-switch'));
@@ -821,8 +825,7 @@
     KB.el('manage-labels').querySelector('.btn-icon').innerHTML = icon('palette');
     KB.el('toggle-archive').querySelector('.btn-icon').innerHTML = icon('archive');
     KB.el('open-recurrences').querySelector('.btn-icon').innerHTML = icon('clock');
-    KB.el('toggle-theme').querySelector('.icon-sun').innerHTML = icon('sun');
-    KB.el('toggle-theme').querySelector('.icon-moon').innerHTML = icon('moon');
+    KB.el('open-worlds').querySelector('.icon-worlds').innerHTML = icon('sun');
     KB.el('palette-btn').querySelector('.btn-icon').innerHTML = icon('command');
     KB.el('app-menu').querySelector('.btn-icon').innerHTML = icon('menu');
     KB.el('search-input').previousElementSibling.innerHTML = icon('search');
@@ -861,8 +864,11 @@
       var cols = board.columns.length;
       var cards = board.columns.reduce(function (n, c) { return n + c.cards.length; }, 0);
       var archived = board.archive.cards.length + board.archive.columns.length;
+      // The boot banner names the world you are actually in. It used to
+      // hardcode the Atelier, which read as a mislabel in the other six.
+      var world = KB.Themes.get(KB.State.data().theme);
       return [
-        { t: 'KANBAN/OS v5.0.0  ·  THE 8-BIT ATELIER', c: 'chrome' },
+        { t: 'KANBAN/OS v5.0.0  ·  ' + world.name.toUpperCase(), c: 'chrome' },
         { t: 'MEM 64K OK · CRT 60HZ', c: 'muted' },
         { t: 'BOARD: ' + board.name, c: 'muted' },
         { t: 'MOUNTING DESKTOP...', c: 'muted' },
