@@ -161,10 +161,15 @@
     return lum > 0.52 ? '#111113' : '#f5f5f2';
   }
 
+  /* A label's colour is the user's data, so it is published as custom
+   * properties rather than painted straight onto background/color. Writing the
+   * literals would produce inline styles no world could answer — and a world
+   * whose whole grammar is unfilled type (the Lineup) could never opt out of
+   * a filled chip. Worlds consume --chip-bg / --chip-fg, or ignore them. */
   function paintChip(chip, color) {
-    chip.style.background = color;
-    chip.style.color = inkOn(color);
-    chip.style.borderColor = 'rgba(0, 0, 0, 0.35)';
+    chip.style.setProperty('--chip-bg', color);
+    chip.style.setProperty('--chip-fg', inkOn(color));
+    chip.style.setProperty('--chip-bd', 'var(--chip-border)');
   }
 
   function uid(prefix) {

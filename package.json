@@ -1,7 +1,7 @@
 {
   "name": "kanban",
   "version": "0.1.0",
-  "description": "A personal Kanban board with the 8-Bit Atelier look: vanilla HTML/CSS/JS, no build step, IndexedDB persistence with a localStorage crash mirror, offline PWA.",
+  "description": "A personal Kanban board with seven switchable design worlds over one component layer: vanilla HTML/CSS/JS, no build step, IndexedDB persistence with a localStorage crash mirror, offline PWA.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -17,7 +17,7 @@
     "yjs": "^13.6.20"
   },
   "scripts": {
-    "lint": "eslint js tests serve.js scripts sw.js eslint.config.js",
+    "lint": "eslint js tests serve.js sync-relay.js scripts sw.js eslint.config.js",
     "test:unit": "node --test tests/unit/*.test.js",
     "test:e2e": "node tests/kanban-smoke.js",
     "test": "npm run test:unit && npm run test:e2e",
