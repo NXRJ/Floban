@@ -244,7 +244,19 @@ function attach(server, options) {
   function room(id) {
     let entry = rooms.get(id);
     if (!entry) {
-      entry = { id: id, clients: new Set(), updates: [], bytes: 0, seq: 0, compacting: null };
+      entry = {
+        id: id,
+        clients: new Set(),
+        updates: [],
+        bytes: 0,
+        seq: 0,
+        compacting: null,
+        // Bootstrap state for an empty room. `seeder` is the one client
+        // currently holding the seeding right; `waiting` are the clients that
+        // have connected but must not be told `ready` until a document exists.
+        seeder: null,
+        waiting: []
+      };
       rooms.set(id, entry);
     }
     return entry;
@@ -303,22 +315,54 @@ function attach(server, options) {
     return payload;
   }
 
-  function join(entry, client) {
-    // Decide seeding rights BEFORE adding this client, so exactly one member
-    // of an empty room may seed it.
-    //
-    // Without this, two cold peers can both be told `ready` while the room is
-    // still empty and both seed. Their boards are Y.Arrays of Y.Maps, so
-    // matching application-level ids do NOT make them the same CRDT items:
-    // merging the two documents yields duplicate boards/columns/cards sharing
-    // one id, which lookups and toState() then disagree about.
-    const canSeed = entry.updates.length === 0 && entry.clients.size === 0;
-
-    entry.clients.add(client);
-    // Replay before `ready`: the client uses that marker to decide whether the
-    // room is empty (seed my board) or already has a document (adopt it).
-    entry.updates.forEach((item) => client.socket.sendBinary(item.frame));
+  function sendReady(client, canSeed) {
     client.socket.sendText(JSON.stringify({ t: 'ready', canSeed: canSeed }));
+  }
+
+  // A room with no document yet hands its seeding right to exactly one client
+  // and holds everyone else back. Without the hold, a second cold peer is told
+  // `ready, canSeed: false` — "adopt what is here" — while nothing is here
+  // yet: it applies the edits it buffered during the connect window against an
+  // empty document, where ops for absent cards are silently dropped, and the
+  // seed then lands on top. The edit is gone with no error anywhere.
+  //
+  // So `ready` means "there is a document you may safely edit", never merely
+  // "the history replay has ended".
+  function promoteSeeder(entry) {
+    if (entry.seeder || entry.updates.length > 0) return;
+    const next = entry.waiting.shift();
+    if (!next) return;
+    entry.seeder = next;
+    sendReady(next, true);
+  }
+
+  // The room just became non-empty. The seeding right is spent, and everyone
+  // held back can be released — they are already in `clients`, so the seed
+  // reached them through the same broadcast that triggered this.
+  function releaseWaiting(entry) {
+    entry.seeder = null;
+    const waiting = entry.waiting;
+    entry.waiting = [];
+    waiting.forEach((client) => sendReady(client, false));
+  }
+
+  function join(entry, client) {
+    entry.clients.add(client);
+
+    if (entry.updates.length > 0) {
+      // The room has a document. Replay it before `ready`, so the client is
+      // holding the room's state by the time it is told to adopt.
+      entry.updates.forEach((item) => client.socket.sendBinary(item.frame));
+      sendReady(client, false);
+    } else if (!entry.seeder) {
+      entry.seeder = client;
+      sendReady(client, true);
+    } else {
+      // Someone else is seeding. Stay connected and silent: no `ready` until
+      // their document arrives, or until they leave without producing one.
+      entry.waiting.push(client);
+    }
+
     announce(entry);
   }
 
@@ -328,6 +372,18 @@ function attach(server, options) {
       clearTimeout(entry.compacting.timer);
       entry.compacting = null;
     }
+
+    const held = entry.waiting.indexOf(client);
+    if (held !== -1) entry.waiting.splice(held, 1);
+    // The seeder left without producing a document — otherwise the room would
+    // already have released the right. Hand it to the next client in line, or
+    // the room would wait for a seed that is never coming. The heartbeat is
+    // what makes this fire for a peer that vanished rather than closed.
+    if (entry.seeder === client) {
+      entry.seeder = null;
+      promoteSeeder(entry);
+    }
+
     if (entry.clients.size === 0) {
       // Nobody left to serve, and every peer holds the document locally.
       rooms.delete(entry.id);
@@ -408,7 +464,11 @@ function attach(server, options) {
         const seq = payload.readUInt32BE(1);
         const body = payload.subarray(5);
         if (tag === TAG_UPDATE) {
+          const wasEmpty = entry.updates.length === 0;
           broadcast(entry, record(entry, body), client);
+          // The broadcast above is what the held-back clients receive as their
+          // replay, so release them only after it has gone out.
+          if (wasEmpty) releaseWaiting(entry);
           maybeCompact(entry);
           return;
         }

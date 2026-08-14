@@ -187,10 +187,33 @@
     // Updates arriving before `ready` are the room's history replaying. The
     // handshake below decides what to do with them once the replay is done.
     if (!ready) return;
+    // A seed for a room that still had nothing in it at handshake time. Adopt
+    // it now — which is also what replays the ops buffered while waiting.
+    if (!initialized && !binding.isEmpty()) {
+      adopt();
+      return;
+    }
     scheduleCommit();
   }
 
   // ---- handshake ------------------------------------------------------------
+
+  // The room has a document: merge it into this device, then replay anything
+  // edited while connecting ON TOP of the merged document — commit() has just
+  // overwritten those edits in local state, and these ops are the only
+  // remaining record of them.
+  function adopt() {
+    commit();
+    if (pendingOps.length) {
+      binding.applyOps(pendingOps);
+      pendingOps = [];
+      scheduleCommit();
+    }
+    // Only now is there a document worth diffing into; later saves apply
+    // directly. This stays true across a reconnect: the document survives, so
+    // edits made while offline apply locally and republish.
+    initialized = true;
+  }
 
   function onReady(info) {
     ready = true;
@@ -204,24 +227,18 @@
       binding.seed(KB.State.data());
       baseline = clone(KB.State.data());
       pendingOps = [];
+      initialized = true;
+    } else if (binding.isEmpty()) {
+      // Told to adopt a room that holds nothing yet. A current relay does not
+      // do this — it withholds `ready` until the room is seeded — so this
+      // needs a relay from before that rule. Adopting here would apply the
+      // buffered ops against an empty document, which drops every op naming a
+      // card the document does not have. Stay uninitialized and keep
+      // buffering; onRemoteUpdate adopts as soon as the seed arrives.
+      initialized = false;
     } else {
-      // Either the room already has a document, or another peer owns the
-      // seeding right and its update is still in flight. Merge what is there.
-      commit();
-      // Now replay anything edited while connecting, ON TOP of the merged
-      // document — commit() above just overwrote those edits in local state,
-      // and these ops are the only remaining record of them.
-      if (pendingOps.length) {
-        binding.applyOps(pendingOps);
-        pendingOps = [];
-        scheduleCommit();
-      }
+      adopt();
     }
-
-    // Only now is there a document worth diffing into; later saves apply
-    // directly. This stays true across a reconnect: the document survives, so
-    // edits made while offline apply locally and republish below.
-    initialized = true;
 
     // Re-publish everything we hold. Idempotent for peers, and it repopulates a
     // relay that restarted empty or dropped history while we were disconnected.

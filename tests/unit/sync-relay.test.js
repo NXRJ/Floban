@@ -267,15 +267,114 @@ test('only one peer of an empty room is granted the seeding right', async () => 
   const server = await startServer();
   const a = await connect(server.port, 'seed-race');
   const b = await connect(server.port, 'seed-race');
-  await waitFor(() => a.ready && b.ready, 'both peers ready');
+  await waitFor(() => a.ready, 'the first peer is ready');
+  await wait(50);
 
-  const granted = [a.canSeed, b.canSeed].filter((v) => v === true);
-  assert.equal(granted.length, 1, 'exactly one peer may seed an empty room');
   assert.equal(a.canSeed, true, 'the first peer to join is the seeder');
-  assert.equal(b.canSeed, false, 'the second peer must adopt, not seed');
+  assert.equal(b.ready, false, 'the second peer is held until a document exists');
+
+  a.binding.seed(boardState('Seeded', ['x']));
+  await waitFor(() => b.ready, 'the second peer is released once the room is seeded');
+  assert.equal(b.canSeed, false, 'the released peer must adopt, not seed');
 
   a.close();
   b.close();
+  await server.close();
+});
+
+// Regression: `ready` used to mean only "the history replay has ended", so a
+// second cold peer was told to adopt a room that held nothing yet. It applied
+// the ops it had buffered during the connect window against an empty document
+// — where an op naming a card the document does not have is silently dropped
+// — and then the real seed landed on top. The edit vanished with no error.
+// `ready` now means "there is a document you may safely edit".
+test('an edit made while waiting for the seed survives', async () => {
+  const server = await startServer();
+  const a = await connect(server.port, 'boot-race');
+  await waitFor(() => a.ready, 'the seeder is ready');
+
+  const b = await connect(server.port, 'boot-race');
+  await wait(50);
+  assert.equal(b.ready, false, 'B must not be told to adopt an unseeded room');
+
+  // B edits a card it already holds locally while it waits. This is exactly
+  // the op that used to be lost.
+  const base = boardState('Board', ['x']);
+  const edited = boardState('Board', ['x']);
+  edited.boards[0].columns[0].cards[0].title = "B's edit";
+  const buffered = StateDiff.diff(base, edited);
+  assert.equal(buffered.length, 1, 'the edit produces one card.set op');
+  assert.equal(buffered[0].type, 'card.set');
+
+  a.binding.seed(base);
+  await waitFor(() => b.ready, 'B is released once the room has a document');
+  assert.equal(b.canSeed, false);
+  assert.equal(titles(b).length, 1, 'B holds the seed before it is released');
+
+  // sync-session replays the buffer on top of the adopted document.
+  b.binding.applyOps(buffered);
+  await waitFor(() => titles(a)[0] === "B's edit", "A receives B's buffered edit");
+  assert.deepEqual(titles(b), ["B's edit"], 'and B kept it too');
+
+  a.close();
+  b.close();
+  await server.close();
+});
+
+test('the seeding right moves on when the seeder leaves before seeding', async () => {
+  const server = await startServer();
+  const a = await connect(server.port, 'seeder-drops');
+  await waitFor(() => a.ready, 'the first peer holds the right');
+  assert.equal(a.canSeed, true);
+
+  const b = await connect(server.port, 'seeder-drops');
+  await wait(50);
+  assert.equal(b.ready, false, 'B waits behind A');
+
+  a.close(); // A leaves without ever publishing a document
+  await waitFor(() => b.ready, 'B is promoted to seeder');
+  assert.equal(b.canSeed, true, 'B inherits the right rather than waiting forever');
+
+  b.binding.seed(boardState('B board', ['y']));
+  const c = await connect(server.port, 'seeder-drops');
+  await waitFor(() => c.ready, 'a later joiner is ready');
+  assert.equal(c.canSeed, false, 'the room is seeded now');
+  await waitFor(() => titles(c).length === 1, 'and it adopts the promoted seed');
+
+  b.close();
+  c.close();
+  await server.close();
+});
+
+test('three peers joining a cold room produce exactly one board', async () => {
+  const server = await startServer();
+  const peers = await Promise.all([
+    connect(server.port, 'cold-start'),
+    connect(server.port, 'cold-start'),
+    connect(server.port, 'cold-start')
+  ]);
+
+  await waitFor(() => peers.some((p) => p.canSeed === true), 'a seeder is chosen');
+  await wait(50);
+  const seeders = peers.filter((p) => p.canSeed === true);
+  assert.equal(seeders.length, 1, 'exactly one peer may seed a cold room');
+  assert.equal(peers.filter((p) => p.ready).length, 1, 'the other two are held');
+
+  seeders[0].binding.seed(boardState('Cold', ['z']));
+  await waitFor(() => peers.every((p) => p.ready), 'all three released');
+  await waitFor(
+    () => peers.every((p) => p.binding.toState().boards.length === 1),
+    'all three converge'
+  );
+
+  peers.forEach((p, i) => {
+    const state = p.binding.toState();
+    assert.equal(state.boards.length, 1, 'peer ' + i + ' has one board');
+    assert.equal(state.boards[0].columns.length, 2, 'peer ' + i + ' has one column tree');
+    assert.equal(state.boards[0].columns[0].cards.length, 1, 'peer ' + i + ' has one card');
+  });
+
+  peers.forEach((p) => p.close());
   await server.close();
 });
 
@@ -301,10 +400,12 @@ test('two peers converge through the relay', async () => {
   const a = await connect(server.port, 'room-a');
   const b = await connect(server.port, 'room-a');
 
-  await waitFor(() => a.ready && b.ready, 'both peers ready');
-
-  // A is first in the room, so its board becomes the document.
+  // A is first in the room, so its board becomes the document. B is held at
+  // the handshake until that document exists — `ready` means "there is
+  // something here you may safely edit".
+  await waitFor(() => a.ready, 'the seeder is ready');
   a.binding.seed(boardState('Work', ['k1', 'k2']));
+  await waitFor(() => b.ready, 'B is released once the room is seeded');
   await waitFor(() => b.binding.toState().boards.length === 1, 'B receives the seed');
   assert.deepEqual(titles(b), ['Card k1', 'Card k2']);
 
@@ -326,9 +427,10 @@ test('concurrent edits from both peers survive the round trip', async () => {
   const server = await startServer();
   const a = await connect(server.port, 'room-concurrent');
   const b = await connect(server.port, 'room-concurrent');
-  await waitFor(() => a.ready && b.ready, 'both ready');
+  await waitFor(() => a.ready, 'the seeder is ready');
 
   a.binding.seed(boardState('Work', ['k1']));
+  await waitFor(() => a.ready && b.ready, 'both ready once the room is seeded');
   await waitFor(() => b.binding.isEmpty() === false, 'B has the board');
 
   const applyEdit = (peer, mutate) => {
