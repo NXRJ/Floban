@@ -5,8 +5,10 @@
  * a colour chip, so the choice is made on the thing itself. Beneath the
  * active world sits its curated accent row.
  *
- * Keyboard: T opens, arrows move, Enter commits, Escape closes and restores
- * whatever was active on open.
+ * Keyboard: Tab moves between worlds, Enter commits, Escape closes and
+ * restores whatever was active on open. Opening is by the header button or
+ * the "Change world…" command — there is no single-key shortcut, because `t`
+ * already belongs to the Date Desk.
  */
 (function () {
   var KB = window.KB;
@@ -100,7 +102,7 @@
       item.appendChild(h('span', { class: 'world-name' }, w.name));
       item.appendChild(h('span', { class: 'world-lineage' }, w.lineage));
       item.addEventListener('click', function () {
-        // The one moment where all six worlds meet: cross-fade the whole
+        // The one moment where all seven worlds meet: cross-fade the whole
         // document rather than snapping every surface at once. Falls back to a
         // plain swap where view transitions are unavailable or unwanted.
         KB.Motion.switchWorld(function () {
@@ -109,12 +111,16 @@
           render();
         });
       });
-      // previewing on hover is the whole point of a world picker
+      // Previewing on hover is the whole point of a world picker — but the
+      // preview has to be the whole world. Setting data-theme alone leaves the
+      // active world's accent written inline, where it outranks the hovered
+      // world's block: you would preview the Lineup wearing the Quarry's blue.
+      // Passing no accent id resolves to the hovered world's own first accent.
       item.addEventListener('mouseenter', function () {
-        document.documentElement.dataset.theme = w.id;
+        KB.Themes.applyTo(document.documentElement, w.id, null);
       });
       item.addEventListener('mouseleave', function () {
-        document.documentElement.dataset.theme = KB.Themes.normalize(KB.State.data().theme);
+        KB.App.applyTheme();
       });
       grid.appendChild(item);
     });

@@ -12,10 +12,18 @@
    styles.css, and `[data-theme="atelier-paper"]` is its second
    documented shift (the paper desktop).
 
-   Grounds: three dark (Atelier, Lineup, Archive), three light
-   (Quarry, Memphis, Quote). Every accent below is checked to
-   4.5:1 against the text it carries.
+   Grounds: three dark (Atelier, Lineup, Archive), four light
+   (Atelier Paper, Quarry, Memphis, Quote). Every accent below is
+   checked to 4.5:1 against the text it carries.
    ============================================================ */
+
+/* A world commits to a ground, so the browser has to be told which one —
+   otherwise scrollbars, form controls, spellcheck underlines and the canvas
+   behind an overscroll all render light while the Atelier, the Lineup and the
+   Archive render dark. `data-ground` is written by KB.Themes.applyTo, which
+   is also what makes it correct during the picker's hover preview. */
+[data-ground="dark"] { color-scheme: dark; }
+[data-ground="light"] { color-scheme: light; }
 
 /* ============================================================
    CLOUD QUARRY — cut cumulus, void blue, chamfered spec plates

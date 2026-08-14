@@ -54,13 +54,11 @@
 
   function applyTheme() {
     var current = KB.State.data();
-    var id = KB.Themes.normalize(current ? current.theme : null);
-    var accent = KB.Themes.accent(id, current ? current.accent : null);
-    var root = document.documentElement;
-    root.dataset.theme = id;
-    root.dataset.ground = KB.Themes.get(id).ground;
-    root.style.setProperty('--accent', accent.value);
-    root.style.setProperty('--on-accent', accent.on);
+    KB.Themes.applyTo(
+      document.documentElement,
+      current ? current.theme : null,
+      current ? current.accent : null
+    );
   }
 
   function refresh() {
@@ -248,7 +246,7 @@
 
   function openAppMenu(trigger) {
     if (KB.Commands.isMobile()) {
-      KB.Sheet.open({ title: 'KANBAN MENU', ctx: null, opener: trigger });
+      KB.Sheet.open({ title: 'FLOBAN MENU', ctx: null, opener: trigger });
       return;
     }
     openPop(trigger, function (popEl) {
@@ -868,7 +866,7 @@
       // hardcode the Atelier, which read as a mislabel in the other six.
       var world = KB.Themes.get(KB.State.data().theme);
       return [
-        { t: 'KANBAN/OS v5.0.0  ·  ' + world.name.toUpperCase(), c: 'chrome' },
+        { t: 'FLOBAN/OS v5.0.0  ·  ' + world.name.toUpperCase(), c: 'chrome' },
         { t: 'MEM 64K OK · CRT 60HZ', c: 'muted' },
         { t: 'BOARD: ' + board.name, c: 'muted' },
         { t: 'MOUNTING DESKTOP...', c: 'muted' },

@@ -108,7 +108,7 @@
     sweepCounts();
   }
 
-  /* --- the theme switch: the one moment where all six worlds meet --- */
+  /* --- the theme switch: the one moment where all seven worlds meet --- */
   function switchWorld(apply) {
     if (reduced() || !document.startViewTransition) { apply(); return; }
     document.startViewTransition(apply);
