@@ -44,13 +44,11 @@ const server = http.createServer((req, res) => {
       }
       const ext = path.extname(filePath).toLowerCase();
       const type = MIME[ext] || 'application/octet-stream';
-      const headers = { 'Content-Type': type };
-      // Never cache the app shell or the service worker; cache the rest.
-      if (pathname === '/sw.js' || pathname === '/index.html') {
-        headers['Cache-Control'] = 'no-cache';
-      } else {
-        headers['Cache-Control'] = 'public, max-age=3600';
-      }
+      // This is the development server, so nothing is cached. An hour-long
+      // max-age here silently serves stale CSS and JS after every edit, which
+      // costs far more than the requests it saves. Production caching is the
+      // service worker's job, not this file's.
+      const headers = { 'Content-Type': type, 'Cache-Control': 'no-store' };
       res.writeHead(200, headers);
       res.end(data);
     });

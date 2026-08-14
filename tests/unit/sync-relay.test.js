@@ -191,6 +191,7 @@ async function connect(port, room) {
   const peer = {
     binding: binding,
     ready: false,
+    canSeed: null,
     peers: 0,
     compacts: 0,
     lastSeq: 0,
@@ -203,7 +204,10 @@ async function connect(port, room) {
   client.setHandler((opcode, payload) => {
     if (opcode === TEXT) {
       const message = JSON.parse(payload.toString('utf8'));
-      if (message.t === 'ready') peer.ready = true;
+      if (message.t === 'ready') {
+        peer.ready = true;
+        peer.canSeed = message.canSeed;
+      }
       if (message.t === 'peers') peer.peers = message.n;
       if (message.t === 'compact') {
         peer.compacts += 1;
@@ -253,6 +257,44 @@ function titles(peer) {
 }
 
 // ---- tests -----------------------------------------------------------------
+
+// Regression: two cold peers could both be told the room was empty and both
+// seed it. Their boards are Y.Arrays of Y.Maps, so matching application ids do
+// NOT make them the same CRDT items — merging two seeded documents yields
+// duplicate boards/columns/cards sharing one id. The relay now hands out the
+// seeding right to exactly one member of an empty room.
+test('only one peer of an empty room is granted the seeding right', async () => {
+  const server = await startServer();
+  const a = await connect(server.port, 'seed-race');
+  const b = await connect(server.port, 'seed-race');
+  await waitFor(() => a.ready && b.ready, 'both peers ready');
+
+  const granted = [a.canSeed, b.canSeed].filter((v) => v === true);
+  assert.equal(granted.length, 1, 'exactly one peer may seed an empty room');
+  assert.equal(a.canSeed, true, 'the first peer to join is the seeder');
+  assert.equal(b.canSeed, false, 'the second peer must adopt, not seed');
+
+  a.close();
+  b.close();
+  await server.close();
+});
+
+test('a peer joining a room that already has a document may not seed', async () => {
+  const server = await startServer();
+  const a = await connect(server.port, 'seed-populated');
+  await waitFor(() => a.ready, 'first peer ready');
+  a.binding.seed(boardState('Seeded', ['x']));
+  await wait(50);
+
+  const b = await connect(server.port, 'seed-populated');
+  await waitFor(() => b.ready, 'second peer ready');
+  assert.equal(b.canSeed, false, 'a populated room grants no seeding right');
+  await waitFor(() => titles(b).length === 1, 'second peer adopts the document');
+
+  a.close();
+  b.close();
+  await server.close();
+});
 
 test('two peers converge through the relay', async () => {
   const server = await startServer();

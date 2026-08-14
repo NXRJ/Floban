@@ -1,5 +1,5 @@
-// One-time dev script: downloads every subset of the two display fonts from
-// Google Fonts (Press Start 2P + VT323, OFL licensed) into fonts/ and emits
+// One-time dev script: downloads every subset of every world's faces from
+// Google Fonts (all OFL licensed) into fonts/ and emits
 // fonts/fonts.css with matching @font-face rules, so the app needs no CDN at
 // runtime. Run: node scripts/fetch-fonts.js
 'use strict';
@@ -9,7 +9,7 @@ const path = require('path');
 const https = require('https');
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36';
-const CSS_URL = 'https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap';
+const CSS_URL = 'https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Saira+Stencil+One&family=Archivo:wght@400;600;700&family=Archivo+Black&family=Archivo+Narrow:wght@400;500&family=Roboto+Mono:wght@400&family=Figtree:wght@400;500;700&family=Anton&family=Zilla+Slab:wght@400;600&family=Spectral:wght@400;600&display=swap';
 
 function get(url) {
   return new Promise((resolve, reject) => {

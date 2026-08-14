@@ -109,7 +109,10 @@
 
       if (message.t === 'ready') {
         setStatus('connected');
-        onReady();
+        // `canSeed` is the relay's answer to "may I seed this empty room?".
+        // An older relay omits it; treat that as permission so a mixed-version
+        // deployment still bootstraps rather than sitting on an empty board.
+        onReady({ canSeed: message.canSeed !== false });
         return;
       }
       if (message.t === 'peers') {

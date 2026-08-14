@@ -38,6 +38,17 @@
       return deps;
     }
 
+    // The world registry lives in the browser bundle (js/themes.js), but this
+    // module also runs under `node --test`, where no such global exists. A
+    // bare `KB` reference throws ReferenceError there, so probe with typeof
+    // and fall back to a plain string check.
+    function normalizeTheme(value, fallback) {
+      if (typeof KB !== 'undefined' && KB && KB.Themes) {
+        return KB.Themes.normalize(value);
+      }
+      return typeof value === 'string' && value ? value : fallback;
+    }
+
     function cloneShallow(obj) {
       var out = {};
       var key;
@@ -621,7 +632,7 @@
       out.version = STATE_VERSION;
       if (!Array.isArray(out.boards)) out.boards = [];
       out.boards = out.boards.map(function (b) { return normalizeBoard(b, deps); }).filter(Boolean);
-      if (typeof out.theme !== 'string') out.theme = 'dark';
+      out.theme = normalizeTheme(out.theme, 'atelier');
       if (out.boards.length > 0) {
         if (!out.boards.some(function (b) { return b.id === out.activeBoardId; })) {
           out.activeBoardId = out.boards[0].id;
@@ -815,7 +826,7 @@
       var board = adoptBoardShape(stateV1, 'My Board', deps);
       return normalizeState({
         version: 1,
-        theme: stateV1 && typeof stateV1.theme === 'string' ? stateV1.theme : 'dark',
+        theme: normalizeTheme(stateV1 && stateV1.theme, 'atelier'),
         activeBoardId: board.id,
         boards: [board]
       }, deps);

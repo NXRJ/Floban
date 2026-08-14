@@ -1,16 +1,24 @@
-# Kanban
+# Floban
 
-A personal, flow-aware Kanban board built with vanilla HTML, CSS and JavaScript.
+A personal, flow-aware board — kanban with the flow made first-class —
+built with vanilla HTML, CSS and JavaScript.
 No build step, no framework, no backend — everything runs in the browser and
 persists locally in **IndexedDB**, with a localStorage crash mirror and rotating
 automatic backups. It is an installable **PWA**: over HTTP(S) it works fully
 offline after the first visit. Opening `index.html` directly from `file://`
 also works, exactly as before (minus the offline cache).
 
-**Design world: The 8-Bit Atelier.** A colored ditherpunk desktop — columns are
-windows with accent title bars, cards are paper files, drags cut holes with
-marching ants, and every blend is an ordered dither. The system is documented in
-`DESIGN.md`.
+**Seven design worlds.** Not themes — worlds. Each sets its own type families
+*and* scale, corner language, line weights, depth model, texture, motion
+character and card composition, over one unchanged component layer: **Atelier —
+Ink** (the flagship ditherpunk desktop), **Atelier — Paper** (the same desktop
+printed rather than emitted), **Cloud Quarry** (chamfered spec plates on a
+survey grid), **Memphis Workshop** (laminate slabs and terrazzo), **Festival
+Lineup** (no chrome at all — priority is billing, and size carries it),
+**Industrial Quote** (stockroom hazard stripes and zip ties) and **Specimen
+Archive** (foxed card stock pinned to a linen board). Switch worlds and pick a
+curated accent from the picker in the menu bar. The contract that makes this
+possible is documented in `DESIGN.md`.
 
 **Power-on homescreen.** The app boots like a machine: a live terminal log
 announces your actual board (windows, files, archive), the four-square mark

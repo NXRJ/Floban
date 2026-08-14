@@ -677,16 +677,31 @@
   // ---------- View ----------
 
   C.register({
-    id: 'view.theme',
-    title: 'Toggle dark / light theme',
+    id: 'view.world.next',
+    title: 'Next world',
     category: 'View',
     icon: 'sun',
     order: 1,
     run: function () {
-      var next = KB.State.data().theme === 'dark' ? 'light' : 'dark';
-      KB.State.setTheme(next);
+      var worlds = KB.Themes.all;
+      var current = KB.Themes.normalize(KB.State.data().theme);
+      var index = 0;
+      worlds.forEach(function (w, i) { if (w.id === current) index = i; });
+      var next = worlds[(index + 1) % worlds.length];
+      KB.State.setTheme(next.id);
       KB.App.applyTheme();
-      toast('Theme: ' + next, 'info');
+      toast('World: ' + next.name, 'info');
+    }
+  });
+
+  C.register({
+    id: 'view.worlds',
+    title: 'Change world…',
+    category: 'View',
+    icon: 'sun',
+    order: 2,
+    run: function () {
+      KB.Worlds.show();
     }
   });
 

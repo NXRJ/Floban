@@ -323,12 +323,24 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await waitFor(() => document.querySelector('#board-name') && document.querySelector('#board-name').textContent === 'My Board', 3000, 'second undo');
   check('second undo returns to My Board', (await page.$eval('#board-name', el => el.textContent)) === 'My Board');
 
-  // ---- Theme undo re-applies to the DOM ----
+  // ---- World picker, and theme undo re-applying to the DOM ----
   const themeBefore = await page.evaluate(() => document.documentElement.dataset.theme);
-  await page.click('#toggle-theme');
-  await waitFor((before) => document.documentElement.dataset.theme !== before, 2000, 'theme flips', themeBefore);
+  await page.click('#open-worlds');
+  await waitFor(() => !!document.querySelector('.world-item'), 2000, 'world picker opens');
+  const worldCount = await page.evaluate(() => document.querySelectorAll('.world-item').length);
+  check('world picker lists every world', worldCount >= 6);
+  await page.evaluate(() => {
+    // pick the first world that is not the active one
+    const items = Array.from(document.querySelectorAll('.world-item'));
+    const next = items.find((el) => !el.classList.contains('active'));
+    if (next) next.click();
+  });
+  await waitFor((before) => document.documentElement.dataset.theme !== before, 2000, 'world changes', themeBefore);
   const themeAfter = await page.evaluate(() => document.documentElement.dataset.theme);
-  check('theme toggle flips data-theme', themeAfter !== themeBefore);
+  check('picking a world flips data-theme', themeAfter !== themeBefore);
+  // Done commits; Escape would restore the world active when the picker opened
+  await page.click('.world-done');
+  await waitFor(() => !document.querySelector('.world-panel'), 2000, 'world picker closes');
   await blur();
   await pressUndo();
   await waitFor((before) => document.documentElement.dataset.theme === before, 2000, 'theme undo', themeBefore);
@@ -1945,9 +1957,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const board = KB.State.activeBoard();
     const col = board.columns[0];
     KB.State.addCard(col.id, { title: 'Sync event probe' }); // change
-    // Flip the theme unconditionally so the second 'change' event always
-    // fires (a no-op setTheme saves nothing).
-    KB.State.setTheme(KB.State.data().theme === 'dark' ? 'light' : 'dark');
+    // Flip to a genuinely different world so the second 'change' event always
+    // fires (a no-op setTheme saves nothing). Picked from the registry rather
+    // than hardcoded, so this keeps working as worlds are added.
+    const currentWorld = KB.Themes.normalize(KB.State.data().theme);
+    const otherWorld = KB.Themes.all.find((w) => w.id !== currentWorld);
+    KB.State.setTheme(otherWorld.id);
     KB.State.undo(); // undo
     KB.State.redo(); // redo
     KB.State.importAll(KB.State.exportAll()); // import
@@ -1980,13 +1995,15 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       input.getAttribute('role') === 'combobox' && input.getAttribute('aria-expanded') === 'true' &&
       Boolean(input.getAttribute('aria-activedescendant'));
   }));
-  await page.type('#palette-input', 'theme');
+  // 'next world' selects the cycle command, which applies immediately — the
+  // picker command would only open a dialog and leave data-theme untouched.
+  await page.type('#palette-input', 'next world');
   await waitFor(() => {
     const titles = [...document.querySelectorAll('.palette-title')].map(e => e.textContent.toLowerCase());
-    return titles.some(t => t.includes('theme'));
+    return titles.some(t => t.includes('world'));
   }, 2000, 'palette filters');
   const paletteFiltered = await page.$$eval('.palette-title', els => els.map(e => e.textContent));
-  check('palette filters by query', paletteFiltered.length >= 1 && paletteFiltered.every(t => t.toLowerCase().includes('theme')));
+  check('palette filters by query', paletteFiltered.length >= 1 && paletteFiltered.every(t => t.toLowerCase().includes('world')));
   const themeBeforePalette = await page.evaluate(() => document.documentElement.dataset.theme);
   await page.keyboard.press('Enter');
   await waitFor(() => !KB.Palette.isOpen(), 2000, 'palette closes after run');
@@ -3244,7 +3261,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       const json = await res.json();
       return { name: json.name, display: json.display, icons: json.icons.length };
     });
-    check('manifest is valid and installable', manifest.name === 'Kanban \u2014 The 8-Bit Atelier' && manifest.display === 'standalone' && manifest.icons >= 3);
+    check('manifest is valid and installable', manifest.name === 'Floban \u2014 flow-aware boards' && manifest.display === 'standalone' && manifest.icons >= 3);
     const swState = await pwaPage.evaluate(() => new Promise((resolve) => {
       navigator.serviceWorker.ready.then(() => resolve({
         registered: true,

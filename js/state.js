@@ -94,7 +94,8 @@
 
     return {
       version: 3,
-      theme: 'dark',
+      theme: 'atelier',
+      accent: null,
       activeBoardId: board.id,
       inbox: { items: [] },
       lenses: [],
@@ -194,6 +195,14 @@
     // backup or an imported board.
     var normalized = KB.Core.Migration.normalizeState(nextState, deps());
     if (!normalized || !Array.isArray(normalized.boards) || normalized.boards.length === 0) {
+      return false;
+    }
+    // A reconnect commits the room's existing document, which is usually the
+    // state this device already holds. Without this guard every reconnect
+    // manufactures an undo entry the user never earned and a pointless write.
+    // Both sides have been through normalizeState, so key order is canonical
+    // and a string compare is a sound equality test here.
+    if (state && JSON.stringify(normalized) === JSON.stringify(state)) {
       return false;
     }
     pushHistory();
@@ -481,7 +490,16 @@
 
   function setTheme(theme) {
     pushHistory();
-    state.theme = theme;
+    state.theme = KB.Themes.normalize(theme);
+    // an accent is only legal inside its own world, so changing world
+    // re-resolves it rather than carrying a foreign colour across.
+    state.accent = KB.Themes.normalizeAccent(state.theme, state.accent);
+    save();
+  }
+
+  function setAccent(accentId) {
+    pushHistory();
+    state.accent = KB.Themes.normalizeAccent(state.theme, accentId);
     save();
   }
 
@@ -605,6 +623,7 @@
     inboxItems: inboxItems,
     lenses: lenses,
     setTheme: setTheme,
+    setAccent: setAccent,
     exportAll: exportAll,
     exportBoard: exportBoard,
     importAll: importAll,

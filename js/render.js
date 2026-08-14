@@ -3,7 +3,11 @@
   var icon = KB.Dom.icon;
   var fmtDate = KB.Dom.fmtDate;
 
-  var COLUMN_ACCENTS = ['#c81e14', '#a34800', '#ffd60a', '#a9e020', '#13643c', '#3fd7e0', '#2a58c4', '#6d30d6', '#b11f75'];
+  /* A column's accent is a SLOT, not a colour. Painting a literal here would
+   * write an inline style, which no world's stylesheet could then override —
+   * and every world would wear the Atelier's palette. The slot is resolved by
+   * `--ramp-0..8` in the active world's token block. */
+  var COLUMN_RAMP_SLOTS = 9;
 
   var PRIORITY_CLASS = { low: 'p-low', medium: 'p-medium', high: 'p-high', urgent: 'p-urgent' };
   var PRIORITY_LABEL = { low: 'LOW', medium: 'MED', high: 'HIGH', urgent: 'URGENT' };
@@ -41,7 +45,7 @@
   function columnAccent(id) {
     var sum = 0;
     for (var i = 0; i < id.length; i++) sum = (sum * 31 + id.charCodeAt(i)) >>> 0;
-    return COLUMN_ACCENTS[sum % COLUMN_ACCENTS.length];
+    return sum % COLUMN_RAMP_SLOTS;
   }
 
   function staticChip(label) {
@@ -183,7 +187,16 @@
   }
 
   function cardEl(card, column) {
-    var el = h('article', { class: 'card' + (column.isDone ? ' done' : ''), draggable: 'true', 'data-id': card.id, tabindex: '0' });
+    // Priority is already a chip, but it is also a property of the card itself:
+    // a world may want to set the whole card by it (the Lineup bills a card by
+    // priority the way a poster bills an act). Exposed as data, not styling.
+    var el = h('article', {
+      class: 'card' + (column.isDone ? ' done' : ''),
+      draggable: 'true',
+      'data-id': card.id,
+      'data-priority': card.priority || 'none',
+      tabindex: '0'
+    });
     var top = h('div', { class: 'card-top' });
     var title = h('p', { class: 'card-title' });
     title.textContent = card.title;
@@ -339,12 +352,18 @@
   }
 
   function columnEl(column, filters) {
-    var el = h('section', { class: 'column' + (column.collapsed ? ' collapsed' : ''), draggable: 'true', 'data-id': column.id });
+    // The slot rides the column, not the header, so anything inside the column
+    // that speaks the column's colour (the Quarry's ID plate, for one) inherits
+    // it. Only .column-header descendants consume --win-bg, so hoisting it here
+    // widens inheritance without repainting anything else.
+    var el = h('section', {
+      class: 'column' + (column.collapsed ? ' collapsed' : ''),
+      draggable: 'true',
+      'data-id': column.id,
+      'data-accent': String(columnAccent(column.id))
+    });
 
     var header = h('header', { class: 'column-header' });
-    var accent = columnAccent(column.id);
-    header.style.setProperty('--win-bg', accent);
-    header.style.setProperty('--win-ink', KB.Dom.inkOn(accent));
     var grip = h('span', { class: 'col-grip', title: 'Drag to reorder' });
     grip.innerHTML = icon('grip');
     var title = h('h2', { class: 'col-title' });
