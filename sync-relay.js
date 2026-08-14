@@ -304,11 +304,21 @@ function attach(server, options) {
   }
 
   function join(entry, client) {
+    // Decide seeding rights BEFORE adding this client, so exactly one member
+    // of an empty room may seed it.
+    //
+    // Without this, two cold peers can both be told `ready` while the room is
+    // still empty and both seed. Their boards are Y.Arrays of Y.Maps, so
+    // matching application-level ids do NOT make them the same CRDT items:
+    // merging the two documents yields duplicate boards/columns/cards sharing
+    // one id, which lookups and toState() then disagree about.
+    const canSeed = entry.updates.length === 0 && entry.clients.size === 0;
+
     entry.clients.add(client);
     // Replay before `ready`: the client uses that marker to decide whether the
     // room is empty (seed my board) or already has a document (adopt it).
     entry.updates.forEach((item) => client.socket.sendBinary(item.frame));
-    client.socket.sendText(JSON.stringify({ t: 'ready' }));
+    client.socket.sendText(JSON.stringify({ t: 'ready', canSeed: canSeed }));
     announce(entry);
   }
 

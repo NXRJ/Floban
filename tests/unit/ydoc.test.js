@@ -391,3 +391,31 @@ test('encodeState round-trips a document into a fresh peer', () => {
 test('create refuses to run without Yjs', () => {
   assert.throws(() => YDoc.create({}), /requires a Yjs module/);
 });
+
+// Regression anchor for the lost-edit path fixed in js/sync-session.js.
+//
+// Ops that target an object the document does not hold are silently dropped —
+// there is nothing to set. That is correct CRDT behaviour, but it is exactly
+// why a local edit made between start() and the relay handshake used to
+// vanish: the op was applied to a still-empty document, `baseline` had already
+// advanced past the edit, and the handshake then committed the room's state
+// over the top. sync-session.js now buffers ops until the document is real.
+//
+// If this test ever fails because applyOps started materialising absent
+// objects, that buffering can be reconsidered — but not before.
+test('ops against an absent card are dropped by an empty document', () => {
+  const empty = binding();
+  const before = empty.toState();
+
+  const populated = baseState();
+  const edited = JSON.parse(JSON.stringify(populated));
+  edited.boards[0].columns[0].cards[0].title = 'Edited while connecting';
+
+  const ops = StateDiff.diff(populated, edited);
+  assert.ok(ops.length > 0, 'the edit really does produce ops');
+
+  empty.applyOps(ops);
+
+  assert.deepEqual(empty.toState(), before, 'the empty document absorbed nothing');
+  assert.ok(empty.isEmpty(), 'and is still empty, so onReady would seed or adopt');
+});

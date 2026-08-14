@@ -1,7 +1,7 @@
 {
-  "name": "Kanban — The 8-Bit Atelier",
-  "short_name": "Kanban",
-  "description": "A personal, flow-aware Kanban board with a retro pixel-desktop look. Local-first: your data lives in this browser, offline-capable.",
+  "name": "Floban — flow-aware boards",
+  "short_name": "Floban",
+  "description": "Floban — a personal, flow-aware board that tracks attention as well as cards, in seven switchable design worlds. Local-first: your data lives in this browser, offline-capable.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

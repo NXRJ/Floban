@@ -15,22 +15,30 @@
  */
 'use strict';
 
-var CACHE = 'kanban-v4';
+// The cache key keeps its original prefix on purpose: the activate handler
+// prunes by `kanban-`, so renaming it to match the Floban branding would
+// strand every previously installed cache on existing devices. It is an
+// internal key and never shown to anyone.
+var CACHE = 'kanban-v6';
 
 var PRECACHE = [
   './',
   './index.html',
   './manifest.webmanifest',
   './css/styles.css',
+  './css/worlds.css',
+  './js/themes.js',
+  './js/motion.js',
+  './js/worlds-picker.js',
   './fonts/fonts.css',
-  './fonts/press-start-2p-1.woff2',
-  './fonts/press-start-2p-2.woff2',
-  './fonts/press-start-2p-3.woff2',
-  './fonts/press-start-2p-4.woff2',
-  './fonts/press-start-2p-5.woff2',
-  './fonts/vt323-6.woff2',
-  './fonts/vt323-7.woff2',
-  './fonts/vt323-8.woff2',
+  './fonts/press-start-2p-27.woff2',
+  './fonts/press-start-2p-28.woff2',
+  './fonts/press-start-2p-29.woff2',
+  './fonts/press-start-2p-30.woff2',
+  './fonts/press-start-2p-31.woff2',
+  './fonts/vt323-51.woff2',
+  './fonts/vt323-52.woff2',
+  './fonts/vt323-53.woff2',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',

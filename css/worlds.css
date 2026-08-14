@@ -1,0 +1,1219 @@
+/* ============================================================
+   THE SIX WORLDS
+   ------------------------------------------------------------
+   Each block implements the theme contract declared in
+   styles.css. A world may speak only the contract's vocabulary
+   plus a short, named list of structural overrides where its
+   grammar genuinely changes an element's anatomy (Quarry's
+   chamfer, Lineup's chromeless card, Quote's hazard stripe,
+   Archive's light card on a dark board).
+
+   The 8-Bit Atelier is not here — it IS the :root default in
+   styles.css, and `[data-theme="atelier-paper"]` is its second
+   documented shift (the paper desktop).
+
+   Grounds: three dark (Atelier, Lineup, Archive), four light
+   (Atelier Paper, Quarry, Memphis, Quote). Every accent below is
+   checked to 4.5:1 against the text it carries.
+   ============================================================ */
+
+/* A world commits to a ground, so the browser has to be told which one —
+   otherwise scrollbars, form controls, spellcheck underlines and the canvas
+   behind an overscroll all render light while the Atelier, the Lineup and the
+   Archive render dark. `data-ground` is written by KB.Themes.applyTo, which
+   is also what makes it correct during the picker's hover preview. */
+[data-ground="dark"] { color-scheme: dark; }
+[data-ground="light"] { color-scheme: light; }
+
+/* ============================================================
+   CLOUD QUARRY — cut cumulus, void blue, chamfered spec plates
+   The card is a spec plate: an ID block, a data table, a status
+   row. Depth is a plate lying on fog, never an offset pixel.
+   ============================================================ */
+
+[data-theme="quarry"] {
+  /* colour */
+  --bg: #dfe4e9;
+  --bg-2: #d7eaf7;
+  --surface: #f4f6f8;
+  --surface-2: #ffffff;
+  --surface-3: #e4e7ea;
+  --border: #c3cbd3;
+  --border-strong: #47535f;
+  --input: #ffffff;
+  --text: #26303a;
+  --muted: #56646f;
+  --faint: #74828e;
+  --chrome: #47535f;
+  --shadow-ink: rgba(43, 56, 68, 0.18);
+  --accent: #1d6fd0;
+  --accent-soft: rgba(29, 111, 208, 0.32);
+  --on-accent: #ffffff;
+  --primary: #1d6fd0;
+  --primary-hi: #185aad;
+  --on-primary: #ffffff;
+  --success: #1c7a52;
+  --on-success: #ffffff;
+  --danger: #b3301f;
+  --warn: #8a5a08;
+  --ants: #1d6fd0;
+  --d-ink: #c9d2da;
+  --d-paper: #eef1f4;
+  --win-bg: #1d6fd0;
+  --win-ink: #ffffff;
+  --wall-checker: rgba(71, 83, 95, 0.05);
+  /* --hs-line tints the splash scanlines. It must stay a faint wash: an opaque
+   * value paints hard stripes across the whole boot screen. The CRT is the
+   * Atelier's device, so every other world only whispers it. */
+  --hs-line: rgba(43, 56, 68, 0.06);
+  --chip-border: rgba(43, 56, 68, 0.24);
+
+  /* the ramp as quarried stock: strata, not spectrum. A quarry's colours are
+   * the materials it cuts plus the one blue it paints survey marks in, so the
+   * nine slots read as a sample board rather than a rainbow. */
+  --ramp-0: #47535f; --ramp-0-ink: #ffffff;
+  --ramp-1: #1d6fd0; --ramp-1-ink: #ffffff;
+  --ramp-2: #5a6b7a; --ramp-2-ink: #ffffff;
+  --ramp-3: #1c7a52; --ramp-3-ink: #ffffff;
+  --ramp-4: #2b3844; --ramp-4-ink: #ffffff;
+  --ramp-5: #35606f; --ramp-5-ink: #ffffff;
+  --ramp-6: #b3301f; --ramp-6-ink: #ffffff;
+  --ramp-7: #6a5a4a; --ramp-7-ink: #ffffff;
+  --ramp-8: #8a5a08; --ramp-8-ink: #ffffff;
+
+  /* type — stencil chrome, grotesk body, mono for measures */
+  --font-chrome: "Saira Stencil One", "Arial Narrow", sans-serif;
+  --font-body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-num: "Roboto Mono", ui-monospace, monospace;
+  --case-chrome: uppercase;
+  --tracking-chrome: 0.09em;
+  --tracking-control: 0.07em;
+  --tracking-body: 0;
+  --tracking-title: -0.01em;
+  --weight-title: 600;
+  --fs-chrome: 12px;
+  --fs-small: 13px;
+  --fs-body: 14px;
+  --fs-title: 17px;
+  --lh-body: 1.45;
+  --lh-title: 1.3;
+
+  /* shape — chamfered plates, never rounded */
+  --r-window: 0px;
+  --r-card: 0px;
+  --r-control: 0px;
+  --r-chip: 0px;
+  --r-input: 0px;
+  --clip-window: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  --clip-card: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+
+  /* line */
+  --bw-window: 1px;
+  --bw-card: 1px;
+  --bw-control: 1px;
+  --bw-hair: 1px;
+  --border-style-empty: dashed;
+
+  /* depth — plates on fog */
+  --shadow-window: 0 2px 8px rgba(43, 56, 68, 0.14);
+  --shadow-modal: 0 12px 40px rgba(43, 56, 68, 0.26);
+  --shadow-control: 0 1px 2px rgba(43, 56, 68, 0.16);
+  --shadow-control-sm: 0 1px 2px rgba(43, 56, 68, 0.14);
+  --shadow-lift: 0 6px 16px rgba(43, 56, 68, 0.18);
+  --shadow-press: 0 0 0 rgba(0, 0, 0, 0);
+  --shadow-chip: none;
+  --shadow-header: 0 1px 0 var(--border);
+  --shadow-empty: none;
+  --shadow-focus: 0 0 0 3px var(--accent-soft);
+  --shadow-panel-left: -8px 0 24px rgba(43, 56, 68, 0.18);
+  --shadow-header-up: 0 -1px 0 var(--border);
+  --shadow-sheet-up: 0 -12px 32px rgba(43, 56, 68, 0.2);
+  --shadow-banner: 0 1px 0 var(--border);
+  --press-shift: 0px;
+
+  /* texture — a survey grid with major and minor divisions, the way a cutting
+   * plan is actually ruled. A single-weight grid reads as generic graph paper;
+   * the 40px major line is what makes it a survey. */
+  --tex-ground:
+    linear-gradient(rgba(71, 83, 95, 0.11) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(71, 83, 95, 0.11) 1px, transparent 1px),
+    linear-gradient(var(--wall-checker) 1px, transparent 1px),
+    linear-gradient(90deg, var(--wall-checker) 1px, transparent 1px);
+  --tex-ground-size: 40px 40px, 40px 40px, 8px 8px, 8px 8px;
+
+  /* motion — mechanical slide, saw-line precision */
+  --dur-instant: 0.09s;
+  --dur-fast: 0.14s;
+  --dur-base: 0.22s;
+  --dur-slow: 0.34s;
+  --ease-enter: cubic-bezier(0.16, 0.84, 0.3, 1);
+  --ease-exit: cubic-bezier(0.5, 0, 0.75, 0);
+  --ease-move: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --ease-settle: cubic-bezier(0.16, 0.84, 0.3, 1);
+  --enter-shift: 10px;
+  --lift-shift: -2px;
+
+  /* layout */
+  --col-w: 320px;
+  --gap-board: 18px;
+  --pad-board: 24px;
+  --gap-card: 10px;
+  --pad-card: 0;
+  --pad-list: 12px;
+  --pad-colhead: 10px 12px;
+  --pad-control: 9px 14px;
+  --pad-chip: 3px 8px;
+}
+
+/* Quarry structure: the chamfer, and the card as a spec plate. */
+[data-theme="quarry"] .column,
+[data-theme="quarry"] .modal-panel,
+[data-theme="quarry"] .pop {
+  clip-path: var(--clip-window);
+}
+
+/* The plate number is counted in CSS, not stored: it is a POSITION in the cut
+ * list, not an identity, so it must renumber itself when a card moves. */
+[data-theme="quarry"] .card-list {
+  counter-reset: plate;
+}
+
+[data-theme="quarry"] .card {
+  clip-path: var(--clip-card);
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  overflow: hidden;
+  counter-increment: plate;
+}
+
+/* The ID block. An empty colour block reads as a broken image; a stencilled
+ * plate number is the thing a spec plate actually carries, and it inherits the
+ * column's own slot from .column[data-accent] rather than one global blue. */
+[data-theme="quarry"] .card::before {
+  content: counter(plate, decimal-leading-zero);
+  grid-row: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 11px;
+  background: var(--win-bg, var(--accent));
+  color: var(--win-ink, var(--on-accent));
+  border-right: 1px solid var(--border);
+  font-family: var(--font-num);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+/* The action cluster is absolutely positioned — it is not in the content
+ * column, so it must not take the content column's padding. Including it here
+ * inflated the cluster by 24px and pushed it over the title. */
+[data-theme="quarry"] .card > *:not(.card-actions) {
+  grid-column: 2;
+  padding-inline: 12px;
+  /* Grid items default to min-width:auto, so the content column refuses to
+   * shrink below its longest word. With the card's overflow hidden, that
+   * silently CLIPS titles at narrow widths instead of wrapping them. */
+  min-width: 0;
+}
+
+[data-theme="quarry"] .card > .card-top {
+  padding-top: 10px;
+}
+
+/* The rule above ties styles.css's mobile gutter on specificity and wins on
+ * source order, so the reserve is restated here. It reads the same
+ * --actions-gutter token, which is only defined at this width. */
+@media (max-width: 640px) {
+  [data-theme="quarry"] .card > .card-top {
+    padding-right: var(--actions-gutter);
+  }
+}
+
+/* The stencil is the chrome voice, so the column title must actually speak it —
+ * otherwise the world vendors a display face it never shows. */
+[data-theme="quarry"] .col-title,
+[data-theme="quarry"] .brand {
+  font-family: var(--font-chrome);
+  letter-spacing: var(--tracking-chrome);
+  text-transform: var(--case-chrome);
+}
+
+[data-theme="quarry"] .card-meta {
+  border-top: 1px solid var(--border);
+  padding-block: 7px;
+  margin-top: 4px;
+}
+
+/* measures set in the mono voice, tabular so columns of digits align */
+[data-theme="quarry"] .col-count,
+[data-theme="quarry"] .clock,
+[data-theme="quarry"] .card-prog,
+[data-theme="quarry"] .chip-static.due {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+/* ============================================================
+   MEMPHIS WORKSHOP — laminate slabs, terrazzo, a squiggle that
+   refuses to be a divider. Depth is a hard black outline offset,
+   the way a Sottsass object is drawn before it is built.
+   ============================================================ */
+
+[data-theme="memphis"] {
+  /* colour */
+  --bg: #f6f2e7;
+  --bg-2: #ffe9d6;
+  --surface: #ffffff;
+  --surface-2: #fffdf7;
+  --surface-3: #ffe9d6;
+  --border: #1b1b1b;
+  --border-strong: #1b1b1b;
+  --input: #ffffff;
+  --text: #1b1b1b;
+  --muted: #5c5347;
+  --faint: #7a7264;
+  --chrome: #1b1b1b;
+  --shadow-ink: #1b1b1b;
+  --accent: #d81e5b;
+  --accent-soft: rgba(216, 30, 91, 0.3);
+  --on-accent: #ffffff;
+  --primary: #00688f;
+  --primary-hi: #004f6e;
+  --on-primary: #ffffff;
+  --success: #1c7a52;
+  --on-success: #ffffff;
+  --danger: #cc2936;
+  --warn: #8a5600;
+  --ants: #d81e5b;
+  --d-ink: #ffd23f;
+  --d-paper: #fffdf7;
+  --win-bg: #d81e5b;
+  --win-ink: #ffffff;
+  --wall-checker: rgba(27, 27, 27, 0.05);
+  --hs-line: rgba(27, 27, 27, 0.05);
+  --chip-border: #1b1b1b;
+
+  /* the ramp as laminate samples: Sottsass primaries, all of them drawn */
+  --ramp-0: #d81e5b; --ramp-0-ink: #ffffff;
+  --ramp-1: #00688f; --ramp-1-ink: #ffffff;
+  --ramp-2: #ffd23f; --ramp-2-ink: #1b1b1b;
+  --ramp-3: #1c7a52; --ramp-3-ink: #ffffff;
+  --ramp-4: #1b1b1b; --ramp-4-ink: #fffdf7;
+  --ramp-5: #8a5600; --ramp-5-ink: #ffffff;
+  --ramp-6: #6a4fd8; --ramp-6-ink: #ffffff;
+  --ramp-7: #e8734a; --ramp-7-ink: #1b1b1b;
+  --ramp-8: #00a7e1; --ramp-8-ink: #1b1b1b;
+
+  /* type — a chunky display slab over a geometric workhorse */
+  --font-chrome: "Archivo Black", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Figtree", "Helvetica Neue", Arial, sans-serif;
+  --font-num: "Archivo Black", Arial, sans-serif;
+  --case-chrome: uppercase;
+  --tracking-chrome: 0.04em;
+  --tracking-control: 0.04em;
+  --tracking-body: 0;
+  --tracking-title: -0.02em;
+  --weight-title: 700;
+  --weight-body: 500;
+  --fs-chrome: 12px;
+  --fs-small: 13px;
+  --fs-body: 15px;
+  --fs-title: 19px;
+  --lh-body: 1.45;
+
+  /* shape — the pill and the slab, together, on purpose */
+  --r-window: 0px;
+  --r-card: 14px;
+  --r-control: 999px;
+  --r-chip: 999px;
+  --r-input: 0px;
+  --r-dot: 999px;
+
+  /* line — everything is drawn */
+  --bw-window: 3px;
+  --bw-card: 3px;
+  --bw-control: 3px;
+  --bw-hair: 2px;
+  --border-style-empty: dashed;
+
+  /* depth — the outline offset, in ink not shadow */
+  --shadow-window: 7px 7px 0 var(--shadow-ink);
+  --shadow-modal: 10px 10px 0 var(--shadow-ink);
+  --shadow-control: 3px 3px 0 var(--shadow-ink);
+  --shadow-control-sm: 2px 2px 0 var(--shadow-ink);
+  --shadow-lift: 6px 6px 0 var(--shadow-ink);
+  --shadow-press: 1px 1px 0 var(--shadow-ink);
+  --shadow-chip: 2px 2px 0 var(--shadow-ink);
+  --shadow-header: 0 4px 0 var(--shadow-ink);
+  --shadow-empty: 6px 6px 0 var(--shadow-ink);
+  --shadow-focus: 0 0 0 4px var(--accent-soft);
+  --shadow-panel-left: -6px 0 0 var(--shadow-ink);
+  --shadow-header-up: 0 -4px 0 var(--shadow-ink);
+  --shadow-sheet-up: 0 -6px 0 var(--shadow-ink);
+  --shadow-banner: 0 3px 0 var(--shadow-ink);
+  --press-shift: 3px;
+
+  /* texture — terrazzo speckle on laminate */
+  --tex-ground:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 90 90'%3E%3Crect x='10' y='14' width='7' height='4' rx='2' fill='%23d81e5b' opacity='.5'/%3E%3Crect x='58' y='8' width='5' height='5' fill='%2300a7e1' opacity='.5' transform='rotate(20 58 8)'/%3E%3Ccircle cx='74' cy='46' r='3' fill='%23ffd23f' opacity='.7'/%3E%3Crect x='28' y='62' width='6' height='3' rx='1.5' fill='%231b1b1b' opacity='.35'/%3E%3Ccircle cx='16' cy='72' r='2.5' fill='%2300a7e1' opacity='.45'/%3E%3Crect x='44' y='34' width='4' height='4' fill='%23d81e5b' opacity='.4' transform='rotate(45 44 34)'/%3E%3Crect x='80' y='76' width='6' height='3' rx='1.5' fill='%23ffd23f' opacity='.6'/%3E%3C/svg%3E");
+  --tex-ground-size: 90px 90px;
+
+  /* motion — the overshoot of a thing set down with a bounce.
+   *
+   * The design detector flags overshoot easing as a generated-UI tell, and it
+   * is right to, almost everywhere. Here it is the thesis: a Memphis object is
+   * a light plastic slab, and a slab set down rebounds. Quote's --ease-settle
+   * overshoots for the same reason — its tag swings once. Every other world in
+   * this file resolves without overshoot. Kept deliberately; not drift. */
+  --dur-instant: 0.1s;
+  --dur-fast: 0.16s;
+  --dur-base: 0.26s;
+  --dur-slow: 0.4s;
+  --ease-enter: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-exit: cubic-bezier(0.36, 0, 0.66, -0.3);
+  --ease-move: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ease-settle: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --enter-shift: 12px;
+  --lift-shift: -3px;
+
+  /* layout */
+  --col-w: 310px;
+  --gap-board: 22px;
+  --pad-board: 24px;
+  --gap-card: 14px;
+  --pad-card: 14px 16px;
+  --pad-list: 14px 12px;
+  --pad-colhead: 11px 12px;
+  --pad-control: 9px 16px;
+  --pad-chip: 4px 12px;
+}
+
+/* Memphis structure: the squiggle rule under every column header. */
+[data-theme="memphis"] .column-header {
+  border-bottom: none;
+  position: relative;
+}
+
+[data-theme="memphis"] .column-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -7px;
+  height: 7px;
+  background-repeat: repeat-x;
+  background-size: 24px 7px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 7'%3E%3Cpath d='M0 5 Q3 0 6 5 T12 5 T18 5 T24 5' fill='none' stroke='%231b1b1b' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+/* ============================================================
+   FESTIVAL LINEUP — no chrome at all. Billing is priority:
+   hierarchy is carried by size and line-break alone. There is
+   no border, no shadow, and no chip to hide behind.
+   ============================================================ */
+
+[data-theme="lineup"] {
+  /* colour — one saturated ground, one contrasting ink */
+  --bg: #16215c;
+  --bg-2: #101941;
+  --surface: transparent;
+  --surface-2: transparent;
+  --surface-3: rgba(243, 239, 228, 0.1);
+  --border: rgba(243, 239, 228, 0.22);
+  --border-strong: rgba(243, 239, 228, 0.42);
+  --input: rgba(243, 239, 228, 0.08);
+  --text: #f3efe4;
+  --muted: rgba(243, 239, 228, 0.66);
+  --faint: rgba(243, 239, 228, 0.46);
+  --chrome: #f3efe4;
+  --shadow-ink: transparent;
+  --accent: #ff5a3c;
+  --accent-soft: rgba(255, 90, 60, 0.4);
+  --on-accent: #16215c;
+  --primary: #ff5a3c;
+  --primary-hi: #ff7a5f;
+  --on-primary: #16215c;
+  --success: #6ee7a5;
+  --on-success: #16215c;
+  --danger: #ff5a3c;
+  --warn: #ffc247;
+  --ants: #ff5a3c;
+  --d-ink: transparent;
+  --d-paper: transparent;
+  --win-bg: transparent;
+  --win-ink: #f3efe4;
+  --wall-checker: transparent;
+  --hs-line: rgba(243, 239, 228, 0.07);
+  --chip-border: transparent;
+
+  /* type — one condensed face, doing every job on the sheet */
+  --font-chrome: "Anton", "Arial Narrow", sans-serif;
+  --font-body: "Archivo Narrow", "Arial Narrow", sans-serif;
+  --font-num: "Anton", "Arial Narrow", sans-serif;
+  --case-chrome: uppercase;
+  --tracking-chrome: 0.06em;
+  --tracking-control: 0.06em;
+  --tracking-body: 0.01em;
+  --tracking-title: 0;
+  --weight-title: 400;
+  --weight-body: 500;
+  --fs-chrome: 13px;
+  --fs-small: 13px;
+  --fs-body: 15px;
+  --fs-title: 26px;
+  --lh-title: 1.02;
+  --lh-body: 1.4;
+
+  /* shape — nothing to shape */
+  --r-window: 0px;
+  --r-card: 0px;
+  --r-control: 0px;
+  --r-chip: 0px;
+  --r-input: 0px;
+
+  /* line — a rule, and only where billing changes */
+  --bw-window: 0px;
+  --bw-card: 0px;
+  --bw-control: 1px;
+  --bw-hair: 1px;
+  --border-style-empty: solid;
+
+  /* depth — there is none */
+  --shadow-window: none;
+  --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.5);
+  --shadow-control: none;
+  --shadow-control-sm: none;
+  --shadow-lift: none;
+  --shadow-press: none;
+  --shadow-chip: none;
+  --shadow-header: none;
+  --shadow-empty: none;
+  --shadow-focus: 0 0 0 2px var(--accent);
+  --shadow-panel-left: none;
+  --shadow-header-up: none;
+  --shadow-sheet-up: none;
+  --shadow-banner: none;
+  --press-shift: 0px;
+
+  /* texture — a stage wash from above. Not decoration: it is the only thing
+   * that keeps a single flat navy from reading as an empty div. */
+  --tex-ground: radial-gradient(120% 55% at 50% -8%, rgba(255, 194, 71, 0.15), transparent 68%);
+  --tex-ground-size: auto;
+
+  /* motion — a size step as billing changes */
+  --dur-instant: 0.08s;
+  --dur-fast: 0.14s;
+  --dur-base: 0.2s;
+  --dur-slow: 0.3s;
+  --ease-enter: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-exit: cubic-bezier(0.6, 0, 0.9, 0.2);
+  --ease-move: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-settle: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --enter-shift: 6px;
+  --lift-shift: 0px;
+
+  /* layout — generous, because type is the only material */
+  --col-w: 290px;
+  --gap-board: 30px;
+  --pad-board: 30px;
+  --gap-card: 16px;
+  --pad-card: 0;
+  --pad-list: 4px 0;
+  --pad-colhead: 0 0 8px;
+  --pad-control: 8px 12px;
+  --pad-chip: 1px 0;
+}
+
+/* Lineup structure: the card is type on the ground, nothing more. */
+[data-theme="lineup"] .card {
+  background: transparent;
+  border: none;
+}
+
+/* The stage name. A poster names its stage loudly or not at all — the old
+ * 13px label was neither, so it read as a leftover form label. */
+[data-theme="lineup"] .column-header {
+  border-bottom: none;
+  background: transparent;
+  color: var(--chrome);
+}
+
+[data-theme="lineup"] .col-title {
+  font-family: var(--font-chrome);
+  font-size: 19px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+[data-theme="lineup"] .card-list {
+  border-top: 2px solid var(--text);
+  padding-top: 14px;
+}
+
+/* ---- billing ----------------------------------------------------------
+ * The whole world is this rule set. A festival bills its acts by size: the
+ * headliner is enormous and set in caps, the support acts step down, and the
+ * bottom of the bill is fine print. Priority IS billing, so it drives type
+ * size, case, weight of presence and nothing else — there is no badge, no
+ * colour-coded stripe, no icon. Remove these rules and the world is just a
+ * navy background, which is exactly what it was before.
+ *
+ * The steps are deliberately far apart. A poster whose headliner is 15%
+ * larger than its support act has no headliner. */
+[data-theme="lineup"] .card-title {
+  text-wrap: balance;
+  font-family: var(--font-chrome);
+  line-height: 0.98;
+  transition: color var(--dur-fast) var(--ease-move);
+}
+
+[data-theme="lineup"] .card[data-priority="urgent"] .card-title {
+  font-size: 36px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+[data-theme="lineup"] .card[data-priority="high"] .card-title {
+  font-size: 27px;
+  text-transform: uppercase;
+}
+
+[data-theme="lineup"] .card[data-priority="medium"] .card-title {
+  font-size: 21px;
+}
+
+[data-theme="lineup"] .card[data-priority="low"] .card-title {
+  font-size: 17px;
+  color: var(--muted);
+}
+
+/* the bottom of the bill, where the names are set solid and small */
+[data-theme="lineup"] .card[data-priority="none"] .card-title {
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+[data-theme="lineup"] .card:hover .card-title,
+[data-theme="lineup"] .card:focus-visible .card-title {
+  color: var(--warn);
+}
+
+/* a cancelled act stays on the bill with a line through it */
+[data-theme="lineup"] .card.done .card-title {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  color: var(--faint);
+}
+
+/* Description is not poster material — a bill lists names, not blurbs. It
+ * stays for scanning but drops to the smallest voice on the sheet. */
+[data-theme="lineup"] .card-desc {
+  font-size: 13px;
+  color: var(--faint);
+  margin-top: 5px;
+}
+
+/* the long tail packs tighter, the way the foot of a bill does, and the
+ * interpunct is how a poster separates entries on one line */
+[data-theme="lineup"] .chip,
+[data-theme="lineup"] .chip-static {
+  /* The world declines the label fill outright — a bill has no swatches. The
+   * label's colour arrives as an inline custom property, so overriding the
+   * variable here would lose; overriding the DECLARATION wins, which is the
+   * whole reason paintChip publishes properties instead of literals. */
+  background: transparent;
+  color: var(--muted);
+  border-color: transparent;
+  padding-inline: 0;
+  margin-right: 0;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+/* the label's colour survives as the dot, which is all a bill would print */
+[data-theme="lineup"] .chip .dot {
+  width: 6px;
+  height: 6px;
+}
+
+/* The priority badge is redundant here: size already states the billing, and
+ * printing "URGENT" beside a headliner is like captioning it. It is hidden
+ * from sight but NOT from assistive tech, which cannot perceive the type
+ * ladder that replaced it. */
+[data-theme="lineup"] .card-meta .chip-static.priority {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+[data-theme="lineup"] .card-meta .chip-static.priority::after {
+  content: none;
+}
+
+[data-theme="lineup"] .card-meta {
+  gap: 0;
+  margin-top: 9px;
+}
+
+[data-theme="lineup"] .card-meta > *:not(:last-child)::after {
+  content: "·";
+  margin: 0 7px;
+  color: var(--faint);
+}
+
+/* ============================================================
+   INDUSTRIAL QUOTE — stockroom cotton and nylon, ordinary words
+   in straight quotes, zip-tie tags, and a hazard stripe that
+   carries state rather than decorating one.
+   ============================================================ */
+
+[data-theme="quote"] {
+  /* colour */
+  --bg: #e6e6e2;
+  --bg-2: #dcdcd7;
+  --surface: #f7f7f5;
+  --surface-2: #ffffff;
+  --surface-3: #e2e2de;
+  --border: #c8c8c2;
+  --border-strong: #141414;
+  --input: #ffffff;
+  --text: #141414;
+  --muted: #55554f;
+  --faint: #6f6f68;
+  --chrome: #141414;
+  --shadow-ink: #141414;
+  --accent: #c24800;
+  --accent-soft: rgba(194, 72, 0, 0.3);
+  --on-accent: #ffffff;
+  --primary: #141414;
+  --primary-hi: #333333;
+  --on-primary: #ffffff;
+  --success: #1c7a52;
+  --on-success: #ffffff;
+  --danger: #b3261e;
+  --warn: #8a5a08;
+  --ants: #c24800;
+  --d-ink: #141414;
+  --d-paper: #f7f7f5;
+  --win-bg: #141414;
+  --win-ink: #ffffff;
+  --wall-checker: rgba(20, 20, 20, 0.045);
+  --hs-line: rgba(20, 20, 20, 0.06);
+  --chip-border: #141414;
+
+  /* the ramp as stockroom stencil inks: safety, hazard, kraft, nylon */
+  --ramp-0: #c24800; --ramp-0-ink: #ffffff;
+  --ramp-1: #141414; --ramp-1-ink: #ffffff;
+  --ramp-2: #8a5a08; --ramp-2-ink: #ffffff;
+  --ramp-3: #1c7a52; --ramp-3-ink: #ffffff;
+  --ramp-4: #b3261e; --ramp-4-ink: #ffffff;
+  --ramp-5: #40484f; --ramp-5-ink: #ffffff;
+  --ramp-6: #2f5d7c; --ramp-6-ink: #ffffff;
+  --ramp-7: #6b5a3e; --ramp-7-ink: #ffffff;
+  --ramp-8: #5e4b6b; --ramp-8-ink: #ffffff;
+
+  /* type — industrial caps naming the obvious */
+  --font-chrome: "Archivo Black", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-num: "Archivo", Arial, sans-serif;
+  --case-chrome: uppercase;
+  --tracking-chrome: 0.1em;
+  --tracking-control: 0.09em;
+  --tracking-body: 0;
+  --tracking-title: -0.01em;
+  --weight-title: 700;
+  --fs-chrome: 11px;
+  --fs-small: 13px;
+  --fs-body: 14px;
+  --fs-title: 17px;
+  --lh-body: 1.45;
+
+  /* shape — square crates */
+  --r-window: 0px;
+  --r-card: 0px;
+  --r-control: 0px;
+  --r-chip: 0px;
+  --r-input: 0px;
+
+  /* line */
+  --bw-window: 2px;
+  --bw-card: 2px;
+  --bw-control: 2px;
+  --bw-hair: 1px;
+  --border-style-empty: dashed;
+
+  /* depth — a printed offset, flat as a screen-print */
+  --shadow-window: 0 3px 0 var(--shadow-ink);
+  --shadow-modal: 0 6px 0 var(--shadow-ink);
+  --shadow-control: 0 2px 0 var(--shadow-ink);
+  --shadow-control-sm: 0 2px 0 var(--shadow-ink);
+  --shadow-lift: 0 4px 0 var(--shadow-ink);
+  --shadow-press: 0 1px 0 var(--shadow-ink);
+  --shadow-chip: none;
+  --shadow-header: 0 3px 0 var(--shadow-ink);
+  --shadow-empty: none;
+  --shadow-focus: 0 0 0 3px var(--accent-soft);
+  --shadow-panel-left: -4px 0 0 var(--shadow-ink);
+  --shadow-header-up: 0 -3px 0 var(--shadow-ink);
+  --shadow-sheet-up: 0 -4px 0 var(--shadow-ink);
+  --shadow-banner: 0 3px 0 var(--shadow-ink);
+  --press-shift: 2px;
+
+  /* texture — the hazard stripe, laid under the whole stockroom */
+  --tex-ground: repeating-linear-gradient(
+    45deg,
+    var(--wall-checker) 0 10px,
+    transparent 10px 20px
+  );
+  --tex-ground-size: auto;
+
+  /* motion — a tag swinging once on selection */
+  --dur-instant: 0.08s;
+  --dur-fast: 0.13s;
+  --dur-base: 0.19s;
+  --dur-slow: 0.28s;
+  --ease-enter: cubic-bezier(0.25, 0.9, 0.3, 1);
+  --ease-exit: cubic-bezier(0.5, 0, 0.75, 0);
+  --ease-move: cubic-bezier(0.25, 0.9, 0.3, 1);
+  --ease-settle: cubic-bezier(0.3, 1.3, 0.6, 1);
+  --enter-shift: 8px;
+  --lift-shift: -2px;
+
+  /* layout */
+  --col-w: 300px;
+  --gap-board: 18px;
+  --pad-board: 22px;
+  --gap-card: 10px;
+  --pad-card: 12px 14px;
+  --pad-list: 12px 10px;
+  --pad-colhead: 10px 12px;
+  --pad-control: 9px 14px;
+  --pad-chip: 3px 9px;
+}
+
+/* Quote structure: the quotation marks, and the stripe as state. */
+[data-theme="quote"] .col-title::before,
+[data-theme="quote"] .col-title::after {
+  content: '"';
+}
+
+/* The zip tie is a fastening, not a status stripe. A 6px accent bar down the
+ * edge would read as a state marker (and is the side-stripe pattern the system
+ * bans); the tie head sits on the tag instead, where a real one does. */
+[data-theme="quote"] .chip {
+  position: relative;
+  padding-left: 18px;
+}
+
+[data-theme="quote"] .chip::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -4px;
+  border: 2px solid var(--accent);
+  background: transparent;
+}
+
+/* a column over its WIP limit takes the hazard stripe — state, not decor */
+[data-theme="quote"] .column:has(.col-count.over) .column-header {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.22) 0 8px,
+    transparent 8px 16px
+  );
+}
+
+/* archived and disabled things take the diagonal across them */
+[data-theme="quote"] .btn:disabled {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(20, 20, 20, 0.14) 0 6px,
+    transparent 6px 12px
+  );
+}
+
+/* ============================================================
+   SPECIMEN ARCHIVE — linen board, foxed card stock, brass and
+   oxblood. Nothing is ever destroyed: the archive is a
+   collection, and the cards are the specimens pinned in it.
+   ============================================================ */
+
+[data-theme="archive"] {
+  /* colour — a dark board carrying light cards */
+  --bg: #1b1712;
+  --bg-2: #221d17;
+  --surface: #2a241d;
+  --surface-2: #e8dfcd;
+  --surface-3: #3a3227;
+  --border: #4a3f33;
+  --border-strong: #6b5b49;
+  --input: #221d17;
+  --text: #e8dfcd;
+  --muted: #b3a48c;
+  --faint: #8e8069;
+  --chrome: #e8dfcd;
+  --shadow-ink: rgba(0, 0, 0, 0.55);
+  --accent: #a8463a;
+  --accent-soft: rgba(168, 70, 58, 0.34);
+  --on-accent: #ffffff;
+  --primary: #c9b489;
+  --primary-hi: #ddc9a1;
+  --on-primary: #2a241d;
+  --success: #7fa86b;
+  --on-success: #2a241d;
+  --danger: #c0483a;
+  --warn: #cf9b4a;
+  --ants: #c9b489;
+  --d-ink: #241f19;
+  --d-paper: #2f281f;
+  --win-bg: #3a3227;
+  --win-ink: #e8dfcd;
+  --wall-checker: rgba(232, 223, 205, 0.03);
+  --hs-line: rgba(232, 223, 205, 0.05);
+  --chip-border: rgba(42, 36, 29, 0.45);
+
+  /* the ramp as the collection's own materials: oxblood, brass, sage,
+   * shellac — pigments that age, never a printer's primary */
+  --ramp-0: #8c3b32; --ramp-0-ink: #f2ece0;
+  --ramp-1: #6b5b49; --ramp-1-ink: #f2ece0;
+  --ramp-2: #75581f; --ramp-2-ink: #f2ece0;
+  --ramp-3: #4a6b3f; --ramp-3-ink: #f2ece0;
+  --ramp-4: #3a3227; --ramp-4-ink: #e8dfcd;
+  --ramp-5: #2f5560; --ramp-5-ink: #f2ece0;
+  --ramp-6: #5a4a6b; --ramp-6-ink: #f2ece0;
+  --ramp-7: #7a5240; --ramp-7-ink: #f2ece0;
+  --ramp-8: #55603a; --ramp-8-ink: #f2ece0;
+
+  /* type — a letterpress slab over a reading serif */
+  --font-chrome: "Zilla Slab", Georgia, serif;
+  --font-body: "Spectral", Georgia, serif;
+  --font-num: "Zilla Slab", Georgia, serif;
+  --case-chrome: uppercase;
+  --tracking-chrome: 0.14em;
+  --tracking-control: 0.12em;
+  --tracking-body: 0;
+  --tracking-title: 0;
+  --weight-chrome: 600;
+  --weight-title: 600;
+  --fs-chrome: 11px;
+  --fs-small: 13px;
+  --fs-body: 15px;
+  --fs-title: 18px;
+  --lh-body: 1.55;
+  --lh-title: 1.3;
+
+  /* shape — the hair of round a letterpress card actually has */
+  --r-window: 2px;
+  --r-card: 2px;
+  --r-control: 2px;
+  --r-chip: 2px;
+  --r-input: 2px;
+
+  /* line */
+  --bw-window: 1px;
+  --bw-card: 1px;
+  --bw-control: 1px;
+  --bw-hair: 1px;
+  --border-style-empty: solid;
+
+  /* depth — a vitrine, lit from above */
+  --shadow-window: 0 8px 26px rgba(0, 0, 0, 0.5);
+  --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.62);
+  --shadow-control: 0 2px 5px rgba(0, 0, 0, 0.4);
+  --shadow-control-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-lift: 0 10px 22px rgba(0, 0, 0, 0.45);
+  --shadow-press: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-chip: none;
+  --shadow-header: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-empty: none;
+  --shadow-focus: 0 0 0 3px var(--accent-soft);
+  --shadow-panel-left: -12px 0 32px rgba(0, 0, 0, 0.5);
+  --shadow-header-up: 0 -2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-sheet-up: 0 -16px 40px rgba(0, 0, 0, 0.5);
+  --shadow-banner: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --press-shift: 0px;
+
+  /* texture — linen weave on the board */
+  --tex-ground:
+    repeating-linear-gradient(0deg, var(--wall-checker) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, var(--wall-checker) 0 1px, transparent 1px 3px);
+  --tex-ground-size: auto;
+
+  /* motion — the slow settle of something set down carefully */
+  --dur-instant: 0.12s;
+  --dur-fast: 0.18s;
+  --dur-base: 0.34s;
+  --dur-slow: 0.5s;
+  --ease-enter: cubic-bezier(0.16, 0.7, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 0.7, 0.2);
+  --ease-move: cubic-bezier(0.16, 0.7, 0.2, 1);
+  --ease-settle: cubic-bezier(0.16, 0.7, 0.2, 1);
+  --enter-shift: 8px;
+  --lift-shift: -4px;
+
+  /* layout */
+  --col-w: 300px;
+  --gap-board: 20px;
+  --pad-board: 26px;
+  --gap-card: 12px;
+  --pad-card: 13px 15px;
+  --pad-list: 14px 12px;
+  --pad-colhead: 11px 13px;
+  --pad-control: 9px 14px;
+  --pad-chip: 3px 9px;
+}
+
+/* Archive structure: the card is foxed stock, so its ink inverts.
+ *
+ * CAUTION for anyone extending this world: it is the only one whose --text
+ * (bone) has no contrast against its --surface-2 (the light card) — they are
+ * nearly the same value. Every element that sits ON a card must therefore
+ * state its ink explicitly, as the rules below do. A new card child that
+ * simply inherits --text will be invisible here and nowhere else. */
+[data-theme="archive"] .card {
+  color: #2a241d;
+}
+
+[data-theme="archive"] .card .card-title {
+  color: #241f19;
+}
+
+[data-theme="archive"] .card .card-desc {
+  color: #6b5b49;
+}
+
+/* The card is light stock on a dark board, so --text (bone) would vanish on
+ * it. But a chip that already states its own colour pair — a label with
+ * computed ink, or a priority/due chip coloured by class — must keep it;
+ * forcing brown over those made the text unreadable. So this supplies ink
+ * only where nothing else has, via the --chip-fg fallback, and stands aside
+ * for the chips that carry their own. */
+[data-theme="archive"] .card .chip-static:not(.priority):not(.overdue):not(.soon),
+[data-theme="archive"] .card .chip:not(.priority):not(.overdue):not(.soon) {
+  color: var(--chip-fg, #6b5b49);
+}
+
+[data-theme="archive"] .card .card-actions {
+  background: var(--surface-2);
+  border-color: rgba(42, 36, 29, 0.3);
+}
+
+[data-theme="archive"] .card .btn.icon {
+  color: #4a3f33;
+  border-color: rgba(42, 36, 29, 0.35);
+}
+
+/* the brass pin every specimen hangs from */
+[data-theme="archive"] .card::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+/* ============================================================
+   THE WORLD PICKER
+   Each thumbnail carries its own `data-theme`, so it inherits
+   that world's ground, chrome, corner language and depth. The
+   preview is a miniature of the board, never a colour chip.
+   ============================================================ */
+
+.world-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 80;
+  padding: 20px;
+  animation: fade var(--dur-fast) var(--ease-exit);
+}
+
+.world-panel {
+  width: min(720px, 100%);
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 18px;
+  background: var(--surface);
+  border: var(--bw-window) solid var(--border-strong);
+  border-radius: var(--r-window);
+  box-shadow: var(--shadow-modal);
+  animation: win-in var(--dur-base) var(--ease-enter);
+}
+
+.world-head {
+  margin: -18px -18px 16px;
+  padding: 11px 14px;
+  background: var(--win-bg);
+  color: var(--win-ink);
+  border-bottom: var(--bw-hair) solid var(--win-ink);
+  font-family: var(--font-chrome);
+  font-size: var(--fs-chrome);
+  letter-spacing: var(--tracking-chrome);
+  text-transform: var(--case-chrome);
+}
+
+.world-subhead {
+  margin: 18px 0 8px;
+  font-family: var(--font-chrome);
+  font-size: var(--fs-chrome);
+  letter-spacing: var(--tracking-chrome);
+  text-transform: var(--case-chrome);
+  color: var(--muted);
+}
+
+.world-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.world-item {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px;
+  text-align: left;
+  cursor: pointer;
+  background: var(--surface-3);
+  color: var(--text);
+  border: var(--bw-card) solid var(--border);
+  border-radius: var(--r-card);
+  transition:
+    transform var(--dur-fast) var(--ease-move),
+    border-color var(--dur-fast) var(--ease-move);
+}
+
+.world-item:hover,
+.world-item:focus-visible {
+  border-color: var(--accent);
+  transform: translateY(var(--lift-shift, -2px));
+  outline: none;
+}
+
+.world-item.active {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-focus);
+}
+
+.world-name {
+  font-family: var(--font-chrome);
+  font-size: var(--fs-chrome);
+  letter-spacing: var(--tracking-chrome);
+  text-transform: var(--case-chrome);
+  line-height: var(--lh-chrome);
+}
+
+.world-lineage {
+  font-family: var(--font-body);
+  font-size: var(--fs-small);
+  line-height: var(--lh-body);
+  color: var(--muted);
+}
+
+/* the miniature board */
+.world-thumb {
+  display: block;
+  height: 76px;
+  overflow: hidden;
+  background: var(--bg);
+  background-image: var(--tex-ground);
+  background-size: var(--tex-ground-size);
+  border: var(--bw-window) solid var(--border-strong);
+  border-radius: var(--r-window);
+  clip-path: var(--clip-window);
+}
+
+.world-thumb-bar {
+  display: block;
+  height: 13px;
+  background: var(--win-bg);
+  border-bottom: var(--bw-hair) solid var(--win-ink);
+}
+
+.world-thumb-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px;
+}
+
+.world-thumb-card {
+  display: block;
+  height: 11px;
+  background: var(--surface-2);
+  border: var(--bw-card) solid var(--border);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-lift);
+}
+
+/* Lineup has no card chrome, so its miniature shows type rules instead */
+.world-thumb[data-theme="lineup"] .world-thumb-card {
+  border-bottom: 2px solid var(--text);
+  background: transparent;
+}
+
+.world-accents {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.world-accent {
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+  background: var(--swatch);
+  border: var(--bw-control) solid var(--border-strong);
+  border-radius: var(--r-chip);
+  transition: transform var(--dur-fast) var(--ease-settle);
+}
+
+.world-accent:hover,
+.world-accent:focus-visible {
+  transform: scale(1.12);
+  outline: none;
+}
+
+.world-accent.active {
+  border-color: var(--text);
+  box-shadow: var(--shadow-control);
+}
+
+.world-done {
+  margin-top: 18px;
+  width: 100%;
+  justify-content: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .world-backdrop,
+  .world-panel {
+    animation: none;
+  }
+  .world-item,
+  .world-accent {
+    transition: none;
+  }
+}
