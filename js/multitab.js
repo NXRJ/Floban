@@ -123,7 +123,7 @@
       banner.setAttribute('role', 'status');
       var msg = document.createElement('span');
       msg.className = 'multitab-msg';
-      msg.textContent = 'Kanban is already open in another tab — this tab is read-only.';
+      msg.textContent = 'Floban is already open in another tab — this tab is read-only.';
       var take = document.createElement('button');
       take.type = 'button';
       take.className = 'btn sm mt-takeover';

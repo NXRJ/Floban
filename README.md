@@ -1,6 +1,7 @@
-# Kanban
+# Floban
 
-A personal, flow-aware Kanban board built with vanilla HTML, CSS and JavaScript.
+A personal, flow-aware board — kanban with the flow made first-class —
+built with vanilla HTML, CSS and JavaScript.
 No build step, no framework, no backend — everything runs in the browser and
 persists locally in **IndexedDB**, with a localStorage crash mirror and rotating
 automatic backups. It is an installable **PWA**: over HTTP(S) it works fully

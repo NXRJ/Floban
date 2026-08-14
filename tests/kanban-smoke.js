@@ -3261,7 +3261,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       const json = await res.json();
       return { name: json.name, display: json.display, icons: json.icons.length };
     });
-    check('manifest is valid and installable', manifest.name === 'Kanban \u2014 The 8-Bit Atelier' && manifest.display === 'standalone' && manifest.icons >= 3);
+    check('manifest is valid and installable', manifest.name === 'Floban \u2014 flow-aware boards' && manifest.display === 'standalone' && manifest.icons >= 3);
     const swState = await pwaPage.evaluate(() => new Promise((resolve) => {
       navigator.serviceWorker.ready.then(() => resolve({
         registered: true,

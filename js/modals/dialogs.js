@@ -119,7 +119,7 @@
     // tab (its saves are dropped by the funnel).
     function warnIfReadOnly() {
       if (KB.MultiTab && KB.MultiTab.readOnly()) {
-        KB.UI.toast('Read-only — Kanban is open in another tab', 'error');
+        KB.UI.toast('Read-only — Floban is open in another tab', 'error');
         return true;
       }
       return false;
@@ -205,7 +205,7 @@
     var exportAllBtn = h('button', { type: 'button', class: 'btn' });
     exportAllBtn.textContent = 'Export all boards';
     exportAllBtn.addEventListener('click', function () {
-      KB.UI.download('kanban-backup-' + KB.Filters.todayISO() + '.json', KB.State.exportAll());
+      KB.UI.download('floban-backup-' + KB.Filters.todayISO() + '.json', KB.State.exportAll());
       KB.UI.toast('Backup downloaded', 'success');
     });
     actions.appendChild(exportAllBtn);
@@ -214,7 +214,7 @@
     exportBoardBtn.textContent = 'Export this board';
     exportBoardBtn.addEventListener('click', function () {
       var name = KB.State.activeBoard().name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-      KB.UI.download('kanban-' + name + '-' + KB.Filters.todayISO() + '.json', KB.State.exportBoard());
+      KB.UI.download('floban-' + name + '-' + KB.Filters.todayISO() + '.json', KB.State.exportBoard());
       KB.UI.toast('Board exported', 'success');
     });
     actions.appendChild(exportBoardBtn);
@@ -255,7 +255,7 @@
           close();
           KB.App.refresh();
         } else {
-          KB.UI.toast('That file is not a valid kanban backup', 'error');
+          KB.UI.toast('That file is not a valid Floban backup', 'error');
         }
       };
       reader.readAsText(file);
