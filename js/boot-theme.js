@@ -5,13 +5,8 @@
   // board will load.
   function apply(theme, accentId) {
     var T = window.KB && window.KB.Themes;
-    var id = T ? T.normalize(theme) : theme;
-    document.documentElement.dataset.theme = id;
-    if (T) {
-      var a = T.accent(id, accentId);
-      document.documentElement.style.setProperty('--accent', a.value);
-      document.documentElement.style.setProperty('--on-accent', a.on);
-    }
+    if (T) T.applyTo(document.documentElement, theme, accentId);
+    else document.documentElement.dataset.theme = theme;
   }
 
   try {
