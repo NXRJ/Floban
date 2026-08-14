@@ -1,7 +1,7 @@
 {
   "name": "kanban",
   "version": "0.1.0",
-  "description": "A personal Kanban board with seven switchable design worlds over one component layer: vanilla HTML/CSS/JS, no build step, IndexedDB persistence with a localStorage crash mirror, offline PWA.",
+  "description": "Floban — a personal, flow-aware board with seven switchable design worlds over one component layer: vanilla HTML/CSS/JS, no build step, IndexedDB persistence with a localStorage crash mirror, offline PWA.",
   "license": "MIT",
   "repository": {
     "type": "git",

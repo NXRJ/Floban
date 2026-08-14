@@ -1,6 +1,6 @@
 ---
-name: Kanban
-description: One kanban skeleton, seven design worlds — a token contract that lets a whole visual language be swapped without touching a single component.
+name: Floban
+description: One board skeleton, seven design worlds — a token contract that lets a whole visual language be swapped without touching a single component.
 colors:
   primary: "#3fd7e0"
   primary-hi: "#7ceaf0"
@@ -117,7 +117,7 @@ components:
     rounded: "{rounded.none}"
 ---
 
-# Design System: Kanban
+# Design System: Floban
 
 > **The frontmatter above describes the 8-Bit Atelier specifically** — the
 > flagship world and the `:root` default. It is not the whole system. Six other

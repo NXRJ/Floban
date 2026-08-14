@@ -15,7 +15,11 @@
  */
 'use strict';
 
-var CACHE = 'kanban-v5';
+// The cache key keeps its original prefix on purpose: the activate handler
+// prunes by `kanban-`, so renaming it to match the Floban branding would
+// strand every previously installed cache on existing devices. It is an
+// internal key and never shown to anyone.
+var CACHE = 'kanban-v6';
 
 var PRECACHE = [
   './',

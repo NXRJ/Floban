@@ -325,9 +325,9 @@
     }
 
     addExport('CSV', 'Spreadsheet / re-import friendly', 'text/csv;charset=utf-8',
-      'kanban-' + safe + '-' + today + '.csv', KB.Core.Exporter.exportCsv(board));
+      'floban-' + safe + '-' + today + '.csv', KB.Core.Exporter.exportCsv(board));
     addExport('Markdown', 'Notes, Obsidian, paste anywhere', 'text/markdown;charset=utf-8',
-      'kanban-' + safe + '-' + today + '.md', KB.Core.Exporter.exportMarkdown(board));
+      'floban-' + safe + '-' + today + '.md', KB.Core.Exporter.exportMarkdown(board));
 
     var actions = h('div', { class: 'modal-actions' });
     actions.appendChild(h('span', { class: 'spacer' }));
