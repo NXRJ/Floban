@@ -321,6 +321,35 @@ test('an edit made while waiting for the seed survives', async () => {
   await server.close();
 });
 
+// The handshake is only as strong as the rule that makes a room non-empty.
+// Any update recorded into an empty room spends the seeding right and releases
+// everyone waiting, so a peer that ignores the handshake — or an empty frame
+// carrying nothing at all — must not be able to trigger it.
+test('a held peer cannot seed the room it is waiting on', async () => {
+  const server = await startServer();
+  const a = await connect(server.port, 'held-seed');
+  await waitFor(() => a.ready, 'the seeder is ready');
+
+  const b = await connect(server.port, 'held-seed');
+  await wait(50);
+  assert.equal(b.ready, false, 'B is held behind A');
+
+  b.push(new Uint8Array([1, 2, 3])); // never told `ready`, pushes anyway
+  b.push(new Uint8Array(0)); // and a frame with no body at all
+  await wait(80);
+  assert.equal(b.ready, false, 'neither made the room look seeded');
+  assert.equal(a.binding.isEmpty(), true, 'and neither reached the seeder');
+
+  // The genuine seed still works and releases B.
+  a.binding.seed(boardState('Seeded', ['x']));
+  await waitFor(() => b.ready, 'B is released by the real seed');
+  assert.deepEqual(titles(b), ['Card x'], 'B holds the seeder document');
+
+  a.close();
+  b.close();
+  await server.close();
+});
+
 test('the seeding right moves on when the seeder leaves before seeding', async () => {
   const server = await startServer();
   const a = await connect(server.port, 'seeder-drops');

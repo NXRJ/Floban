@@ -46,6 +46,9 @@ function get(url) {
     faces.push({
       family: family[1],
       url: src[1],
+      // Position in the parsed stylesheet. This, not a count of unique files,
+      // is what names the file — see fileFor below.
+      ordinal: i + 1,
       range: range ? range[1].trim() : null,
       weight: weight ? weight[1] : '400',
       style: style ? style[1] : 'normal'
@@ -61,7 +64,6 @@ function get(url) {
   // still land in one file that several @font-face rules point at.
   const byUrl = new Map();
   const byHash = new Map();
-  let unique = 0;
 
   async function fileFor(face) {
     const cached = byUrl.get(face.url);
@@ -76,8 +78,13 @@ function get(url) {
       return seen;
     }
 
-    unique += 1;
-    const name = face.family.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + unique + '.woff2';
+    // The FIRST face to carry this content keeps its own ordinal, so a name
+    // depends only on where that face sits in the stylesheet — never on how
+    // many duplicates happened to precede it. Numbering by a running count of
+    // unique files instead would shift every later name as soon as an earlier
+    // duplicate was collapsed, renaming already-vendored files and silently
+    // invalidating the font list hardcoded in sw.js.
+    const name = face.family.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + face.ordinal + '.woff2';
     fs.writeFileSync(path.join(outDir, name), data);
     byUrl.set(face.url, name);
     byHash.set(hash, name);
@@ -97,5 +104,5 @@ function get(url) {
     out += '}\n';
   }
   fs.writeFileSync(path.join(outDir, 'fonts.css'), out);
-  console.log('wrote fonts/fonts.css with ' + faces.length + ' faces over ' + unique + ' files');
+  console.log('wrote fonts/fonts.css with ' + faces.length + ' faces over ' + byHash.size + ' files');
 })().catch((e) => { console.error(e); process.exit(1); });

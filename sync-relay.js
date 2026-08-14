@@ -464,7 +464,23 @@ function attach(server, options) {
         const seq = payload.readUInt32BE(1);
         const body = payload.subarray(5);
         if (tag === TAG_UPDATE) {
+          // An update with no body carries nothing, but recording one would
+          // still make the room non-empty — spending the seeding right and
+          // releasing every held client onto a document that does not exist.
+          // That is the precise failure the handshake exists to prevent,
+          // walking back in through an empty frame.
+          if (body.length === 0) return;
+
           const wasEmpty = entry.updates.length === 0;
+          // Only the holder of the seeding right may make an empty room
+          // non-empty. A held client has not been told `ready` and has nothing
+          // legitimate to send yet, so an update arriving from one is a peer
+          // that ignored the handshake — and honouring it would release the
+          // rest of the room onto whatever it happened to contain. In an empty
+          // room every client is either the seeder or waiting behind it, so
+          // this rejects nothing a well-behaved peer would send.
+          if (wasEmpty && client !== entry.seeder) return;
+
           broadcast(entry, record(entry, body), client);
           // The broadcast above is what the held-back clients receive as their
           // replay, so release them only after it has gone out.
