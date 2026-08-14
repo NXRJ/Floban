@@ -195,11 +195,34 @@ async function connect(port, room) {
     peers: 0,
     compacts: 0,
     lastSeq: 0,
+    // True between "the relay granted me the seeding right" and "I told it the
+    // document is on the wire" — js/sync-session.js keeps the same flag.
+    holdsSeedingRight: false,
     push: (update) => client.send(BINARY, tagged(TAG_UPDATE, 0, update)),
+    declareSeeded: () => client.send(TEXT, Buffer.from(JSON.stringify({ t: 'seeded' }), 'utf8')),
     close: () => client.close()
   };
 
-  binding.onLocalUpdate((update) => peer.push(update));
+  // The relay cannot read a Yjs update, and an encoded empty Y.Doc is two
+  // ordinary bytes, so publishing a document is not the same as saying one
+  // exists. Say it — after the push that carried it.
+  function declareIfSeeding() {
+    if (!peer.holdsSeedingRight || binding.isEmpty()) return;
+    peer.holdsSeedingRight = false;
+    peer.declareSeeded();
+  }
+
+  binding.onLocalUpdate((update) => {
+    peer.push(update);
+    declareIfSeeding();
+  });
+
+  // Publish this peer's whole document and, if it is holding the seeding
+  // right, bootstrap the room with it. What sync-session does on `ready`.
+  peer.publish = () => {
+    peer.push(binding.encodeState());
+    declareIfSeeding();
+  };
 
   client.setHandler((opcode, payload) => {
     if (opcode === TEXT) {
@@ -207,6 +230,7 @@ async function connect(port, room) {
       if (message.t === 'ready') {
         peer.ready = true;
         peer.canSeed = message.canSeed;
+        if (message.canSeed) peer.holdsSeedingRight = true;
       }
       if (message.t === 'peers') peer.peers = message.n;
       if (message.t === 'compact') {
@@ -321,10 +345,10 @@ test('an edit made while waiting for the seed survives', async () => {
   await server.close();
 });
 
-// The handshake is only as strong as the rule that makes a room non-empty.
-// Any update recorded into an empty room spends the seeding right and releases
-// everyone waiting, so a peer that ignores the handshake — or an empty frame
-// carrying nothing at all — must not be able to trigger it.
+// The handshake is only as strong as the rule that bootstraps a room. Whatever
+// makes the room seeded releases everyone waiting on it, so a peer that ignores
+// the handshake must not be able to trigger it — by writing, by sending nothing
+// at all, or by simply claiming the room is seeded.
 test('a held peer cannot seed the room it is waiting on', async () => {
   const server = await startServer();
   const a = await connect(server.port, 'held-seed');
@@ -336,9 +360,10 @@ test('a held peer cannot seed the room it is waiting on', async () => {
 
   b.push(new Uint8Array([1, 2, 3])); // never told `ready`, pushes anyway
   b.push(new Uint8Array(0)); // and a frame with no body at all
+  b.declareSeeded(); // and claims the bootstrap it never performed
   await wait(80);
-  assert.equal(b.ready, false, 'neither made the room look seeded');
-  assert.equal(a.binding.isEmpty(), true, 'and neither reached the seeder');
+  assert.equal(b.ready, false, 'none of it made the room look seeded');
+  assert.equal(a.binding.isEmpty(), true, 'and none of it reached the seeder');
 
   // The genuine seed still works and releases B.
   a.binding.seed(boardState('Seeded', ['x']));
@@ -347,6 +372,70 @@ test('a held peer cannot seed the room it is waiting on', async () => {
 
   a.close();
   b.close();
+  await server.close();
+});
+
+// Regression: the relay used to infer "this room has a document" from the log
+// being non-empty. It cannot — it never parses a Yjs update, and an encoded
+// EMPTY Y.Doc is two perfectly ordinary bytes. A seeder that published one
+// would have spent the seeding right and released every held peer onto a
+// document that does not exist, which is the original bootstrap bug wearing a
+// different hat. Only the explicit declaration releases the room now.
+test('publishing an empty document does not bootstrap the room', async () => {
+  const server = await startServer();
+  const a = await connect(server.port, 'empty-seed');
+  await waitFor(() => a.ready, 'A holds the seeding right');
+
+  const b = await connect(server.port, 'empty-seed');
+  await wait(50);
+  assert.equal(b.ready, false, 'B waits behind A');
+
+  const empty = Y.encodeStateAsUpdate(new Y.Doc());
+  assert.ok(empty.length > 0, 'an empty Y.Doc still encodes to real bytes');
+  a.push(empty);
+  await wait(80);
+  assert.equal(b.ready, false, 'B is not released by a document with nothing in it');
+
+  // A real seed from the same peer still works.
+  a.binding.seed(boardState('Real', ['x']));
+  await waitFor(() => b.ready, 'B is released by the real seed');
+  assert.deepEqual(titles(b), ['Card x']);
+
+  a.close();
+  b.close();
+  await server.close();
+});
+
+// A bootstrap the seeder never finished must leave nothing behind: a held peer
+// that had already applied half of it would carry that fragment into whatever
+// it seeds next, as a second lineage of the same ids.
+test('an abandoned bootstrap leaves nothing in the room', async () => {
+  const server = await startServer();
+  const a = await connect(server.port, 'abandoned');
+  await waitFor(() => a.ready, 'A holds the seeding right');
+
+  const b = await connect(server.port, 'abandoned');
+  await wait(50);
+  assert.equal(b.ready, false, 'B waits behind A');
+
+  // A publishes a document but dies before declaring the bootstrap complete.
+  a.holdsSeedingRight = false; // suppress the declaration, not the publish
+  a.binding.seed(boardState('Half a board', ['x']));
+  await wait(50);
+  a.close();
+
+  await waitFor(() => b.ready, 'B is promoted');
+  assert.equal(b.canSeed, true, 'B inherits the seeding right');
+  assert.equal(b.binding.isEmpty(), true, 'and none of the abandoned bootstrap reached it');
+
+  b.binding.seed(boardState('B board', ['y']));
+  const c = await connect(server.port, 'abandoned');
+  await waitFor(() => c.ready, 'a later joiner is ready');
+  await waitFor(() => c.binding.toState().boards.length === 1, 'C adopts one board');
+  assert.equal(c.binding.toState().boards.length, 1, 'exactly one lineage survives');
+
+  b.close();
+  c.close();
   await server.close();
 });
 
@@ -405,6 +494,62 @@ test('three peers joining a cold room produce exactly one board', async () => {
 
   peers.forEach((p) => p.close());
   await server.close();
+});
+
+// Regression: the relay's log dies with the process, and the docs said that
+// cost nothing because reconnecting peers repopulate it. That is only true if
+// they rejoin with the SAME document. A device that reloaded and rebuilt its
+// Y.Doc from the plain snapshot in IndexedDB does not: Yjs identity is
+// (clientId, clock), not `board.id`, so its board is a second lineage and the
+// peer that never reloaded merges it as a second board carrying the same id.
+// js/sync-docs.js persists the encoded document so the reload restores it.
+test('a reloaded peer reseeding a restarted relay does not fork the board', async () => {
+  const first = await startServer();
+  const a = await connect(first.port, 'restart');
+  await waitFor(() => a.ready, 'A holds the seeding right');
+  a.binding.seed(boardState('Work', ['k1']));
+
+  const b = await connect(first.port, 'restart');
+  await waitFor(() => b.ready, 'B is released once the room is seeded');
+  await waitFor(() => b.binding.toState().boards.length === 1, 'B adopts the board');
+
+  // What a reload keeps: the plain state (KB.Storage) and, since this fix, the
+  // encoded document itself (KB.SyncDocs).
+  const savedState = a.binding.toState();
+  const savedDoc = a.binding.encodeState();
+  a.close();
+  await first.close(); // the relay process dies, taking its log with it
+
+  // A reloads. Its Y.Doc is gone; it restores the persisted one rather than
+  // rebuilding from savedState, which is the whole point.
+  const second = await startServer();
+  const a2 = await connect(second.port, 'restart');
+  a2.binding.restore(savedDoc);
+  assert.deepEqual(a2.binding.toState(), savedState, 'the restored document is the same board');
+
+  await waitFor(() => a2.ready, 'A2 is asked to seed the empty relay');
+  assert.equal(a2.canSeed, true, 'the restarted relay holds no document');
+  a2.publish();
+
+  // B never reloaded, so it still holds the original lineage.
+  const b2 = await connect(second.port, 'restart');
+  await waitFor(() => b2.ready, 'B reconnects');
+  b2.binding.restore(b.binding.encodeState());
+  b2.publish();
+
+  await waitFor(() => a2.binding.toState().boards.length > 0, 'the two documents meet');
+  await wait(80);
+
+  const merged = a2.binding.toState();
+  assert.equal(merged.boards.length, 1, 'one board, not two lineages of one board');
+  assert.equal(merged.boards[0].columns.length, 2, 'one column tree');
+  assert.equal(merged.boards[0].columns[0].cards.length, 1, 'one card');
+  assert.deepEqual(b2.binding.toState().boards.length, 1, 'and the peer that never reloaded agrees');
+
+  a2.close();
+  b2.close();
+  b.close();
+  await second.close();
 });
 
 test('a peer joining a room that already has a document may not seed', async () => {

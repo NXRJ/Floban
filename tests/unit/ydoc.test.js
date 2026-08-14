@@ -419,3 +419,66 @@ test('ops against an absent card are dropped by an empty document', () => {
   assert.deepEqual(empty.toState(), before, 'the empty document absorbed nothing');
   assert.ok(empty.isEmpty(), 'and is still empty, so onReady would seed or adopt');
 });
+
+// Regression anchor for the forked-lineage path fixed in js/sync-docs.js.
+//
+// Yjs identity is (clientId, clock), never `board.id`. Two documents built by
+// running seed() over the same plain state are therefore two distinct sets of
+// Y.Maps that happen to carry matching application ids, and merging them keeps
+// BOTH. That is what a device did when it reloaded, dropped its in-memory
+// Y.Doc, and re-seeded a relay whose log had been lost — one board id, two
+// boards, on the peer that never reloaded.
+test('re-seeding the same state builds a second lineage, restoring does not', () => {
+  const state = baseState();
+
+  const original = binding();
+  original.seed(state);
+  const survivor = binding(); // the peer that never reloads
+  survivor.applyUpdate(original.encodeState());
+  assert.equal(survivor.toState().boards.length, 1);
+
+  // What the plain snapshot alone can rebuild: a new lineage.
+  const rebuilt = binding();
+  rebuilt.seed(original.toState());
+  const forked = binding();
+  forked.applyUpdate(survivor.encodeState());
+  forked.applyUpdate(rebuilt.encodeState());
+  assert.equal(forked.toState().boards.length, 2, 'the fork this exists to prevent');
+  assert.equal(
+    forked.toState().boards[0].id,
+    forked.toState().boards[1].id,
+    'and both boards carry the same application id, so nothing downstream can tell them apart'
+  );
+
+  // What the persisted document rebuilds: the same lineage.
+  const reloaded = binding();
+  reloaded.restore(original.encodeState());
+  assert.deepEqual(reloaded.toState(), original.toState(), 'restore reproduces the document');
+  const merged = binding();
+  merged.applyUpdate(survivor.encodeState());
+  merged.applyUpdate(reloaded.encodeState());
+  assert.equal(merged.toState().boards.length, 1, 'the merge is the no-op it should be');
+  assert.deepEqual(merged.toState(), survivor.toState());
+});
+
+// restore() is this device reloading its own document: it must not be relayed
+// back out as a local edit, nor committed inward as a remote change.
+test('restore notifies neither handler', () => {
+  const source = binding();
+  source.seed(baseState());
+
+  const target = binding();
+  let local = 0;
+  let remote = 0;
+  target.onLocalUpdate(() => { local += 1; });
+  target.onRemoteUpdate(() => { remote += 1; });
+
+  target.restore(source.encodeState());
+  assert.equal(target.isEmpty(), false, 'the document really was restored');
+  assert.equal(local, 0, 'nothing to publish: the room already has it');
+  assert.equal(remote, 0, 'nothing to commit: local state is where it came from');
+
+  target.restore(null);
+  target.restore(new Uint8Array(0));
+  assert.equal(local + remote, 0, 'and an absent document is simply a no-op');
+});

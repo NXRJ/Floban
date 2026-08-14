@@ -19,7 +19,7 @@
 // prunes by `kanban-`, so renaming it to match the Floban branding would
 // strand every previously installed cache on existing devices. It is an
 // internal key and never shown to anyone.
-var CACHE = 'kanban-v6';
+var CACHE = 'kanban-v7';
 
 var PRECACHE = [
   './',
@@ -83,6 +83,7 @@ var PRECACHE = [
   // sync is switched on, and the cache-first handler below keeps it from then
   // on — so an offline board with sync off never downloads 93KB it cannot use.
   './js/sync-provider.js',
+  './js/sync-docs.js',
   './js/sync-session.js',
   './js/multitab.js',
   './js/state.js',

@@ -13,6 +13,7 @@ written before the code and still governs it.
 | `js/core/statediff.js` | Snapshot → granular ops. Recovers the per-field granularity the `save()` funnel throws away. Pure, no CRDT knowledge. |
 | `js/core/ydoc.js` | The binding: StateDiff ops ↔ `Y.Map`/`Y.Array`. Owns merge semantics. |
 | `js/sync-provider.js` | The wire: a WebSocket client speaking a tiny tagged protocol. Knows nothing about boards. |
+| `js/sync-docs.js` | The document's own memory: one encoded Y.Doc per room in its own IndexedDB database. Sync metadata, never board state. |
 | `js/sync-session.js` | The glue and the lifecycle. Subscribes to `KB.Sync`, commits remote changes through `KB.State.applyRemote`. |
 | `sync-relay.js` | The server: a dependency-free WebSocket relay that fans opaque updates out per room. |
 | `vendor/yjs.js` | Yjs 13.6.20, bundled once by `npm run yjs` and committed. Fetched on demand, never precached. |
@@ -60,6 +61,35 @@ losing either. `theme` and `activeBoardId` are deliberately **not** synced —
   friends are single-writer by nature and are diffed whole.
 - **The relay is not a source of truth.** Its log dies with the process; every
   peer holds the full document locally, and reconnecting peers repopulate it.
+  That is only safe because they rejoin with the *same* document — see
+  Bootstrap below.
+
+## Bootstrap
+
+Two rules, both learned the hard way, both about CRDT identity: a `Y.Map` is
+identified by `(clientId, clock)`, never by `board.id`. Two documents that
+carry the same board id are still two boards once merged.
+
+**One seeder per empty room.** The relay grants the seeding right to exactly
+one client and holds the rest — no `ready` at all — until that client says the
+document is published. `ready` therefore means "there is a document here you
+may safely edit", never "the history replay has ended". Held peers receive
+nothing until they are released, so a bootstrap the seeder abandons can simply
+be dropped; the right then moves to the next peer in line.
+
+The declaration is an explicit `{"t":"seeded"}` frame rather than something the
+relay works out for itself, because it cannot: it never parses a Yjs update,
+and an encoded **empty** `Y.Doc` is two perfectly ordinary bytes. Frames from
+one socket are ordered, so the document is in the log by the time the
+declaration arrives.
+
+**The Y.Doc is reloaded, never rebuilt.** `js/sync-docs.js` persists the
+encoded document alongside the board. A device that reloaded and rebuilt its
+document from the plain snapshot would rejoin as a second lineage of the same
+board, and a relay restart is enough to make that happen: peer A reloads,
+reseeds the empty relay from plain state, and peer B — which never reloaded —
+merges it into a duplicate of everything. Restoring the encoded document keeps
+the identities, and the merge is the no-op it should be.
 
 ## The mutation boundary
 

@@ -16,6 +16,9 @@
   //   3. A read-only tab (js/multitab.js) applies nothing. Its in-memory state
   //      may be stale and its saves are dropped anyway; committing a remote
   //      snapshot there would show the user changes that were never persisted.
+  //   4. The Y.Doc is persisted (js/sync-docs.js) and reloaded, never rebuilt
+  //      from plain state. Rebuilding gives the same board a second CRDT
+  //      identity, and two lineages of one board merge into two boards.
   //
   // vendor/yjs.js is fetched on demand rather than shipped in index.html: 93KB
   // should not ride on every boot for a feature that is off by default.
@@ -25,17 +28,25 @@
   // Log replay on connect arrives as a burst of updates. Coalesce them into a
   // single commit rather than re-rendering the board once per message.
   var COMMIT_DEBOUNCE_MS = 60;
+  // Persisting the document is bookkeeping, not the save path — the user's
+  // board is already durable through KB.Storage before any of this runs.
+  var PERSIST_DEBOUNCE_MS = 500;
 
   var binding = null;
   var provider = null;
   var baseline = null;
+  var room = null;
   var ready = false;
+  // Set while the relay has granted this peer the right to seed an unseeded
+  // room and it has not yet declared the bootstrap complete.
+  var holdsSeedingRight = false;
   // `ready` drops on every disconnect; `initialized` latches on the first
   // successful handshake and marks the moment the document became real. Local
   // ops are buffered before that and applied directly after it.
   var initialized = false;
   var pendingOps = [];
   var pendingCommit = null;
+  var pendingPersist = null;
   var blockedByReadOnly = false;
   var peers = 0;
   var loading = null;
@@ -183,7 +194,39 @@
     }, COMMIT_DEBOUNCE_MS);
   }
 
+  // ---- document memory ------------------------------------------------------
+
+  // Keep this device's copy of the Y.Doc across reloads. Rebuilding it from
+  // plain state instead would give the same board a second CRDT identity — see
+  // js/sync-docs.js — so this is what makes a reconnect a merge rather than a
+  // fork. Debounced, and skipped in a read-only tab: its document may be
+  // missing edits the owning tab made offline, and this key is shared.
+  function persist() {
+    if (pendingPersist || !KB.SyncDocs) return;
+    pendingPersist = setTimeout(function () {
+      pendingPersist = null;
+      if (!binding || !room || !canApply()) return;
+      KB.SyncDocs.save(room, binding.encodeState());
+    }, PERSIST_DEBOUNCE_MS);
+  }
+
+  // Reload the document this device left the room with, then bring it up to
+  // date with local state: edits made while sync was off — or while it was
+  // offline and buffering — live in KB.State only, and without this the
+  // handshake's adopt() would commit the older document over the newer board.
+  function restore(saved) {
+    if (!saved || saved.length === 0) return;
+    binding.restore(saved);
+    if (binding.isEmpty()) return;
+    binding.applyOps(KB.Core.StateDiff.diff(binding.toState(), KB.State.data()));
+    baseline = clone(KB.State.data());
+    // There is a real document to diff into from the first save onward — the
+    // whole point of having kept it.
+    initialized = true;
+  }
+
   function onRemoteUpdate() {
+    persist();
     // Updates arriving before `ready` are the room's history replaying. The
     // handshake below decides what to do with them once the replay is done.
     if (!ready) return;
@@ -215,15 +258,30 @@
     initialized = true;
   }
 
+  // The relay is holding every other peer in this room until it hears that a
+  // document exists, and it cannot tell that from the bytes — an encoded empty
+  // Y.Doc is two of them. So say it, once, and only with something behind it.
+  function declareSeeded() {
+    if (!holdsSeedingRight || !provider || binding.isEmpty()) return;
+    holdsSeedingRight = false;
+    provider.seeded();
+  }
+
   function onReady(info) {
     ready = true;
     var canSeed = !info || info.canSeed !== false;
+    // Granted on an unseeded room whether or not this device is empty: after a
+    // relay restart the peer that reconnects first is asked to seed a room it
+    // already has the document for, and the push below is that seed.
+    holdsSeedingRight = canSeed;
 
     if (binding.isEmpty() && canSeed) {
       // First peer in an empty room, and the relay confirmed we hold the
       // seeding right. seed() reads current state, so anything edited while
       // the handshake was in flight is already captured — the buffered ops
       // would only re-apply it, and an `add` op would duplicate. Drop them.
+      // It publishes through onLocalUpdate, which declares the bootstrap
+      // complete on the way out.
       binding.seed(KB.State.data());
       baseline = clone(KB.State.data());
       pendingOps = [];
@@ -241,8 +299,12 @@
     }
 
     // Re-publish everything we hold. Idempotent for peers, and it repopulates a
-    // relay that restarted empty or dropped history while we were disconnected.
+    // relay that restarted empty or dropped history while we were disconnected
+    // — with the same document identities we left with, because the Y.Doc was
+    // persisted rather than rebuilt (see restore above).
     provider.push(binding.encodeState());
+    declareSeeded();
+    persist();
     notify();
   }
 
@@ -254,35 +316,56 @@
 
       binding = KB.Core.YDoc.create({ Y: Y });
       baseline = clone(KB.State.data());
+      room = config.room;
       ready = false;
       initialized = false;
+      holdsSeedingRight = false;
       pendingOps = [];
 
       binding.onLocalUpdate(function (update) {
-        if (provider) provider.push(update);
+        persist();
+        if (!provider) return;
+        provider.push(update);
+        // Covers the one case the handshake cannot: this device held the
+        // seeding right with nothing to seed, and has now made its first edit.
+        declareSeeded();
       });
       binding.onRemoteUpdate(onRemoteUpdate);
       unsubscribe = KB.Sync.subscribe(onLocalSave);
 
-      provider = KB.SyncProvider.create({
-        room: config.room,
-        url: config.url || '',
-        onUpdate: function (update) { binding.applyUpdate(update); },
-        onReady: onReady,
-        onPeers: function (n) { peers = n; notify(); },
-        onStatus: function (status) {
-          if (status !== 'connected') ready = false;
-          notify();
-        },
-        snapshot: function () { return binding.encodeState(); }
-      });
+      // The persisted document has to be in place BEFORE the socket opens, or
+      // the handshake would find an empty binding and seed a fresh lineage.
+      var loaded = KB.SyncDocs ? KB.SyncDocs.load(room) : Promise.resolve(null);
+      return loaded.then(function (saved) {
+        // enable()/disable() may have torn the session down while we waited.
+        if (!binding || room !== config.room) return state();
+        restore(saved);
 
-      notify();
-      return state();
+        provider = KB.SyncProvider.create({
+          room: config.room,
+          url: config.url || '',
+          onUpdate: function (update) { binding.applyUpdate(update); },
+          onReady: onReady,
+          onPeers: function (n) { peers = n; notify(); },
+          onStatus: function (status) {
+            if (status !== 'connected') {
+              ready = false;
+              // A right granted by a relay we are no longer talking to is not
+              // a right; the next handshake says whether we still hold it.
+              holdsSeedingRight = false;
+            }
+            notify();
+          },
+          snapshot: function () { return binding.encodeState(); }
+        });
+
+        notify();
+        return state();
+      });
     });
   }
 
-  function stop() {
+  function stop(forget) {
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;
@@ -290,6 +373,17 @@
     if (pendingCommit) {
       clearTimeout(pendingCommit);
       pendingCommit = null;
+    }
+    if (pendingPersist) {
+      clearTimeout(pendingPersist);
+      pendingPersist = null;
+    }
+    // Last chance to record where this device got to; the next session rejoins
+    // as the same document rather than a second lineage of the same board.
+    // `forget` is disable(): writing the document and deleting it in the same
+    // turn is a race, and the loser is whichever promise settles second.
+    if (!forget && binding && room && KB.SyncDocs && canApply()) {
+      KB.SyncDocs.save(room, binding.encodeState());
     }
     if (provider) {
       provider.close();
@@ -300,8 +394,10 @@
       binding = null;
     }
     baseline = null;
+    room = null;
     ready = false;
     initialized = false;
+    holdsSeedingRight = false;
     pendingOps = [];
     peers = 0;
     blockedByReadOnly = false;
@@ -327,7 +423,12 @@
   }
 
   function disable() {
-    stop();
+    // Turning sync off ends this device's membership of the room, so the
+    // document it was holding is no longer its place in a shared history —
+    // just a stale copy of the board it already has in KB.Storage.
+    var leaving = room;
+    stop(true);
+    if (leaving && KB.SyncDocs) KB.SyncDocs.remove(leaving);
     writeConfig(null);
     notify();
   }
