@@ -9,6 +9,13 @@
 // needs no server change. Yjs updates are commutative and idempotent, so blind
 // fanout plus replay of a retained log is a correct sync.
 //
+// The one thing blind fanout cannot answer is "does this room have a document
+// yet?", which the bootstrap handshake below has to know: an encoded EMPTY
+// Y.Doc is two ordinary bytes, so no byte count separates a real board from
+// nothing at all. Rather than teach the relay to read Yjs, the peer that seeds
+// says so — a `{"t":"seeded"}` text frame. Frames from one socket are ordered,
+// so the relay knows the document arrived first without understanding it.
+//
 // WHY IT IS NOT A DATABASE: the log lives in memory and dies with the process.
 // Every peer keeps a full local copy in IndexedDB; the relay is a courier, not
 // a source of truth. Losing it costs nothing but a reconnect.
@@ -251,9 +258,13 @@ function attach(server, options) {
         bytes: 0,
         seq: 0,
         compacting: null,
-        // Bootstrap state for an empty room. `seeder` is the one client
+        // Bootstrap state. `seeded` is the room's own answer to "does a peer
+        // say there is a document here?" — it is never inferred from the log,
+        // because the relay cannot read a Yjs update and an encoded EMPTY
+        // Y.Doc is two perfectly ordinary bytes. `seeder` is the one client
         // currently holding the seeding right; `waiting` are the clients that
-        // have connected but must not be told `ready` until a document exists.
+        // have connected but must not be told `ready` until it declares.
+        seeded: false,
         seeder: null,
         waiting: []
       };
@@ -265,6 +276,12 @@ function attach(server, options) {
   function broadcast(entry, payload, except) {
     entry.clients.forEach((client) => {
       if (client === except) return;
+      // A held client receives NOTHING until it is released. Half a bootstrap
+      // in a peer's document is worse than none: if the seeder then vanishes
+      // the relay could not take it back, and the peer promoted in its place
+      // would seed a second lineage on top of the fragment. `waiting` is empty
+      // in a seeded room, so this costs established rooms nothing.
+      if (entry.waiting.indexOf(client) !== -1) return;
       client.socket.sendBinary(payload);
     });
   }
@@ -280,6 +297,9 @@ function attach(server, options) {
   // difference between bounded memory and silently losing an edit.
   function maybeCompact(entry) {
     if (entry.compacting || entry.clients.size === 0) return;
+    // Mid-bootstrap the log is one peer's opening document and the only client
+    // that may answer is the seeder. Leave it alone until the room is real.
+    if (!entry.seeded) return;
     if (entry.bytes <= MAX_LOG_BYTES && entry.updates.length <= MAX_LOG_ENTRIES) return;
 
     const donor = entry.clients.values().next().value;
@@ -319,6 +339,13 @@ function attach(server, options) {
     client.socket.sendText(JSON.stringify({ t: 'ready', canSeed: canSeed }));
   }
 
+  // Replay the room's history, then `ready`. In that order, always: a client
+  // has to be holding the room's state by the time it is told to adopt it.
+  function deliver(entry, client) {
+    entry.updates.forEach((item) => client.socket.sendBinary(item.frame));
+    sendReady(client, false);
+  }
+
   // A room with no document yet hands its seeding right to exactly one client
   // and holds everyone else back. Without the hold, a second cold peer is told
   // `ready, canSeed: false` — "adopt what is here" — while nothing is here
@@ -329,31 +356,44 @@ function attach(server, options) {
   // So `ready` means "there is a document you may safely edit", never merely
   // "the history replay has ended".
   function promoteSeeder(entry) {
-    if (entry.seeder || entry.updates.length > 0) return;
+    if (entry.seeded || entry.seeder) return;
     const next = entry.waiting.shift();
     if (!next) return;
     entry.seeder = next;
     sendReady(next, true);
   }
 
-  // The room just became non-empty. The seeding right is spent, and everyone
-  // held back can be released — they are already in `clients`, so the seed
-  // reached them through the same broadcast that triggered this.
-  function releaseWaiting(entry) {
+  // The seeder says its document is published. This is the ONLY thing that
+  // makes a room seeded — see the `seeded` field above for why the relay
+  // cannot work it out from the bytes it is holding. Frames from one socket
+  // are ordered, so the document is already in the log by the time this
+  // arrives, without the relay understanding a byte of it.
+  function declareSeeded(entry, client) {
+    if (entry.seeded || client !== entry.seeder) return;
+    // A declaration with nothing behind it would release the room onto an
+    // empty document — the exact failure the handshake exists to prevent.
+    if (entry.updates.length === 0) return;
+    entry.seeded = true;
     entry.seeder = null;
     const waiting = entry.waiting;
     entry.waiting = [];
-    waiting.forEach((client) => sendReady(client, false));
+    waiting.forEach((client) => deliver(entry, client));
+  }
+
+  // The seeder left mid-bootstrap. Nobody was released, so nothing downstream
+  // has seen these bytes and they can simply be dropped — leaving them would
+  // put a half-built board under whichever peer seeds next, as a second
+  // lineage of the same ids.
+  function discardBootstrap(entry) {
+    entry.updates = [];
+    entry.bytes = 0;
   }
 
   function join(entry, client) {
     entry.clients.add(client);
 
-    if (entry.updates.length > 0) {
-      // The room has a document. Replay it before `ready`, so the client is
-      // holding the room's state by the time it is told to adopt.
-      entry.updates.forEach((item) => client.socket.sendBinary(item.frame));
-      sendReady(client, false);
+    if (entry.seeded) {
+      deliver(entry, client);
     } else if (!entry.seeder) {
       entry.seeder = client;
       sendReady(client, true);
@@ -381,6 +421,7 @@ function attach(server, options) {
     // what makes this fire for a peer that vanished rather than closed.
     if (entry.seeder === client) {
       entry.seeder = null;
+      if (!entry.seeded) discardBootstrap(entry);
       promoteSeeder(entry);
     }
 
@@ -459,32 +500,32 @@ function attach(server, options) {
     client.socket = connection(
       socket,
       (opcode, payload) => {
-        if (opcode !== BINARY || payload.length < 5) return; // text from a client is unused
+        // The one text frame a client sends: the bootstrap declaration.
+        if (opcode === TEXT) {
+          let message;
+          try {
+            message = JSON.parse(payload.toString('utf8'));
+          } catch (err) {
+            return; // unreadable control frame; not worth dropping the link
+          }
+          if (message && message.t === 'seeded') declareSeeded(entry, client);
+          return;
+        }
+        if (opcode !== BINARY || payload.length < 5) return;
         const tag = payload[0];
         const seq = payload.readUInt32BE(1);
         const body = payload.subarray(5);
         if (tag === TAG_UPDATE) {
-          // An update with no body carries nothing, but recording one would
-          // still make the room non-empty — spending the seeding right and
-          // releasing every held client onto a document that does not exist.
-          // That is the precise failure the handshake exists to prevent,
-          // walking back in through an empty frame.
-          if (body.length === 0) return;
-
-          const wasEmpty = entry.updates.length === 0;
-          // Only the holder of the seeding right may make an empty room
-          // non-empty. A held client has not been told `ready` and has nothing
-          // legitimate to send yet, so an update arriving from one is a peer
-          // that ignored the handshake — and honouring it would release the
-          // rest of the room onto whatever it happened to contain. In an empty
-          // room every client is either the seeder or waiting behind it, so
-          // this rejects nothing a well-behaved peer would send.
-          if (wasEmpty && client !== entry.seeder) return;
+          if (body.length === 0) return; // carries nothing; recording it helps nobody
+          // Until the room is declared seeded, only the holder of the seeding
+          // right may write to it. A held client has not been told `ready` and
+          // has nothing legitimate to send yet, so an update from one is a
+          // peer that ignored the handshake; in an unseeded room every client
+          // is either the seeder or waiting behind it, so this rejects nothing
+          // a well-behaved peer would send.
+          if (!entry.seeded && client !== entry.seeder) return;
 
           broadcast(entry, record(entry, body), client);
-          // The broadcast above is what the held-back clients receive as their
-          // replay, so release them only after it has gone out.
-          if (wasEmpty) releaseWaiting(entry);
           maybeCompact(entry);
           return;
         }

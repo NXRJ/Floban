@@ -9,15 +9,22 @@
   //             tag 1 = a Yjs update (both directions)
   //             tag 2 = a full-document snapshot (client -> relay only), where
   //                     seq acknowledges the last update this peer had applied
-  //   text    {"t":"ready"}   replay of the room's history is complete
+  //   text    {"t":"ready"}   there is a document here you may safely edit
   //           {"t":"peers"}   membership changed
   //           {"t":"compact"} the relay's log grew; send a snapshot to replace it
+  //           {"t":"seeded"}  client -> relay: the document I was granted the
+  //                           right to seed is published. The relay cannot read
+  //                           it, and an encoded empty Y.Doc is two ordinary
+  //                           bytes, so this is the only thing that can tell it
+  //                           the room is bootstrapped.
   //
   // Reconnects re-push the whole local document (js/sync-session.js does it on
   // every `ready`). Yjs updates are idempotent, so the cost is one redundant
   // message; the benefit is that edits made while the socket was down cannot be
   // stranded, and a relay that restarted with an empty log is repopulated by
-  // whoever reconnects first.
+  // whoever reconnects first. That repopulation is only safe because peers
+  // persist the Y.Doc itself (js/sync-docs.js) and so rejoin with the same
+  // document identities they left with — see js/core/ydoc.js `restore`.
 
   var TAG_UPDATE = 1;
   var TAG_SNAPSHOT = 2;
@@ -92,6 +99,16 @@
       if (!socket || socket.readyState !== 1) return false;
       try {
         socket.send(encodeFrame(tag, seq, payload));
+        return true;
+      } catch (err) {
+        return false;
+      }
+    }
+
+    function sendText(message) {
+      if (!socket || socket.readyState !== 1) return false;
+      try {
+        socket.send(JSON.stringify(message));
         return true;
       } catch (err) {
         return false;
@@ -181,6 +198,13 @@
       return send(TAG_UPDATE, 0, update);
     }
 
+    // "The document I was granted the right to seed is now on the wire."
+    // Must follow the push that carried it — the relay releases the peers it
+    // is holding on this frame and nothing else.
+    function seeded() {
+      return sendText({ t: 'seeded' });
+    }
+
     function close() {
       stopped = true;
       if (retryTimer) {
@@ -203,6 +227,7 @@
 
     return {
       push: push,
+      seeded: seeded,
       close: close,
       room: function () { return room; },
       status: function () { return status; }

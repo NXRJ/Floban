@@ -47,6 +47,9 @@
     // re-applied, the second applied and not relayed.
     var LOCAL_ORIGIN = 'kb-local';
     var REMOTE_ORIGIN = 'kb-remote';
+    // Reloading this device's own persisted document: neither typed here nor
+    // arrived over the wire, so it must not be relayed OR committed back.
+    var RESTORE_ORIGIN = 'kb-restore';
 
     function isDeviceKey(key) {
       return DEVICE_KEYS.indexOf(key) !== -1;
@@ -77,6 +80,7 @@
       var remoteHandlers = [];
 
       doc.on('update', function (update, origin) {
+        if (origin === RESTORE_ORIGIN) return;
         var handlers = origin === REMOTE_ORIGIN ? remoteHandlers : localHandlers;
         var snapshot = handlers.slice();
         for (var i = 0; i < snapshot.length; i++) {
@@ -383,6 +387,24 @@
         Y.applyUpdate(doc, update, REMOTE_ORIGIN);
       }
 
+      // Reload this device's own previously encoded document.
+      //
+      // WHY THIS EXISTS AT ALL: a board rebuilt from plain state by seed() is a
+      // NEW set of Y.Map items even when every application id matches, because
+      // Yjs identity is (clientId, clock) and not `board.id`. So a device that
+      // reloaded, dropped its in-memory Y.Doc and re-seeded from IndexedDB
+      // would hand a peer that never reloaded a SECOND lineage of the same
+      // board — and the merge keeps both. Restoring the encoded document
+      // instead preserves the identities, and the merge is a no-op.
+      //
+      // Neither handler fires: this is not a local edit to publish (the peers
+      // already have it) and not a remote change to commit (local state is
+      // where it came from).
+      function restore(update) {
+        if (!update || update.length === 0) return;
+        Y.applyUpdate(doc, update, RESTORE_ORIGIN);
+      }
+
       function encodeState() {
         return Y.encodeStateAsUpdate(doc);
       }
@@ -408,6 +430,7 @@
         toState: toState,
         isEmpty: isEmpty,
         applyUpdate: applyUpdate,
+        restore: restore,
         encodeState: encodeState,
         onLocalUpdate: onLocalUpdate,
         onRemoteUpdate: onRemoteUpdate,
@@ -419,6 +442,7 @@
       DEVICE_KEYS: DEVICE_KEYS,
       LOCAL_ORIGIN: LOCAL_ORIGIN,
       REMOTE_ORIGIN: REMOTE_ORIGIN,
+      RESTORE_ORIGIN: RESTORE_ORIGIN,
       create: create
     };
   }

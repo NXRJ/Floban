@@ -6,6 +6,13 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["serve.js"],
       "port": 8123
+    },
+    {
+      "name": "kanban-sync",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["serve.js", "--sync"],
+      "env": { "PORT": "8124" },
+      "port": 8124
     }
   ]
 }
