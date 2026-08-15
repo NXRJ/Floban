@@ -195,6 +195,10 @@ async function connect(port, room) {
     peers: 0,
     compacts: 0,
     lastSeq: 0,
+    // Updates this peer has applied. Where two documents carry the same board,
+    // a merge changes nothing observable in toState(), so this is the only
+    // honest signal that they have actually met.
+    received: 0,
     // True between "the relay granted me the seeding right" and "I told it the
     // document is on the wire" — js/sync-session.js keeps the same flag.
     holdsSeedingRight: false,
@@ -242,6 +246,7 @@ async function connect(port, room) {
     if (payload.length < HEADER_BYTES || payload[0] !== TAG_UPDATE) return;
     const seq = payload.readUInt32BE(1);
     if (seq > peer.lastSeq) peer.lastSeq = seq;
+    peer.received += 1;
     binding.applyUpdate(new Uint8Array(payload.subarray(HEADER_BYTES)));
   });
 
@@ -534,11 +539,15 @@ test('a reloaded peer reseeding a restarted relay does not fork the board', asyn
   // B never reloaded, so it still holds the original lineage.
   const b2 = await connect(second.port, 'restart');
   await waitFor(() => b2.ready, 'B reconnects');
+  const beforeMerge = a2.received;
   b2.binding.restore(b.binding.encodeState());
   b2.publish();
 
-  await waitFor(() => a2.binding.toState().boards.length > 0, 'the two documents meet');
-  await wait(80);
+  // Wait for A2 to actually APPLY B2's document. Waiting on a2's board count
+  // would be waiting on something already true — a2 restored that board before
+  // the relay was even involved — and the merge of two copies of one lineage
+  // changes nothing in toState() by design, which is the whole assertion below.
+  await waitFor(() => a2.received > beforeMerge, 'the two documents meet');
 
   const merged = a2.binding.toState();
   assert.equal(merged.boards.length, 1, 'one board, not two lineages of one board');

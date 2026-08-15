@@ -2230,6 +2230,61 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
         wrote: saves.length,
         published: providers.reduce((n, p) => n + p.pushes.length, 0)
       };
+      if (realCanWrite) KB.MultiTab.canWrite = realCanWrite;
+      KB.SyncSession.disable();
+      await settle();
+
+      // 7. Demoted with a document write already in flight. The update was
+      //    made while this tab legitimately owned the lease, so only a check
+      //    taken late — when the queued write runs, and again when it lands —
+      //    can catch it. The record is shared between tabs, so a late write
+      //    from a demoted tab can land on the new owner's newer document.
+      reset();
+      saveMode = 'hold';
+      await KB.SyncSession.enable('probe-demote', 'ws://demote.example/sync', { create: true });
+      const demoted = last();
+      demoted.options.onReady({ canSeed: true });
+      await settle();
+      const inFlight = saves.length;
+      if (KB.MultiTab) KB.MultiTab.canWrite = () => false;
+      releases.forEach((r) => r(null));
+      await settle();
+      releases.forEach((r) => r(null));
+      await settle();
+      out.demoted = {
+        inFlight: inFlight,
+        wroteAfter: saves.length - inFlight,
+        published: demoted.pushes.length,
+        seeded: demoted.seededCalls,
+        // The create right must survive: nothing was ever recorded.
+        create: JSON.parse(localStorage.getItem('kanban.sync.v1') || '{}').create
+      };
+      if (realCanWrite) KB.MultiTab.canWrite = realCanWrite;
+      KB.SyncSession.disable();
+      await settle();
+
+      // 8. Demoted between opening the socket and the handshake, holding the
+      //    seeding right. It must relinquish the room rather than sit on a
+      //    bootstrap it can never complete — the relay holds every other peer
+      //    behind it — and must not spend the user's one-shot create right on
+      //    a document that never existed anywhere but memory.
+      reset();
+      saveMode = 'ok';
+      await KB.SyncSession.enable('probe-seeder', 'ws://seeder.example/sync', { create: true });
+      const seeder = last();
+      if (KB.MultiTab) KB.MultiTab.canWrite = () => false;
+      seeder.options.onReady({ canSeed: true });
+      await settle();
+      out.seeder = {
+        wrote: saves.length,
+        published: seeder.pushes.length,
+        seeded: seeder.seededCalls,
+        create: JSON.parse(localStorage.getItem('kanban.sync.v1') || '{}').create,
+        fault: KB.SyncSession.state().fault
+      };
+      if (realCanWrite) KB.MultiTab.canWrite = realCanWrite;
+      KB.SyncSession.disable();
+      await settle();
     } finally {
       if (realCanWrite) KB.MultiTab.canWrite = realCanWrite;
       KB.SyncSession.disable();
@@ -2262,6 +2317,72 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('and boots without a session, a document or a publication',
     lifecycle.readOnly.providers === 0 && lifecycle.readOnly.wrote === 0 &&
     lifecycle.readOnly.published === 0);
+  check('losing the lease mid-write lands neither the write nor its publication',
+    lifecycle.demoted.inFlight === 1 && lifecycle.demoted.wroteAfter === 0 &&
+    lifecycle.demoted.published === 0 && lifecycle.demoted.seeded === 0);
+  check('and leaves the create right unspent', lifecycle.demoted.create === true);
+  check('a demoted seeder relinquishes the room instead of holding it shut',
+    lifecycle.seeder.wrote === 0 && lifecycle.seeder.published === 0 &&
+    lifecycle.seeder.seeded === 0 && lifecycle.seeder.fault === 'read-only-tab');
+  check('and does not spend the create right on a document that never existed',
+    lifecycle.seeder.create === true);
+
+  // ---- Losing the write lease retires a live session ----
+  // In its own browser context, so the foreign claim written below cannot
+  // demote the tab the rest of this suite is using. The demotion itself is the
+  // real one — MultiTab's own check() notices the lease moved and goes through
+  // the same setReadOnly path a user's second tab triggers.
+  const leaseCtx = await browser.createBrowserContext();
+  const leasePage = await leaseCtx.newPage();
+  await leasePage.goto(URL, { waitUntil: 'load' });
+  await leasePage.waitForFunction(() => document.documentElement.dataset.ready === '1', { timeout: 8000 });
+  await leasePage.evaluate(async () => {
+    window.__stub = { providers: [] };
+    KB.SyncDocs = {
+      key: KB.SyncDocs.key,
+      isAvailable: () => true,
+      load: () => Promise.resolve(null),
+      save: () => Promise.resolve(null),
+      remove: () => Promise.resolve(null)
+    };
+    KB.SyncProvider.create = (options) => {
+      const p = {
+        options: options,
+        closed: false,
+        push: () => true,
+        seeded: () => true,
+        close: () => { p.closed = true; },
+        room: () => options.room,
+        status: () => 'connected'
+      };
+      window.__stub.providers.push(p);
+      return p;
+    };
+    await KB.SyncSession.enable('probe-lease', 'ws://lease.example/sync', { create: true });
+    window.__stub.providers[0].options.onReady({ canSeed: true });
+  });
+  const leaseBefore = await leasePage.evaluate(() => KB.SyncSession.state());
+  check('a sync session runs while this tab holds the write lease',
+    leaseBefore.status === 'connected' && leaseBefore.fault === null);
+
+  await leasePage.evaluate(() => {
+    localStorage.setItem('kanban.owner.v1', JSON.stringify({ id: 'another-tab', ts: Date.now() }));
+  });
+  await leasePage.waitForFunction(
+    () => KB.SyncSession.state().fault === 'read-only-tab',
+    { timeout: 6000 }
+  ).catch(() => {});
+  const leaseAfter = await leasePage.evaluate(() => ({
+    state: KB.SyncSession.state(),
+    socketClosed: window.__stub.providers.every((p) => p.closed),
+    demoted: KB.MultiTab.readOnly()
+  }));
+  check('losing the lease retires the session and closes its socket',
+    leaseAfter.demoted && leaseAfter.state.fault === 'read-only-tab' && leaseAfter.socketClosed);
+  check('and keeps the room enabled for the reload takeover performs',
+    leaseAfter.state.enabled === true && leaseAfter.state.status === 'error');
+  await leasePage.close();
+  await leaseCtx.close();
 
   // A store that cannot answer must REJECT, never resolve "no document":
   // js/sync-session.js has to tell "this device never joined this room" from

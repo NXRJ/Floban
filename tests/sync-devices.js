@@ -1,12 +1,12 @@
 // Two real devices, a real relay, a real browser.
 //
-// NOT part of `npm test`. It needs a browser that can complete a WebSocket
-// handshake against a local server, and the sandbox this was written in cannot:
-// its Chrome refuses every local upgrade with "Incorrect 'Sec-WebSocket-Accept'
-// header value" even though a raw socket client proves the token correct on the
-// wire (over IPv4 and IPv6, with and without a proxy, against two independent
-// servers). So this file has never been run green. Run it where a browser can
-// reach a local WebSocket:
+// NOT part of `npm test`, because it needs a browser that can complete a
+// WebSocket handshake against a local server and not every sandbox can: the one
+// this was written in refuses every local upgrade with "Incorrect
+// 'Sec-WebSocket-Accept' header value" even though a raw socket client proves
+// the token correct on the wire (over IPv4 and IPv6, with and without a proxy,
+// against two independent servers). CI runs it as its own step, which is where
+// that requirement is met. Locally:
 //
 //   npm run test:sync
 //

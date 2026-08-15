@@ -47,9 +47,11 @@
   // pass a room check and then act on the second one's provider.
   var epoch = 0;
   // Why this session is not syncing, when it is enabled but not running:
-  // 'no-document-store' (lineage cannot be recorded) or 'no-history' (asked to
-  // join a room nobody with its history is online for). Null when healthy.
+  // 'no-document-store' (lineage cannot be recorded), 'no-history' (asked to
+  // join a room nobody with its history is online for), or 'read-only-tab'
+  // (another tab holds the write lease). Null when healthy.
   var fault = null;
+  var watchingLease = false;
   // Set while the relay has granted this peer the right to seed an unseeded
   // room and it has not yet declared the bootstrap complete.
   var holdsSeedingRight = false;
@@ -183,6 +185,30 @@
     return !KB.MultiTab || KB.MultiTab.canWrite();
   }
 
+  // Losing the write lease ends the session outright rather than leaving a
+  // read-only Y.Doc and socket alive. Two reasons, and the second is the one
+  // that bites: a demoted tab can no longer record what it publishes, and —
+  // if the relay had granted it the seeding right — it would go on holding
+  // every other peer in that room behind a bootstrap it can never complete.
+  // Closing the socket makes the relay discard the abandoned bootstrap and
+  // promote a device that can finish it.
+  //
+  // The config is deliberately left in place: this device is still a member of
+  // the room, and js/multitab.js reloads a tab that takes the lease back, so
+  // init() starts the session again on that boot.
+  function onLeaseLost() {
+    if (!binding && !provider) return;
+    stop();
+    fault = 'read-only-tab';
+    notify();
+  }
+
+  function watchLease() {
+    if (watchingLease || !KB.MultiTab || !KB.MultiTab.onDemote) return;
+    watchingLease = true;
+    KB.MultiTab.onDemote(onLeaseLost);
+  }
+
   function commit() {
     if (!binding) return;
     // Rule 3: hold the change in the document until this tab can write again.
@@ -257,8 +283,17 @@
     // Serialized, so two updates in flight cannot land out of order and leave
     // an older document on top of a newer one.
     var write = persistChain.then(function () {
-      if (myEpoch !== epoch) return false;
-      return KB.SyncDocs.save(targetUrl, targetRoom, snapshot).then(function () { return true; });
+      // Re-checked here, not just at the top: this write may have been queued
+      // behind another for long enough that the lease moved to a different
+      // tab in between. The record is shared, so a late write from a demoted
+      // tab can land on top of the new owner's newer document.
+      if (myEpoch !== epoch || !canApply()) return false;
+      return KB.SyncDocs.save(targetUrl, targetRoom, snapshot).then(function () {
+        // And again after it lands. The lease can move while the transaction
+        // is open, and a write that finishes into a tab that has since been
+        // demoted must not license the publication that would follow it.
+        return myEpoch === epoch && canApply();
+      });
     }).catch(function (err) {
       if (myEpoch !== epoch) return false;
       onLineageLost(err);
@@ -373,6 +408,20 @@
     var config = readConfig() || {};
     var canSeed = !info || info.canSeed !== false;
 
+    // Demoted between opening the socket and the handshake. Everything below
+    // this line either mints identities or takes on an obligation to the room,
+    // and a read-only tab can do neither: it cannot record what it would seed,
+    // and holding the seeding right it was just granted would leave the relay
+    // holding every other peer behind a bootstrap that can never arrive. Leave
+    // instead, so the right moves to a device that can use it.
+    if (!canApply()) {
+      setTimeout(function () {
+        if (myEpoch !== epoch) return;
+        onLeaseLost();
+      }, 0);
+      return;
+    }
+
     if (canSeed && !mayBootstrap(config)) {
       // Refuse, and leave: the relay promotes the next peer in line, which may
       // well be a device that does hold the history. Staying connected would
@@ -426,13 +475,18 @@
       if (!recorded || myEpoch !== epoch || !provider || !binding) return;
       provider.push(binding.encodeState());
       declareSeeded();
+      // The create right is spent HERE — after a document has actually been
+      // recorded, not merely after seed() made an in-memory one non-empty. A
+      // seed that never reached the store leaves this device with nothing to
+      // rejoin on, and spending the right on it would strand the room: the
+      // user's one-shot "this room is new" would be gone, and every later
+      // attempt would refuse to bootstrap a room that does not exist.
+      // A later session must earn the right by holding the document, not by
+      // remembering it created the room a year ago on a since-wiped store.
+      if (config.create && !binding.isEmpty()) {
+        writeConfig({ room: config.room, url: config.url, create: false });
+      }
     });
-    // The seeding right is spent once used: a later session on this device
-    // must earn the right to bootstrap by holding the document, not by
-    // remembering that it created the room a year ago on a since-wiped store.
-    if (config.create && !binding.isEmpty()) {
-      writeConfig({ room: config.room, url: config.url, create: false });
-    }
     notify();
   }
 
@@ -448,6 +502,9 @@
     // js/multitab.js reloads a tab that takes over, so sync starts normally on
     // that boot.
     if (!canApply()) return Promise.resolve(state());
+    // From here the session exists, so it needs to hear about a lease it might
+    // lose. Registered once per page, not per session.
+    watchLease();
     // enable()/init() have already called stop(), so this is the number of the
     // session about to exist. Everything below belongs to it.
     var myEpoch = epoch;
