@@ -446,6 +446,7 @@ that use them.
 | Browser | `js/sync.js` | Mutation observer (`KB.Sync.subscribe`): the seam the optional CRDT sync layer hooks into. A no-op passthrough while sync is off, which is the default. Contract in [docs/SYNC.md](docs/SYNC.md). |
 | Browser | `js/core/ydoc.js` | CRDT binding: replays `KB.Core.StateDiff` ops onto a `Y.Doc` of nested `Y.Map`/`Y.Array`, and materializes it back to a state snapshot. Yjs is injected, not imported. |
 | Browser | `js/sync-provider.js` | WebSocket transport for the sync layer: tagged binary frames, reconnect with jittered backoff, snapshot-on-request. Knows nothing about boards. |
+| Browser | `js/sync-docs.js` | Keeps this device's encoded Y.Doc per relay+room in its own IndexedDB database, so a reload rejoins the room as the same document instead of a second lineage of the same board. |
 | Browser | `js/sync-session.js` | Sync lifecycle and glue: opt-in config, on-demand `vendor/yjs.js` load, local saves → ops → document, remote updates → `KB.State.applyRemote`. |
 | Node | `sync-relay.js` | Optional zero-dependency WebSocket relay (hand-rolled RFC 6455) that fans opaque Yjs updates out per room, with a bounded, compactable in-memory log. Attached by `serve.js` only under `npm run serve:sync`. |
 | Vendor | `vendor/yjs.js` | Yjs 13.6.20 bundled to a `window.Y` IIFE by `npm run yjs` and committed. Deliberately outside `index.html` and the precache: loaded on demand when sync is switched on. |

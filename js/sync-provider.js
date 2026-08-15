@@ -9,15 +9,22 @@
   //             tag 1 = a Yjs update (both directions)
   //             tag 2 = a full-document snapshot (client -> relay only), where
   //                     seq acknowledges the last update this peer had applied
-  //   text    {"t":"ready"}   replay of the room's history is complete
+  //   text    {"t":"ready"}   there is a document here you may safely edit
   //           {"t":"peers"}   membership changed
   //           {"t":"compact"} the relay's log grew; send a snapshot to replace it
+  //           {"t":"seeded"}  client -> relay: the document I was granted the
+  //                           right to seed is published. The relay cannot read
+  //                           it, and an encoded empty Y.Doc is two ordinary
+  //                           bytes, so this is the only thing that can tell it
+  //                           the room is bootstrapped.
   //
   // Reconnects re-push the whole local document (js/sync-session.js does it on
   // every `ready`). Yjs updates are idempotent, so the cost is one redundant
   // message; the benefit is that edits made while the socket was down cannot be
   // stranded, and a relay that restarted with an empty log is repopulated by
-  // whoever reconnects first.
+  // whoever reconnects first. That repopulation is only safe because peers
+  // persist the Y.Doc itself (js/sync-docs.js) and so rejoin with the same
+  // document identities they left with — see js/core/ydoc.js `restore`.
 
   var TAG_UPDATE = 1;
   var TAG_SNAPSHOT = 2;
@@ -98,6 +105,16 @@
       }
     }
 
+    function sendText(message) {
+      if (!socket || socket.readyState !== 1) return false;
+      try {
+        socket.send(JSON.stringify(message));
+        return true;
+      } catch (err) {
+        return false;
+      }
+    }
+
     function handleText(data) {
       var message;
       try {
@@ -151,14 +168,27 @@
       ws.binaryType = 'arraybuffer';
       socket = ws;
 
+      // Every handler checks that this socket is still THE socket. close() and
+      // a reconnect both leave the old WebSocket alive for a moment — close()
+      // is asynchronous, and message events already queued by the browser are
+      // still delivered afterwards. Dispatching those would hand a caller
+      // bytes from a connection it has already let go of; the session that
+      // follows is a different room's.
+      function current() {
+        return !stopped && socket === ws;
+      }
+
       ws.onmessage = function (event) {
+        if (!current()) return;
         if (typeof event.data === 'string') handleText(event.data);
         else handleBinary(event.data);
       };
       ws.onopen = function () {
+        if (!current()) return;
         attempts = 0; // the next failure starts its backoff from scratch
       };
       ws.onerror = function () {
+        if (!current()) return;
         setStatus('error');
       };
       ws.onclose = function () {
@@ -179,6 +209,13 @@
     function push(update) {
       if (!update || update.length === 0) return false;
       return send(TAG_UPDATE, 0, update);
+    }
+
+    // "The document I was granted the right to seed is now on the wire."
+    // Must follow the push that carried it — the relay releases the peers it
+    // is holding on this frame and nothing else.
+    function seeded() {
+      return sendText({ t: 'seeded' });
     }
 
     function close() {
@@ -203,6 +240,7 @@
 
     return {
       push: push,
+      seeded: seeded,
       close: close,
       room: function () { return room; },
       status: function () { return status; }
@@ -211,6 +249,11 @@
 
   KB.SyncProvider = {
     create: create,
+    // Exported so js/sync-docs.js can key an empty (same-origin default) URL
+    // by the endpoint it actually resolves to, rather than by the empty string
+    // — otherwise `enable(room)` and `enable(room, 'ws://localhost/sync')`
+    // address one relay through two different document records.
+    defaultUrl: defaultUrl,
     TAG_UPDATE: TAG_UPDATE,
     TAG_SNAPSHOT: TAG_SNAPSHOT,
     encodeFrame: encodeFrame

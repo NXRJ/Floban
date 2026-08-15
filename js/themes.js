@@ -6,7 +6,7 @@
  * text it carries, so no choice in the swapper can break contrast or look
  * foreign to the world.
  *
- * Adding a seventh world is an entry here plus a token block in
+ * Adding an eighth world is an entry here plus a token block in
  * css/worlds.css — no change to styles.css.
  */
 (function () {

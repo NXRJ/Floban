@@ -1979,6 +1979,557 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('sync observer sees change/undo/redo/import',
     syncEvents.hasChange && syncEvents.hasUndo && syncEvents.hasRedo && syncEvents.hasImport);
 
+  // ---- The sync document store (js/sync-docs.js) ----
+  // It is not bookkeeping: a lost document makes a rejoining device a second
+  // CRDT lineage of the same board, so it gets tested directly rather than
+  // only through whatever happens to exercise it.
+  const docKeys = await page.evaluate(() => ({
+    // A room name is only unique within one relay.
+    isolated: KB.SyncDocs.key('ws://a.example/sync', 'work') !==
+      KB.SyncDocs.key('ws://b.example/sync', 'work'),
+    // Cosmetic differences in the same URL are the same relay: scheme and host
+    // are case-insensitive, a trailing slash is nothing.
+    normalized: KB.SyncDocs.key('WS://Relay.example/sync/', 'work') ===
+      KB.SyncDocs.key('ws://relay.example/sync', 'work'),
+    // The path is NOT case-insensitive — these can be two endpoints.
+    pathCase: KB.SyncDocs.key('wss://example.com/Sync', 'work') !==
+      KB.SyncDocs.key('wss://example.com/sync', 'work'),
+    // The default port is implied, not a difference.
+    defaultPort: KB.SyncDocs.key('ws://relay.example:80/sync', 'work') ===
+      KB.SyncDocs.key('ws://relay.example/sync', 'work'),
+    // An empty URL means the same-origin default, so it must key the same
+    // record as naming that endpoint outright.
+    defaultResolved: KB.SyncDocs.key('', 'work') ===
+      KB.SyncDocs.key(KB.SyncProvider.defaultUrl(), 'work'),
+    // Two rooms on one relay are not.
+    perRoom: KB.SyncDocs.key('', 'work') !== KB.SyncDocs.key('', 'home')
+  }));
+  check('sync document keys separate relays', docKeys.isolated);
+  check('sync document keys normalize one relay', docKeys.normalized);
+  check('sync document keys keep the relay path case', docKeys.pathCase);
+  check('sync document keys ignore the default port', docKeys.defaultPort);
+  check('the default relay keys the same document as naming it', docKeys.defaultResolved);
+  check('sync document keys separate rooms', docKeys.perRoom);
+
+  const docStore = await page.evaluate(async () => {
+    const bytes = new Uint8Array([7, 0, 255, 3]);
+    const other = new Uint8Array([1, 1]);
+    await KB.SyncDocs.save('ws://one.example/sync', 'work', bytes);
+    await KB.SyncDocs.save('ws://two.example/sync', 'work', other);
+
+    const loaded = await KB.SyncDocs.load('ws://one.example/sync', 'work');
+    const neighbour = await KB.SyncDocs.load('ws://two.example/sync', 'work');
+    const missing = await KB.SyncDocs.load('ws://one.example/sync', 'never-joined');
+
+    // An overwrite replaces rather than accumulates.
+    await KB.SyncDocs.save('ws://one.example/sync', 'work', new Uint8Array([9]));
+    const replaced = await KB.SyncDocs.load('ws://one.example/sync', 'work');
+
+    await KB.SyncDocs.remove('ws://one.example/sync', 'work');
+    const removed = await KB.SyncDocs.load('ws://one.example/sync', 'work');
+    const survivor = await KB.SyncDocs.load('ws://two.example/sync', 'work');
+    await KB.SyncDocs.remove('ws://two.example/sync', 'work');
+
+    return {
+      roundTrip: loaded instanceof Uint8Array && Array.from(loaded).join(',') === '7,0,255,3',
+      isolation: neighbour && Array.from(neighbour).join(',') === '1,1',
+      missingIsNull: missing === null,
+      overwrite: replaced && replaced.length === 1 && replaced[0] === 9,
+      removeClears: removed === null,
+      removeIsScoped: !!survivor
+    };
+  });
+  check('sync document round-trips its bytes', docStore.roundTrip);
+  check('sync documents of different relays do not collide', docStore.isolation);
+  check('an unjoined room has no document rather than an error', docStore.missingIsNull);
+  check('saving a room again replaces its document', docStore.overwrite);
+  check('removing a document clears only that room', docStore.removeClears && docStore.removeIsScoped);
+
+  check('the document store reports itself available when it is', await page.evaluate(() => KB.SyncDocs.isAvailable()));
+
+  // ---- The session's async work belongs to the session that started it ----
+  // Six rules that are pure ordering and ownership, so they are tested with
+  // the document store and the transport stubbed out rather than over a live
+  // socket: what matters is WHEN sync-session.js acts and on WHOSE behalf, and
+  // a real relay would only make that timing-dependent. No WebSocket here.
+  const lifecycle = await page.evaluate(async () => {
+    const realDocs = KB.SyncDocs;
+    const realCreate = KB.SyncProvider.create;
+    const realCanWrite = KB.MultiTab && KB.MultiTab.canWrite;
+    const settle = async () => {
+      for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
+    };
+
+    let providers = [];
+    let saves = [];
+    let releases = [];
+    let loadGates = [];
+    let saveMode = 'ok';       // 'ok' | 'reject' | 'hold'
+    let loadMode = 'ok';       // 'ok' | 'hold'
+
+    KB.SyncDocs = {
+      key: realDocs.key,
+      isAvailable: () => true,
+      load: () => (loadMode === 'hold'
+        ? new Promise((resolve) => loadGates.push(resolve))
+        : Promise.resolve(null)),
+      save: (url, room) => {
+        saves.push({ url, room });
+        if (saveMode === 'reject') return Promise.reject(new Error('document store gone'));
+        if (saveMode === 'hold') return new Promise((resolve) => releases.push(resolve));
+        return Promise.resolve(null);
+      },
+      remove: () => Promise.resolve(null)
+    };
+    KB.SyncProvider.create = (options) => {
+      const p = {
+        options: options,
+        pushes: [],
+        seededCalls: 0,
+        push(update) { p.pushes.push(update); return true; },
+        seeded() { p.seededCalls += 1; return true; },
+        close() {},
+        room: () => options.room,
+        status: () => 'connected'
+      };
+      providers.push(p);
+      return p;
+    };
+    const last = () => providers[providers.length - 1];
+    const reset = () => { providers = []; saves = []; releases = []; loadGates = []; };
+
+    const out = {};
+    try {
+      // 1. A write that did not land must not be followed by its consequences.
+      //    The whole point of write-ahead ordering is that a peer never learns
+      //    an identity this device cannot prove it owns — and the store
+      //    failing is precisely the case that produces one.
+      saveMode = 'reject';
+      await KB.SyncSession.enable('probe-fail', 'ws://fail.example/sync', { create: true });
+      last().options.onReady({ canSeed: true });
+      await settle();
+      out.failure = {
+        pushed: last().pushes.length,
+        seeded: last().seededCalls,
+        fault: KB.SyncSession.state().fault,
+        status: KB.SyncSession.state().status
+      };
+      KB.SyncSession.disable();
+      await settle();
+
+      // 2. Nothing is published before the write that records it lands. Held
+      //    open deliberately: the ordering is asserted, not raced.
+      reset();
+      saveMode = 'hold';
+      await KB.SyncSession.enable('probe-order', 'ws://order.example/sync', { create: true });
+      const ordered = last();
+      ordered.options.onReady({ canSeed: true });
+      await settle();
+      out.beforeWrite = { pushed: ordered.pushes.length, seeded: ordered.seededCalls, saves: saves.length };
+      releases.forEach((r) => r(null));
+      await settle();
+      releases.forEach((r) => r(null));
+      await settle();
+      out.afterWrite = { pushed: ordered.pushes.length, seeded: ordered.seededCalls };
+      KB.SyncSession.disable();
+      await settle();
+
+      // 3. Two enable() calls for the SAME room leave exactly one live
+      //    session. A room comparison would pass here and leave the first
+      //    session's provider holding a socket nothing will ever close.
+      reset();
+      saveMode = 'ok';
+      loadMode = 'hold';
+      const first = KB.SyncSession.enable('probe-race', 'ws://race.example/sync');
+      await settle();
+      const second = KB.SyncSession.enable('probe-race', 'ws://race.example/sync');
+      await settle();
+      loadGates.forEach((r) => r(null));
+      await Promise.all([first, second]);
+      await settle();
+      out.race = { loads: loadGates.length, providers: providers.length };
+      KB.SyncSession.disable();
+      await settle();
+
+      // 4. A write queued for room A must not follow the session to room B —
+      //    neither into B's document record nor out through B's socket.
+      reset();
+      loadMode = 'ok';
+      saveMode = 'hold';
+      await KB.SyncSession.enable('probe-a', 'ws://a.example/sync', { create: true });
+      const roomA = last();
+      roomA.options.onReady({ canSeed: true }); // seeds: one write starts, one queues
+      await settle();
+      const queuedWhileHeld = saves.length;
+      await KB.SyncSession.enable('probe-b', 'ws://b.example/sync', { create: true });
+      const roomB = last();
+      releases.forEach((r) => r(null)); // let room A's queued write run
+      await settle();
+      out.switched = {
+        held: queuedWhileHeld,
+        leaked: saves.some((s) => s.room === 'probe-b' || s.url.indexOf('b.example') !== -1),
+        throughB: roomB.pushes.length,
+        throughA: roomA.pushes.length
+      };
+      KB.SyncSession.disable();
+      await settle();
+
+      // 5. A provider from a closed session must not act on the one that
+      //    replaced it. close() does not un-queue the message events the
+      //    browser has already scheduled, and onUpdate applies bytes straight
+      //    into the document — ahead of every epoch check downstream.
+      reset();
+      saveMode = 'ok';
+      await KB.SyncSession.enable('probe-stale-a', 'ws://stale-a.example/sync', { create: true });
+      const staleA = last();
+      await KB.SyncSession.enable('probe-stale-b', 'ws://stale-b.example/sync', { create: true });
+      const liveB = last();
+      saves = [];
+      const foreign = (() => {
+        const doc = KB.Core.YDoc.create({ Y: window.Y });
+        doc.seed(KB.State.data());
+        const bytes = doc.encodeState();
+        doc.destroy();
+        return bytes;
+      })();
+      staleA.options.onUpdate(foreign);          // room A's history, after the switch
+      staleA.options.onReady({ canSeed: true }); // and a handshake that looks current
+      staleA.options.onPeers(7);
+      await settle();
+      out.stale = {
+        wrote: saves.length,
+        throughB: liveB.pushes.length,
+        seededB: liveB.seededCalls,
+        peers: KB.SyncSession.state().peers
+      };
+      KB.SyncSession.disable();
+      await settle();
+
+      // 6. A read-only tab does not sync at all. It persists nothing and
+      //    applies nothing by design, so the handshake handing it the seeding
+      //    right would have it mint a room's founding identities from its own
+      //    possibly-stale state and publish them unrecorded.
+      reset();
+      if (KB.MultiTab) KB.MultiTab.canWrite = () => false;
+      let refused = false;
+      try {
+        await KB.SyncSession.enable('probe-ro', 'ws://ro.example/sync', { create: true });
+      } catch (err) {
+        refused = true;
+      }
+      // And the boot path, which is how a secondary tab gets here for real:
+      // app.js calls MultiTab.init() before SyncSession.init().
+      localStorage.setItem('kanban.sync.v1', JSON.stringify({
+        room: 'probe-ro', url: 'ws://ro.example/sync', create: true
+      }));
+      await KB.SyncSession.init();
+      await settle();
+      out.readOnly = {
+        refused: refused,
+        providers: providers.length,
+        wrote: saves.length,
+        published: providers.reduce((n, p) => n + p.pushes.length, 0)
+      };
+      if (realCanWrite) KB.MultiTab.canWrite = realCanWrite;
+      KB.SyncSession.disable();
+      await settle();
+
+      // 7. Demoted with a document write already in flight. The update was
+      //    made while this tab legitimately owned the lease, so only a check
+      //    taken late — when the queued write runs, and again when it lands —
+      //    can catch it. The record is shared between tabs, so a late write
+      //    from a demoted tab can land on the new owner's newer document.
+      reset();
+      saveMode = 'hold';
+      await KB.SyncSession.enable('probe-demote', 'ws://demote.example/sync', { create: true });
+      const demoted = last();
+      demoted.options.onReady({ canSeed: true });
+      await settle();
+      const inFlight = saves.length;
+      if (KB.MultiTab) KB.MultiTab.canWrite = () => false;
+      releases.forEach((r) => r(null));
+      await settle();
+      releases.forEach((r) => r(null));
+      await settle();
+      out.demoted = {
+        inFlight: inFlight,
+        wroteAfter: saves.length - inFlight,
+        published: demoted.pushes.length,
+        seeded: demoted.seededCalls,
+        // The create right must survive: nothing was ever recorded.
+        create: JSON.parse(localStorage.getItem('kanban.sync.v1') || '{}').create
+      };
+      if (realCanWrite) KB.MultiTab.canWrite = realCanWrite;
+      KB.SyncSession.disable();
+      await settle();
+
+      // 8. Demoted between opening the socket and the handshake, holding the
+      //    seeding right. It must relinquish the room rather than sit on a
+      //    bootstrap it can never complete — the relay holds every other peer
+      //    behind it — and must not spend the user's one-shot create right on
+      //    a document that never existed anywhere but memory.
+      reset();
+      saveMode = 'ok';
+      await KB.SyncSession.enable('probe-seeder', 'ws://seeder.example/sync', { create: true });
+      const seeder = last();
+      if (KB.MultiTab) KB.MultiTab.canWrite = () => false;
+      seeder.options.onReady({ canSeed: true });
+      await settle();
+      out.seeder = {
+        wrote: saves.length,
+        published: seeder.pushes.length,
+        seeded: seeder.seededCalls,
+        create: JSON.parse(localStorage.getItem('kanban.sync.v1') || '{}').create,
+        fault: KB.SyncSession.state().fault
+      };
+      if (realCanWrite) KB.MultiTab.canWrite = realCanWrite;
+      KB.SyncSession.disable();
+      await settle();
+    } finally {
+      if (realCanWrite) KB.MultiTab.canWrite = realCanWrite;
+      KB.SyncSession.disable();
+      KB.SyncDocs = realDocs;
+      KB.SyncProvider.create = realCreate;
+      try { localStorage.removeItem('kanban.sync.v1'); } catch (err) { /* nothing to clean */ }
+    }
+    return out;
+  });
+  check('a failed document write publishes nothing',
+    lifecycle.failure.pushed === 0 && lifecycle.failure.seeded === 0);
+  check('and stops the session with a document-store fault',
+    lifecycle.failure.fault === 'no-document-store' && lifecycle.failure.status === 'error');
+  check('an update is not published while its document write is in flight',
+    lifecycle.beforeWrite.pushed === 0 && lifecycle.beforeWrite.seeded === 0 &&
+    lifecycle.beforeWrite.saves === 1);
+  check('and is published once the write lands',
+    lifecycle.afterWrite.pushed > 0 && lifecycle.afterWrite.seeded > 0);
+  check('enabling the same room twice leaves one live session',
+    lifecycle.race.loads === 2 && lifecycle.race.providers === 1);
+  check('a write queued for one room never reaches another room\'s document',
+    lifecycle.switched.held === 1 && lifecycle.switched.leaked === false);
+  check('and never publishes through another room\'s connection',
+    lifecycle.switched.throughB === 0 && lifecycle.switched.throughA === 0);
+  check('a closed session\'s provider cannot feed the session that replaced it',
+    lifecycle.stale.wrote === 0 && lifecycle.stale.peers === 0);
+  check('and its handshake cannot make the new session publish',
+    lifecycle.stale.throughB === 0 && lifecycle.stale.seededB === 0);
+  check('a read-only tab refuses to enable sync', lifecycle.readOnly.refused);
+  check('and boots without a session, a document or a publication',
+    lifecycle.readOnly.providers === 0 && lifecycle.readOnly.wrote === 0 &&
+    lifecycle.readOnly.published === 0);
+  check('losing the lease mid-write lands neither the write nor its publication',
+    lifecycle.demoted.inFlight === 1 && lifecycle.demoted.wroteAfter === 0 &&
+    lifecycle.demoted.published === 0 && lifecycle.demoted.seeded === 0);
+  check('and leaves the create right unspent', lifecycle.demoted.create === true);
+  check('a demoted seeder relinquishes the room instead of holding it shut',
+    lifecycle.seeder.wrote === 0 && lifecycle.seeder.published === 0 &&
+    lifecycle.seeder.seeded === 0 && lifecycle.seeder.fault === 'read-only-tab');
+  check('and does not spend the create right on a document that never existed',
+    lifecycle.seeder.create === true);
+
+  // ---- Demoted while the session is still starting ----
+  // The narrowest window there is: enable() has passed the lease check and
+  // subscribed, but vendor/yjs.js is still being fetched, so there is no
+  // binding and no provider yet. A demotion that looked only for those would
+  // find nothing to retire and let the startup finish into a tab that may no
+  // longer write. Its own context, because it ends read-only — and a context
+  // that has never loaded Yjs, so loadYjs() really does take a network trip.
+  // Run twice, differing only in WHO notices the lease has gone. With the
+  // nudge, MultiTab notices and the queued announcement retires the startup.
+  // Without it, start()'s own continuation is the first code to find out —
+  // canWrite() demotes synchronously but announces on a task, so by the time
+  // the announcement arrives the startup has settled and there is nothing left
+  // for it to recognise. Both must end in the same place.
+  async function coldStartRace(nudge) {
+    const ctx = await browser.createBrowserContext();
+    const coldPage = await ctx.newPage();
+    await coldPage.goto(URL, { waitUntil: 'load' });
+    await coldPage.waitForFunction(() => document.documentElement.dataset.ready === '1', { timeout: 8000 });
+    await coldPage.evaluate((shouldNudge) => {
+      window.__cold = { docs: 0, loads: 0, providers: 0 };
+      const realDoc = KB.Core.YDoc.create;
+      KB.Core.YDoc.create = function (options) {
+        window.__cold.docs += 1;
+        return realDoc(options);
+      };
+      const realProvider = KB.SyncProvider.create;
+      KB.SyncProvider.create = function (options) {
+        window.__cold.providers += 1;
+        return realProvider(options);
+      };
+      KB.SyncDocs = {
+        key: KB.SyncDocs.key,
+        isAvailable: () => true,
+        load: () => { window.__cold.loads += 1; return Promise.resolve(null); },
+        save: () => Promise.resolve(null),
+        remove: () => Promise.resolve(null)
+      };
+      // Not awaited: the lease has to move while Yjs is still in flight.
+      window.__cold.pending = KB.SyncSession
+        .enable('probe-cold', 'ws://cold.example/sync', { create: true })
+        .catch(() => {});
+      localStorage.setItem('kanban.owner.v1', JSON.stringify({ id: 'another-tab', ts: Date.now() }));
+      if (shouldNudge) KB.MultiTab.canWrite();
+    }, nudge);
+    const result = await coldPage.evaluate(async () => {
+      await window.__cold.pending;
+      await new Promise((r) => setTimeout(r, 400));
+      return {
+        docs: window.__cold.docs,
+        loads: window.__cold.loads,
+        providers: window.__cold.providers,
+        demoted: KB.MultiTab.readOnly(),
+        state: KB.SyncSession.state(),
+        hasY: !!window.Y
+      };
+    });
+    await coldPage.close();
+    await ctx.close();
+    return result;
+  }
+
+  for (const nudge of [true, false]) {
+    const how = nudge ? 'when MultiTab notices first' : 'when the startup itself notices first';
+    const cold = await coldStartRace(nudge);
+    check('a tab demoted mid-startup was genuinely mid-startup, ' + how,
+      cold.demoted && cold.hasY);
+    check('and builds no document, reads no store and opens no socket, ' + how,
+      cold.docs === 0 && cold.loads === 0 && cold.providers === 0);
+    check('and reports itself read-only rather than syncing, ' + how,
+      cold.state.fault === 'read-only-tab' && cold.state.status === 'error');
+  }
+
+  // ---- Losing the write lease retires a live session ----
+  // In its own browser context, so the foreign claim written below cannot
+  // demote the tab the rest of this suite is using. The demotion itself is the
+  // real one — MultiTab's own check() notices the lease moved and goes through
+  // the same setReadOnly path a user's second tab triggers.
+  const leaseCtx = await browser.createBrowserContext();
+  const leasePage = await leaseCtx.newPage();
+  await leasePage.goto(URL, { waitUntil: 'load' });
+  await leasePage.waitForFunction(() => document.documentElement.dataset.ready === '1', { timeout: 8000 });
+  await leasePage.evaluate(async () => {
+    window.__stub = { providers: [] };
+    KB.SyncDocs = {
+      key: KB.SyncDocs.key,
+      isAvailable: () => true,
+      load: () => Promise.resolve(null),
+      save: () => Promise.resolve(null),
+      remove: () => Promise.resolve(null)
+    };
+    KB.SyncProvider.create = (options) => {
+      const p = {
+        options: options,
+        closed: false,
+        push: () => true,
+        seeded: () => true,
+        close: () => { p.closed = true; },
+        room: () => options.room,
+        status: () => 'connected'
+      };
+      window.__stub.providers.push(p);
+      return p;
+    };
+    await KB.SyncSession.enable('probe-lease', 'ws://lease.example/sync', { create: true });
+    window.__stub.providers[0].options.onReady({ canSeed: true });
+  });
+  const leaseBefore = await leasePage.evaluate(() => KB.SyncSession.state());
+  check('a sync session runs while this tab holds the write lease',
+    leaseBefore.status === 'connected' && leaseBefore.fault === null);
+
+  await leasePage.evaluate(() => {
+    localStorage.setItem('kanban.owner.v1', JSON.stringify({ id: 'another-tab', ts: Date.now() }));
+  });
+  await leasePage.waitForFunction(
+    () => KB.SyncSession.state().fault === 'read-only-tab',
+    { timeout: 6000 }
+  ).catch(() => {});
+  const leaseAfter = await leasePage.evaluate(() => ({
+    state: KB.SyncSession.state(),
+    socketClosed: window.__stub.providers.every((p) => p.closed),
+    demoted: KB.MultiTab.readOnly()
+  }));
+  check('losing the lease retires the session and closes its socket',
+    leaseAfter.demoted && leaseAfter.state.fault === 'read-only-tab' && leaseAfter.socketClosed);
+  check('and keeps the room enabled for the reload takeover performs',
+    leaseAfter.state.enabled === true && leaseAfter.state.status === 'error');
+  await leasePage.close();
+  await leaseCtx.close();
+
+  // A store that cannot answer must REJECT, never resolve "no document":
+  // js/sync-session.js has to tell "this device never joined this room" from
+  // "this device cannot tell", because it seeds plain state on the first and
+  // must refuse on the second. LAST of the document-store checks — a failure
+  // latches the store closed for the rest of the page, which is the point.
+  const docFailure = await page.evaluate(async () => {
+    // A value IndexedDB cannot structured-clone fails the write for real,
+    // rather than through a stub that would only test the stub.
+    let rejected = false;
+    try {
+      await KB.SyncDocs.save('ws://one.example/sync', 'work', { length: 1, nope: () => {} });
+    } catch (err) {
+      rejected = true;
+    }
+    let laterRejected = false;
+    try {
+      await KB.SyncDocs.load('ws://one.example/sync', 'work');
+    } catch (err) {
+      laterRejected = true;
+    }
+    return { rejected: rejected, latched: !KB.SyncDocs.isAvailable(), laterRejected: laterRejected };
+  });
+  check('a failed document write rejects rather than resolving', docFailure.rejected);
+  check('a failed document store latches closed', docFailure.latched);
+  check('and every later read rejects rather than reporting "no document"', docFailure.laterRejected);
+
+  // The latch is fail-closed, not fail-forever: a transient IndexedDB abort
+  // should cost a retry, not a page reload. Nothing clears it automatically —
+  // only the user asking for sync again.
+  const docRecovery = await page.evaluate(async () => {
+    const stillShut = !KB.SyncDocs.isAvailable();
+
+    const realCreate = KB.SyncProvider.create;
+    KB.SyncProvider.create = (options) => ({
+      options: options,
+      push: () => true,
+      seeded: () => true,
+      close: () => {},
+      room: () => options.room,
+      status: () => 'connected'
+    });
+    let clearedByEnable = false;
+    try {
+      await KB.SyncSession.enable('probe-retry', 'ws://retry.example/sync', { create: true });
+      clearedByEnable = KB.SyncDocs.isAvailable();
+    } catch (err) {
+      clearedByEnable = false;
+    }
+    KB.SyncSession.disable();
+    KB.SyncProvider.create = realCreate;
+    try { localStorage.removeItem('kanban.sync.v1'); } catch (err) { /* nothing to clean */ }
+
+    // And it really works again, rather than merely reporting that it does.
+    // Caught rather than thrown: a store that is still latched rejects here,
+    // and that is a failed check, not a crashed suite.
+    let roundTrip = false;
+    try {
+      await KB.SyncDocs.save('ws://one.example/sync', 'work', new Uint8Array([4, 2]));
+      const value = await KB.SyncDocs.load('ws://one.example/sync', 'work');
+      await KB.SyncDocs.remove('ws://one.example/sync', 'work');
+      roundTrip = !!value && value.length === 2 && value[0] === 4 && value[1] === 2;
+    } catch (err) {
+      roundTrip = false;
+    }
+    return {
+      stillShut: stillShut,
+      clearedByEnable: clearedByEnable,
+      roundTrip: roundTrip
+    };
+  });
+  check('a latched document store stays shut until asked', docRecovery.stillShut);
+  check('enabling sync again retries the document store', docRecovery.clearedByEnable);
+  check('and the store genuinely works after a transient failure', docRecovery.roundTrip);
+
   // ---- Command palette (Ctrl+K) ----
   await page.evaluate(() => KB.Workspaces.set('board'));
   await page.evaluate(() => KB.App.refresh());

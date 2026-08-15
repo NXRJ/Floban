@@ -12,14 +12,23 @@ const StateDiff = require('../../js/core/statediff.js');
 // End-to-end over a real socket: the relay's RFC 6455 framing, the tagged
 // application protocol, and the Y.Doc binding in one path.
 //
-// The client is hand-rolled rather than Node's built-in WebSocket, which
-// cannot be used here: it always requests permessage-deflate and then throws a
-// TypeError inside its own failure path when a server declines the extension,
-// closing with 1006. A minimal textbook handshake server fails it the same
-// way, so it is the client that is strict, not this relay. Masking every
-// client frame the way a browser does is the part that matters for coverage.
+// The client is hand-rolled because these tests work at the frame level —
+// tags, sequence numbers, the seeded declaration, deliberately malformed input
+// — which a WebSocket object will not give you. It also masks every client
+// frame the way a browser does, which is the part that matters for coverage.
+//
+// It is NOT hand-rolled because real clients could not talk to this relay.
+// That was once written here as the reason, blaming Node's built-in WebSocket
+// for being strict about permessage-deflate; it was wrong. Real clients could
+// not connect because the relay's accept token was computed from a
+// mistranscribed magic string, and this client had been given the same wrong
+// one. Both Node's built-in WebSocket and Chrome connect happily now.
 
-const GUID = '258EAFA5-E914-47DA-95CA-5AB0DC85B39A';
+// Deliberately NOT a second copy of the magic string. This client used to hold
+// its own, the relay's copy was wrong, and the two agreed with each other for
+// every test in this file while no browser on earth could complete the
+// handshake. The relay is the single source now, and the value it uses is
+// pinned to the RFC's published pair below.
 const TAG_UPDATE = relay.TAG_UPDATE;
 const TAG_SNAPSHOT = relay.TAG_SNAPSHOT;
 const HEADER_BYTES = 5;
@@ -60,7 +69,7 @@ function clientFrame(opcode, payload) {
 function openSocket(port, path) {
   return new Promise((resolve, reject) => {
     const key = crypto.randomBytes(16).toString('base64');
-    const accept = crypto.createHash('sha1').update(key + GUID).digest('base64');
+    const accept = relay.acceptKey(key);
     const socket = net.connect(port, '127.0.0.1');
     let handshake = Buffer.alloc(0);
     let upgraded = false;
@@ -195,11 +204,38 @@ async function connect(port, room) {
     peers: 0,
     compacts: 0,
     lastSeq: 0,
+    // Updates this peer has applied. Where two documents carry the same board,
+    // a merge changes nothing observable in toState(), so this is the only
+    // honest signal that they have actually met.
+    received: 0,
+    // True between "the relay granted me the seeding right" and "I told it the
+    // document is on the wire" — js/sync-session.js keeps the same flag.
+    holdsSeedingRight: false,
     push: (update) => client.send(BINARY, tagged(TAG_UPDATE, 0, update)),
+    declareSeeded: () => client.send(TEXT, Buffer.from(JSON.stringify({ t: 'seeded' }), 'utf8')),
     close: () => client.close()
   };
 
-  binding.onLocalUpdate((update) => peer.push(update));
+  // The relay cannot read a Yjs update, and an encoded empty Y.Doc is two
+  // ordinary bytes, so publishing a document is not the same as saying one
+  // exists. Say it — after the push that carried it.
+  function declareIfSeeding() {
+    if (!peer.holdsSeedingRight || binding.isEmpty()) return;
+    peer.holdsSeedingRight = false;
+    peer.declareSeeded();
+  }
+
+  binding.onLocalUpdate((update) => {
+    peer.push(update);
+    declareIfSeeding();
+  });
+
+  // Publish this peer's whole document and, if it is holding the seeding
+  // right, bootstrap the room with it. What sync-session does on `ready`.
+  peer.publish = () => {
+    peer.push(binding.encodeState());
+    declareIfSeeding();
+  };
 
   client.setHandler((opcode, payload) => {
     if (opcode === TEXT) {
@@ -207,6 +243,7 @@ async function connect(port, room) {
       if (message.t === 'ready') {
         peer.ready = true;
         peer.canSeed = message.canSeed;
+        if (message.canSeed) peer.holdsSeedingRight = true;
       }
       if (message.t === 'peers') peer.peers = message.n;
       if (message.t === 'compact') {
@@ -218,6 +255,7 @@ async function connect(port, room) {
     if (payload.length < HEADER_BYTES || payload[0] !== TAG_UPDATE) return;
     const seq = payload.readUInt32BE(1);
     if (seq > peer.lastSeq) peer.lastSeq = seq;
+    peer.received += 1;
     binding.applyUpdate(new Uint8Array(payload.subarray(HEADER_BYTES)));
   });
 
@@ -263,20 +301,286 @@ function titles(peer) {
 // NOT make them the same CRDT items — merging two seeded documents yields
 // duplicate boards/columns/cards sharing one id. The relay now hands out the
 // seeding right to exactly one member of an empty room.
+// The one assertion in this file that does not trust anything in this repo.
+// Every other test here drives the relay with a client written alongside it, so
+// the two can agree on a wrong handshake and prove nothing — which is exactly
+// what happened: the magic string was mistranscribed, both copies carried the
+// same error, all of these tests passed, and no browser could ever connect.
+// This pair is published in RFC 6455 section 1.3 and is not ours to get wrong.
+test('the accept token matches the RFC 6455 published pair', () => {
+  assert.equal(
+    relay.acceptKey('dGhlIHNhbXBsZSBub25jZQ=='),
+    's3pPLMBiTxaQ9kYGzzhZRbK+xOo='
+  );
+});
+
 test('only one peer of an empty room is granted the seeding right', async () => {
   const server = await startServer();
   const a = await connect(server.port, 'seed-race');
   const b = await connect(server.port, 'seed-race');
-  await waitFor(() => a.ready && b.ready, 'both peers ready');
+  await waitFor(() => a.ready, 'the first peer is ready');
+  await wait(50);
 
-  const granted = [a.canSeed, b.canSeed].filter((v) => v === true);
-  assert.equal(granted.length, 1, 'exactly one peer may seed an empty room');
   assert.equal(a.canSeed, true, 'the first peer to join is the seeder');
-  assert.equal(b.canSeed, false, 'the second peer must adopt, not seed');
+  assert.equal(b.ready, false, 'the second peer is held until a document exists');
+
+  a.binding.seed(boardState('Seeded', ['x']));
+  await waitFor(() => b.ready, 'the second peer is released once the room is seeded');
+  assert.equal(b.canSeed, false, 'the released peer must adopt, not seed');
 
   a.close();
   b.close();
   await server.close();
+});
+
+// Regression: `ready` used to mean only "the history replay has ended", so a
+// second cold peer was told to adopt a room that held nothing yet. It applied
+// the ops it had buffered during the connect window against an empty document
+// — where an op naming a card the document does not have is silently dropped
+// — and then the real seed landed on top. The edit vanished with no error.
+// `ready` now means "there is a document you may safely edit".
+test('an edit made while waiting for the seed survives', async () => {
+  const server = await startServer();
+  const a = await connect(server.port, 'boot-race');
+  await waitFor(() => a.ready, 'the seeder is ready');
+
+  const b = await connect(server.port, 'boot-race');
+  await wait(50);
+  assert.equal(b.ready, false, 'B must not be told to adopt an unseeded room');
+
+  // B edits a card it already holds locally while it waits. This is exactly
+  // the op that used to be lost.
+  const base = boardState('Board', ['x']);
+  const edited = boardState('Board', ['x']);
+  edited.boards[0].columns[0].cards[0].title = "B's edit";
+  const buffered = StateDiff.diff(base, edited);
+  assert.equal(buffered.length, 1, 'the edit produces one card.set op');
+  assert.equal(buffered[0].type, 'card.set');
+
+  a.binding.seed(base);
+  await waitFor(() => b.ready, 'B is released once the room has a document');
+  assert.equal(b.canSeed, false);
+  assert.equal(titles(b).length, 1, 'B holds the seed before it is released');
+
+  // sync-session replays the buffer on top of the adopted document.
+  b.binding.applyOps(buffered);
+  await waitFor(() => titles(a)[0] === "B's edit", "A receives B's buffered edit");
+  assert.deepEqual(titles(b), ["B's edit"], 'and B kept it too');
+
+  a.close();
+  b.close();
+  await server.close();
+});
+
+// The handshake is only as strong as the rule that bootstraps a room. Whatever
+// makes the room seeded releases everyone waiting on it, so a peer that ignores
+// the handshake must not be able to trigger it — by writing, by sending nothing
+// at all, or by simply claiming the room is seeded.
+test('a held peer cannot seed the room it is waiting on', async () => {
+  const server = await startServer();
+  const a = await connect(server.port, 'held-seed');
+  await waitFor(() => a.ready, 'the seeder is ready');
+
+  const b = await connect(server.port, 'held-seed');
+  await wait(50);
+  assert.equal(b.ready, false, 'B is held behind A');
+
+  b.push(new Uint8Array([1, 2, 3])); // never told `ready`, pushes anyway
+  b.push(new Uint8Array(0)); // and a frame with no body at all
+  b.declareSeeded(); // and claims the bootstrap it never performed
+  await wait(80);
+  assert.equal(b.ready, false, 'none of it made the room look seeded');
+  assert.equal(a.binding.isEmpty(), true, 'and none of it reached the seeder');
+
+  // The genuine seed still works and releases B.
+  a.binding.seed(boardState('Seeded', ['x']));
+  await waitFor(() => b.ready, 'B is released by the real seed');
+  assert.deepEqual(titles(b), ['Card x'], 'B holds the seeder document');
+
+  a.close();
+  b.close();
+  await server.close();
+});
+
+// Regression: the relay used to infer "this room has a document" from the log
+// being non-empty. It cannot — it never parses a Yjs update, and an encoded
+// EMPTY Y.Doc is two perfectly ordinary bytes. A seeder that published one
+// would have spent the seeding right and released every held peer onto a
+// document that does not exist, which is the original bootstrap bug wearing a
+// different hat. Only the explicit declaration releases the room now.
+test('publishing an empty document does not bootstrap the room', async () => {
+  const server = await startServer();
+  const a = await connect(server.port, 'empty-seed');
+  await waitFor(() => a.ready, 'A holds the seeding right');
+
+  const b = await connect(server.port, 'empty-seed');
+  await wait(50);
+  assert.equal(b.ready, false, 'B waits behind A');
+
+  const empty = Y.encodeStateAsUpdate(new Y.Doc());
+  assert.ok(empty.length > 0, 'an empty Y.Doc still encodes to real bytes');
+  a.push(empty);
+  await wait(80);
+  assert.equal(b.ready, false, 'B is not released by a document with nothing in it');
+
+  // A real seed from the same peer still works.
+  a.binding.seed(boardState('Real', ['x']));
+  await waitFor(() => b.ready, 'B is released by the real seed');
+  assert.deepEqual(titles(b), ['Card x']);
+
+  a.close();
+  b.close();
+  await server.close();
+});
+
+// A bootstrap the seeder never finished must leave nothing behind: a held peer
+// that had already applied half of it would carry that fragment into whatever
+// it seeds next, as a second lineage of the same ids.
+test('an abandoned bootstrap leaves nothing in the room', async () => {
+  const server = await startServer();
+  const a = await connect(server.port, 'abandoned');
+  await waitFor(() => a.ready, 'A holds the seeding right');
+
+  const b = await connect(server.port, 'abandoned');
+  await wait(50);
+  assert.equal(b.ready, false, 'B waits behind A');
+
+  // A publishes a document but dies before declaring the bootstrap complete.
+  a.holdsSeedingRight = false; // suppress the declaration, not the publish
+  a.binding.seed(boardState('Half a board', ['x']));
+  await wait(50);
+  a.close();
+
+  await waitFor(() => b.ready, 'B is promoted');
+  assert.equal(b.canSeed, true, 'B inherits the seeding right');
+  assert.equal(b.binding.isEmpty(), true, 'and none of the abandoned bootstrap reached it');
+
+  b.binding.seed(boardState('B board', ['y']));
+  const c = await connect(server.port, 'abandoned');
+  await waitFor(() => c.ready, 'a later joiner is ready');
+  await waitFor(() => c.binding.toState().boards.length === 1, 'C adopts one board');
+  assert.equal(c.binding.toState().boards.length, 1, 'exactly one lineage survives');
+
+  b.close();
+  c.close();
+  await server.close();
+});
+
+test('the seeding right moves on when the seeder leaves before seeding', async () => {
+  const server = await startServer();
+  const a = await connect(server.port, 'seeder-drops');
+  await waitFor(() => a.ready, 'the first peer holds the right');
+  assert.equal(a.canSeed, true);
+
+  const b = await connect(server.port, 'seeder-drops');
+  await wait(50);
+  assert.equal(b.ready, false, 'B waits behind A');
+
+  a.close(); // A leaves without ever publishing a document
+  await waitFor(() => b.ready, 'B is promoted to seeder');
+  assert.equal(b.canSeed, true, 'B inherits the right rather than waiting forever');
+
+  b.binding.seed(boardState('B board', ['y']));
+  const c = await connect(server.port, 'seeder-drops');
+  await waitFor(() => c.ready, 'a later joiner is ready');
+  assert.equal(c.canSeed, false, 'the room is seeded now');
+  await waitFor(() => titles(c).length === 1, 'and it adopts the promoted seed');
+
+  b.close();
+  c.close();
+  await server.close();
+});
+
+test('three peers joining a cold room produce exactly one board', async () => {
+  const server = await startServer();
+  const peers = await Promise.all([
+    connect(server.port, 'cold-start'),
+    connect(server.port, 'cold-start'),
+    connect(server.port, 'cold-start')
+  ]);
+
+  await waitFor(() => peers.some((p) => p.canSeed === true), 'a seeder is chosen');
+  await wait(50);
+  const seeders = peers.filter((p) => p.canSeed === true);
+  assert.equal(seeders.length, 1, 'exactly one peer may seed a cold room');
+  assert.equal(peers.filter((p) => p.ready).length, 1, 'the other two are held');
+
+  seeders[0].binding.seed(boardState('Cold', ['z']));
+  await waitFor(() => peers.every((p) => p.ready), 'all three released');
+  await waitFor(
+    () => peers.every((p) => p.binding.toState().boards.length === 1),
+    'all three converge'
+  );
+
+  peers.forEach((p, i) => {
+    const state = p.binding.toState();
+    assert.equal(state.boards.length, 1, 'peer ' + i + ' has one board');
+    assert.equal(state.boards[0].columns.length, 2, 'peer ' + i + ' has one column tree');
+    assert.equal(state.boards[0].columns[0].cards.length, 1, 'peer ' + i + ' has one card');
+  });
+
+  peers.forEach((p) => p.close());
+  await server.close();
+});
+
+// Regression: the relay's log dies with the process, and the docs said that
+// cost nothing because reconnecting peers repopulate it. That is only true if
+// they rejoin with the SAME document. A device that reloaded and rebuilt its
+// Y.Doc from the plain snapshot in IndexedDB does not: Yjs identity is
+// (clientId, clock), not `board.id`, so its board is a second lineage and the
+// peer that never reloaded merges it as a second board carrying the same id.
+// js/sync-docs.js persists the encoded document so the reload restores it.
+test('a reloaded peer reseeding a restarted relay does not fork the board', async () => {
+  const first = await startServer();
+  const a = await connect(first.port, 'restart');
+  await waitFor(() => a.ready, 'A holds the seeding right');
+  a.binding.seed(boardState('Work', ['k1']));
+
+  const b = await connect(first.port, 'restart');
+  await waitFor(() => b.ready, 'B is released once the room is seeded');
+  await waitFor(() => b.binding.toState().boards.length === 1, 'B adopts the board');
+
+  // What a reload keeps: the plain state (KB.Storage) and, since this fix, the
+  // encoded document itself (KB.SyncDocs).
+  const savedState = a.binding.toState();
+  const savedDoc = a.binding.encodeState();
+  a.close();
+  await first.close(); // the relay process dies, taking its log with it
+
+  // A reloads. Its Y.Doc is gone; it restores the persisted one rather than
+  // rebuilding from savedState, which is the whole point.
+  const second = await startServer();
+  const a2 = await connect(second.port, 'restart');
+  a2.binding.restore(savedDoc);
+  assert.deepEqual(a2.binding.toState(), savedState, 'the restored document is the same board');
+
+  await waitFor(() => a2.ready, 'A2 is asked to seed the empty relay');
+  assert.equal(a2.canSeed, true, 'the restarted relay holds no document');
+  a2.publish();
+
+  // B never reloaded, so it still holds the original lineage.
+  const b2 = await connect(second.port, 'restart');
+  await waitFor(() => b2.ready, 'B reconnects');
+  const beforeMerge = a2.received;
+  b2.binding.restore(b.binding.encodeState());
+  b2.publish();
+
+  // Wait for A2 to actually APPLY B2's document. Waiting on a2's board count
+  // would be waiting on something already true — a2 restored that board before
+  // the relay was even involved — and the merge of two copies of one lineage
+  // changes nothing in toState() by design, which is the whole assertion below.
+  await waitFor(() => a2.received > beforeMerge, 'the two documents meet');
+
+  const merged = a2.binding.toState();
+  assert.equal(merged.boards.length, 1, 'one board, not two lineages of one board');
+  assert.equal(merged.boards[0].columns.length, 2, 'one column tree');
+  assert.equal(merged.boards[0].columns[0].cards.length, 1, 'one card');
+  assert.deepEqual(b2.binding.toState().boards.length, 1, 'and the peer that never reloaded agrees');
+
+  a2.close();
+  b2.close();
+  b.close();
+  await second.close();
 });
 
 test('a peer joining a room that already has a document may not seed', async () => {
@@ -301,10 +605,12 @@ test('two peers converge through the relay', async () => {
   const a = await connect(server.port, 'room-a');
   const b = await connect(server.port, 'room-a');
 
-  await waitFor(() => a.ready && b.ready, 'both peers ready');
-
-  // A is first in the room, so its board becomes the document.
+  // A is first in the room, so its board becomes the document. B is held at
+  // the handshake until that document exists — `ready` means "there is
+  // something here you may safely edit".
+  await waitFor(() => a.ready, 'the seeder is ready');
   a.binding.seed(boardState('Work', ['k1', 'k2']));
+  await waitFor(() => b.ready, 'B is released once the room is seeded');
   await waitFor(() => b.binding.toState().boards.length === 1, 'B receives the seed');
   assert.deepEqual(titles(b), ['Card k1', 'Card k2']);
 
@@ -326,9 +632,10 @@ test('concurrent edits from both peers survive the round trip', async () => {
   const server = await startServer();
   const a = await connect(server.port, 'room-concurrent');
   const b = await connect(server.port, 'room-concurrent');
-  await waitFor(() => a.ready && b.ready, 'both ready');
+  await waitFor(() => a.ready, 'the seeder is ready');
 
   a.binding.seed(boardState('Work', ['k1']));
+  await waitFor(() => a.ready && b.ready, 'both ready once the room is seeded');
   await waitFor(() => b.binding.isEmpty() === false, 'B has the board');
 
   const applyEdit = (peer, mutate) => {
@@ -361,8 +668,9 @@ test('a late joiner is caught up from the room history', async () => {
   await waitFor(() => a.ready, 'A ready');
 
   a.binding.seed(boardState('Work', ['k1']));
-  await waitFor(() => server.handle.peers('room-late') === 1, 'A registered');
-  await wait(50); // let the seed reach the relay's log
+  // Wait on the seed actually being in the log. Waiting on A's own membership
+  // would be waiting on something that was already true before the seed.
+  await waitFor(() => server.handle.log('room-late') > 0, 'the seed reached the relay');
 
   const c = await connect(server.port, 'room-late');
   await waitFor(() => c.ready, 'C ready');

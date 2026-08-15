@@ -20,6 +20,7 @@
     "lint": "eslint js tests serve.js sync-relay.js scripts sw.js eslint.config.js",
     "test:unit": "node --test tests/unit/*.test.js",
     "test:e2e": "node tests/kanban-smoke.js",
+    "test:sync": "node tests/sync-devices.js",
     "test": "npm run test:unit && npm run test:e2e",
     "serve": "node serve.js",
     "serve:sync": "node serve.js --sync",
