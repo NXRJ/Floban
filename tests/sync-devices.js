@@ -13,8 +13,11 @@
 // What it covers that nothing else can — every one of these is a policy in
 // js/sync-session.js that only exists on a live handshake:
 //
-//   - write-ahead persistence: the document is on disk before the update that
-//     produced it leaves the device
+//   - write-ahead persistence over the REAL IndexedDB path. The ordering
+//     itself is pinned deterministically in tests/kanban-smoke.js by holding
+//     the write open and proving nothing is published until it lands; what is
+//     added here is that a genuine store behaves the same way. Read the check
+//     below as a smoke test of the real path, not as the ordering proof.
 //   - create vs join: a device with no history refuses to seed a dormant room
 //     rather than starting a rival lineage
 //   - the create right is spent on use

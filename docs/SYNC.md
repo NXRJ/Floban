@@ -109,9 +109,20 @@ that exists in plain state but not in this device's document — and the restore
 above then rebuilds it as a *new* identity while a peer holds the original.
 That is the same fork on a millisecond fuse. So the document write lands first
 and every consequence waits on it: local updates publish after it, remote
-updates commit into `KB.State` after it. If the write fails, the session stops
-with `fault: 'no-document-store'` rather than continuing to mint identities it
-cannot remember. The board itself is untouched and keeps working.
+updates commit into `KB.State` after it. A write that *fails* is not a write
+that landed, so nothing downstream of it runs either — the session stops with
+`fault: 'no-document-store'` rather than publishing an identity it cannot
+remember. The board itself is untouched and keeps working.
+
+**Asynchronous work belongs to the session that started it.** Sessions are
+numbered and `stop()` retires the number, so a pending document load, a queued
+write or an update waiting to be published is dropped if the session it was
+started under has ended. Comparing the room name is not enough — `enable('work')`
+twice in a row is two sessions with the same name, and the first one's leftovers
+would pass a name check and then act on the second one's socket. Each queued
+write also captures its own destination up front rather than reading the current
+room when it eventually runs; otherwise switching rooms mid-write files one
+room's document under another room's key.
 
 **A room the relay has forgotten is not a new room.** The relay drops a room
 when its last peer leaves, so an empty room there means either "never existed"
@@ -212,8 +223,16 @@ sync layer would rely on.
 - `tests/kanban-smoke.js` tests the document store directly: key isolation per
   relay and per room, round-trip, overwrite, scoped removal, and that an
   unusable store rejects rather than reporting "no document".
-- `npm run test:sync` (`tests/sync-devices.js`, **not** part of `npm test`)
-  drives two browser contexts against a live relay for the policies that only
-  exist on a live handshake: write-ahead ordering, create-vs-join, and the
-  dormant-room refusal. It needs a browser that can open a WebSocket to a local
-  server.
+- `tests/kanban-smoke.js` also pins the session's ordering and ownership rules
+  with the store and the transport stubbed, because they are questions of *when*
+  it acts and *on whose behalf* — a real socket would only make them
+  timing-dependent. A held write publishes nothing until it lands; a failed one
+  publishes nothing at all; two `enable()` calls for one room leave one live
+  session; a write queued for one room reaches neither another room's record nor
+  its connection.
+- `npm run test:sync` (`tests/sync-devices.js`, **not** part of `npm test`, and
+  **not** run by CI) drives two browser contexts against a live relay:
+  create-vs-join, the dormant-room refusal, and the real IndexedDB path
+  end-to-end. It needs a browser that can open a WebSocket to a local server —
+  see the file's own header. Until it runs somewhere green it is a
+  specification, not evidence.
