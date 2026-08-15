@@ -27,10 +27,19 @@ npm run serve:sync
 ```
 
 ```js
-KB.SyncSession.enable('my-room')   // persists to localStorage, survives reload
-KB.SyncSession.state()             // { enabled, room, status, peers }
+// On the device that owns the board today — this ROOM IS NEW:
+KB.SyncSession.enable('my-room', '', { create: true })
+// On every other device — put me in the room that already exists:
+KB.SyncSession.enable('my-room')
+KB.SyncSession.state()             // { enabled, room, status, peers, fault }
 KB.SyncSession.disable()
 ```
+
+Join is the default because the two mistakes are not symmetric: joining a room
+that does not exist yet waits, while creating a room that already exists forks
+the board. `fault` says why an enabled session is not running —
+`no-history` (asked to join a room no history-holding device is online for) or
+`no-document-store` (see Bootstrap below).
 
 The relay is same-origin by default (`KB_SYNC_ORIGINS` overrides), keeps each
 room's update log in memory only, and never parses a Yjs update.
@@ -84,12 +93,33 @@ one socket are ordered, so the document is in the log by the time the
 declaration arrives.
 
 **The Y.Doc is reloaded, never rebuilt.** `js/sync-docs.js` persists the
-encoded document alongside the board. A device that reloaded and rebuilt its
-document from the plain snapshot would rejoin as a second lineage of the same
-board, and a relay restart is enough to make that happen: peer A reloads,
-reseeds the empty relay from plain state, and peer B — which never reloaded —
-merges it into a duplicate of everything. Restoring the encoded document keeps
-the identities, and the merge is the no-op it should be.
+encoded document alongside the board, keyed by relay *and* room — two relays
+can each host a "work" and they are not the same room. A device that reloaded
+and rebuilt its document from the plain snapshot would rejoin as a second
+lineage of the same board, and a relay restart is enough to make that happen:
+peer A reloads, reseeds the empty relay from plain state, and peer B — which
+never reloaded — merges it into a duplicate of everything. Restoring the
+encoded document keeps the identities, and the merge is the no-op it should be.
+
+**The document is written ahead.** Persisting it is not bookkeeping to be
+deferred: plain state is already crash-safe before the sync layer sees a change
+(`Storage.save()` writes the localStorage mirror synchronously), so a crash
+between "identity created and published" and "identity persisted" leaves a card
+that exists in plain state but not in this device's document — and the restore
+above then rebuilds it as a *new* identity while a peer holds the original.
+That is the same fork on a millisecond fuse. So the document write lands first
+and every consequence waits on it: local updates publish after it, remote
+updates commit into `KB.State` after it. If the write fails, the session stops
+with `fault: 'no-document-store'` rather than continuing to mint identities it
+cannot remember. The board itself is untouched and keeps working.
+
+**A room the relay has forgotten is not a new room.** The relay drops a room
+when its last peer leaves, so an empty room there means either "never existed"
+or "everyone who has the history is offline" — and it cannot tell which. Only
+the user can, which is what `create` is for. A device may bootstrap a room only
+if it already holds that room's document (reconnect, or a relay restart) or the
+user said the room is new; otherwise it declines the seeding right and leaves,
+so the relay can offer it to a peer that does hold the history.
 
 ## The mutation boundary
 
@@ -173,3 +203,17 @@ The e2e suite subscribes to `KB.Sync` and asserts that representative mutations
 with the right `source`. The unit suite verifies the storage engine's
 serialization, backup rotation, and recovery order, which are the guarantees a
 sync layer would rely on.
+
+- `tests/unit/sync-relay.test.js` drives the relay over real sockets: the
+  bootstrap handshake, the seeding right and its promotion, an abandoned
+  bootstrap, and a reloaded peer reseeding a restarted relay.
+- `tests/unit/ydoc.test.js` pins the identity property the whole design rests
+  on — re-seeding the same plain state forks, restoring does not.
+- `tests/kanban-smoke.js` tests the document store directly: key isolation per
+  relay and per room, round-trip, overwrite, scoped removal, and that an
+  unusable store rejects rather than reporting "no document".
+- `npm run test:sync` (`tests/sync-devices.js`, **not** part of `npm test`)
+  drives two browser contexts against a live relay for the policies that only
+  exist on a live handshake: write-ahead ordering, create-vs-join, and the
+  dormant-room refusal. It needs a browser that can open a WebSocket to a local
+  server.
