@@ -168,14 +168,27 @@
       ws.binaryType = 'arraybuffer';
       socket = ws;
 
+      // Every handler checks that this socket is still THE socket. close() and
+      // a reconnect both leave the old WebSocket alive for a moment — close()
+      // is asynchronous, and message events already queued by the browser are
+      // still delivered afterwards. Dispatching those would hand a caller
+      // bytes from a connection it has already let go of; the session that
+      // follows is a different room's.
+      function current() {
+        return !stopped && socket === ws;
+      }
+
       ws.onmessage = function (event) {
+        if (!current()) return;
         if (typeof event.data === 'string') handleText(event.data);
         else handleBinary(event.data);
       };
       ws.onopen = function () {
+        if (!current()) return;
         attempts = 0; // the next failure starts its backoff from scratch
       };
       ws.onerror = function () {
+        if (!current()) return;
         setStatus('error');
       };
       ws.onclose = function () {

@@ -637,8 +637,9 @@ test('a late joiner is caught up from the room history', async () => {
   await waitFor(() => a.ready, 'A ready');
 
   a.binding.seed(boardState('Work', ['k1']));
-  await waitFor(() => server.handle.peers('room-late') === 1, 'A registered');
-  await wait(50); // let the seed reach the relay's log
+  // Wait on the seed actually being in the log. Waiting on A's own membership
+  // would be waiting on something that was already true before the seed.
+  await waitFor(() => server.handle.log('room-late') > 0, 'the seed reached the relay');
 
   const c = await connect(server.port, 'room-late');
   await waitFor(() => c.ready, 'C ready');

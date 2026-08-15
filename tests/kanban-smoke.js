@@ -2048,13 +2048,14 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('the document store reports itself available when it is', await page.evaluate(() => KB.SyncDocs.isAvailable()));
 
   // ---- The session's async work belongs to the session that started it ----
-  // Four rules that are pure ordering and ownership, so they are tested with
+  // Six rules that are pure ordering and ownership, so they are tested with
   // the document store and the transport stubbed out rather than over a live
   // socket: what matters is WHEN sync-session.js acts and on WHOSE behalf, and
   // a real relay would only make that timing-dependent. No WebSocket here.
   const lifecycle = await page.evaluate(async () => {
     const realDocs = KB.SyncDocs;
     const realCreate = KB.SyncProvider.create;
+    const realCanWrite = KB.MultiTab && KB.MultiTab.canWrite;
     const settle = async () => {
       for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
     };
@@ -2172,7 +2173,66 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       };
       KB.SyncSession.disable();
       await settle();
+
+      // 5. A provider from a closed session must not act on the one that
+      //    replaced it. close() does not un-queue the message events the
+      //    browser has already scheduled, and onUpdate applies bytes straight
+      //    into the document — ahead of every epoch check downstream.
+      reset();
+      saveMode = 'ok';
+      await KB.SyncSession.enable('probe-stale-a', 'ws://stale-a.example/sync', { create: true });
+      const staleA = last();
+      await KB.SyncSession.enable('probe-stale-b', 'ws://stale-b.example/sync', { create: true });
+      const liveB = last();
+      saves = [];
+      const foreign = (() => {
+        const doc = KB.Core.YDoc.create({ Y: window.Y });
+        doc.seed(KB.State.data());
+        const bytes = doc.encodeState();
+        doc.destroy();
+        return bytes;
+      })();
+      staleA.options.onUpdate(foreign);          // room A's history, after the switch
+      staleA.options.onReady({ canSeed: true }); // and a handshake that looks current
+      staleA.options.onPeers(7);
+      await settle();
+      out.stale = {
+        wrote: saves.length,
+        throughB: liveB.pushes.length,
+        seededB: liveB.seededCalls,
+        peers: KB.SyncSession.state().peers
+      };
+      KB.SyncSession.disable();
+      await settle();
+
+      // 6. A read-only tab does not sync at all. It persists nothing and
+      //    applies nothing by design, so the handshake handing it the seeding
+      //    right would have it mint a room's founding identities from its own
+      //    possibly-stale state and publish them unrecorded.
+      reset();
+      if (KB.MultiTab) KB.MultiTab.canWrite = () => false;
+      let refused = false;
+      try {
+        await KB.SyncSession.enable('probe-ro', 'ws://ro.example/sync', { create: true });
+      } catch (err) {
+        refused = true;
+      }
+      // And the boot path, which is how a secondary tab gets here for real:
+      // app.js calls MultiTab.init() before SyncSession.init().
+      localStorage.setItem('kanban.sync.v1', JSON.stringify({
+        room: 'probe-ro', url: 'ws://ro.example/sync', create: true
+      }));
+      await KB.SyncSession.init();
+      await settle();
+      out.readOnly = {
+        refused: refused,
+        providers: providers.length,
+        wrote: saves.length,
+        published: providers.reduce((n, p) => n + p.pushes.length, 0)
+      };
     } finally {
+      if (realCanWrite) KB.MultiTab.canWrite = realCanWrite;
+      KB.SyncSession.disable();
       KB.SyncDocs = realDocs;
       KB.SyncProvider.create = realCreate;
       try { localStorage.removeItem('kanban.sync.v1'); } catch (err) { /* nothing to clean */ }
@@ -2194,6 +2254,14 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     lifecycle.switched.held === 1 && lifecycle.switched.leaked === false);
   check('and never publishes through another room\'s connection',
     lifecycle.switched.throughB === 0 && lifecycle.switched.throughA === 0);
+  check('a closed session\'s provider cannot feed the session that replaced it',
+    lifecycle.stale.wrote === 0 && lifecycle.stale.peers === 0);
+  check('and its handshake cannot make the new session publish',
+    lifecycle.stale.throughB === 0 && lifecycle.stale.seededB === 0);
+  check('a read-only tab refuses to enable sync', lifecycle.readOnly.refused);
+  check('and boots without a session, a document or a publication',
+    lifecycle.readOnly.providers === 0 && lifecycle.readOnly.wrote === 0 &&
+    lifecycle.readOnly.published === 0);
 
   // A store that cannot answer must REJECT, never resolve "no document":
   // js/sync-session.js has to tell "this device never joined this room" from

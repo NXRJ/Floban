@@ -68,6 +68,8 @@ losing either. `theme` and `activeBoardId` are deliberately **not** synced —
   concurrent edit to that same entity in that instant can be lost.
 - **Coarse slices are last-writer-wins.** `inbox`, `lenses`, `dayplans` and
   friends are single-writer by nature and are diffed whole.
+- **One tab per device syncs.** A secondary tab holds no write lease, so it
+  runs no session — see Bootstrap.
 - **The relay is not a source of truth.** Its log dies with the process; every
   peer holds the full document locally, and reconnecting peers repopulate it.
   That is only safe because they rejoin with the *same* document — see
@@ -123,6 +125,25 @@ would pass a name check and then act on the second one's socket. Each queued
 write also captures its own destination up front rather than reading the current
 room when it eventually runs; otherwise switching rooms mid-write files one
 room's document under another room's key.
+
+The same rule reaches the transport, where it cannot be enforced by epoch alone.
+Closing a WebSocket does not un-queue the message events the browser has already
+scheduled, so a provider from a closed session can still deliver a callback
+afterwards — and `onUpdate` applies bytes straight into the document, ahead of
+any later check. Both ends are pinned: the provider ignores events from a socket
+that is no longer its own, and each session's callbacks hold their own binding
+and refuse to run for any other.
+
+**A read-only tab does not sync.** `js/multitab.js` gives one tab the write
+lease; the others apply nothing and persist nothing. Such a tab is exactly the
+one that must not join a room, because the handshake could hand it the seeding
+right, and it would then mint a room's founding identities out of its own
+possibly-stale state and publish them without ever recording them — a fork
+reached from the one direction write-ahead ordering cannot cover. So sync does
+not start there, `enable()` refuses with an explanation, and a tab demoted
+mid-session fails closed: it keeps remote changes in its in-memory document and
+says so in the banner, but writes nothing and publishes nothing. Taking over
+reloads the tab, and sync starts normally on that boot.
 
 **A room the relay has forgotten is not a new room.** The relay drops a room
 when its last peer leaves, so an empty room there means either "never existed"
@@ -229,7 +250,9 @@ sync layer would rely on.
   timing-dependent. A held write publishes nothing until it lands; a failed one
   publishes nothing at all; two `enable()` calls for one room leave one live
   session; a write queued for one room reaches neither another room's record nor
-  its connection.
+  its connection; a closed session's provider can neither feed nor publish
+  through the session that replaced it; and a read-only tab starts no session,
+  writes no document and publishes nothing.
 - `npm run test:sync` (`tests/sync-devices.js`, **not** part of `npm test`, and
   **not** run by CI) drives two browser contexts against a live relay:
   create-vs-join, the dormant-room refusal, and the real IndexedDB path

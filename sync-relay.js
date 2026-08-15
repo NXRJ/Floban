@@ -549,6 +549,10 @@ function attach(server, options) {
   return {
     rooms: () => rooms.size,
     peers: (id) => (rooms.has(id) ? rooms.get(id).clients.size : 0),
+    // How many updates a room's log holds. Introspection for tests, like the
+    // two above: it is the only way to wait on "the seed has actually reached
+    // the relay" rather than on a sleep.
+    log: (id) => (rooms.has(id) ? rooms.get(id).updates.length : 0),
     close: () => {
       rooms.forEach((entry) => {
         entry.clients.forEach((client) => client.socket.close(1001));
