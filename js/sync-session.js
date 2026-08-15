@@ -52,6 +52,10 @@
   // (another tab holds the write lease). Null when healthy.
   var fault = null;
   var watchingLease = false;
+  // True from start()'s first asynchronous instruction until the session is
+  // either built or abandoned. It is what makes a half-started session
+  // something demotion can retire — see onLeaseLost.
+  var starting = false;
   // Set while the relay has granted this peer the right to seed an unseeded
   // room and it has not yet declared the bootstrap complete.
   var holdsSeedingRight = false;
@@ -197,7 +201,13 @@
   // the room, and js/multitab.js reloads a tab that takes the lease back, so
   // init() starts the session again on that boot.
   function onLeaseLost() {
-    if (!binding && !provider) return;
+    // `starting` counts. A session exists from its first asynchronous
+    // instruction, not from the moment a Y.Doc appears: the lease can move
+    // while vendor/yjs.js is still being fetched, and a demotion that found
+    // only nulls and returned would leave the epoch untouched, so the startup
+    // still in flight would go on to build the document and open the socket
+    // that this tab is no longer allowed to have.
+    if (!binding && !provider && !starting) return;
     stop();
     fault = 'read-only-tab';
     notify();
@@ -505,11 +515,17 @@
     // From here the session exists, so it needs to hear about a lease it might
     // lose. Registered once per page, not per session.
     watchLease();
+    // The session begins HERE, not when the Y.Doc appears. vendor/yjs.js is
+    // fetched over the network, and the lease can move while it is in flight.
+    starting = true;
     // enable()/init() have already called stop(), so this is the number of the
     // session about to exist. Everything below belongs to it.
     var myEpoch = epoch;
-    return loadYjs().then(function (Y) {
-      if (myEpoch !== epoch || binding) return state();
+    var run = loadYjs().then(function (Y) {
+      // canApply() as well as the epoch: demotion is announced on a task, so a
+      // lease that moved in the last instant may not have retired the epoch
+      // yet, and this is the last moment before a document exists.
+      if (myEpoch !== epoch || binding || !canApply()) return state();
 
       binding = KB.Core.YDoc.create({ Y: Y });
       baseline = clone(KB.State.data());
@@ -598,12 +614,24 @@
         return state();
       });
     });
+
+    // The startup is over either way — but only for the session that ran it.
+    // If a newer one is already under way, `starting` is now its flag to hold.
+    function settled(result) {
+      if (myEpoch === epoch) starting = false;
+      return result;
+    }
+    return run.then(settled, function (err) {
+      settled();
+      throw err;
+    });
   }
 
   function stop() {
     // Retires this session's number first: anything still in flight under it
     // is now a leftover, and every continuation checks before it acts.
     epoch += 1;
+    starting = false;
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;

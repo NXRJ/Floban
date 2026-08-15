@@ -2327,6 +2327,64 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('and does not spend the create right on a document that never existed',
     lifecycle.seeder.create === true);
 
+  // ---- Demoted while the session is still starting ----
+  // The narrowest window there is: enable() has passed the lease check and
+  // subscribed, but vendor/yjs.js is still being fetched, so there is no
+  // binding and no provider yet. A demotion that looked only for those would
+  // find nothing to retire and let the startup finish into a tab that may no
+  // longer write. Its own context, because it ends read-only — and a context
+  // that has never loaded Yjs, so loadYjs() really does take a network trip.
+  const coldCtx = await browser.createBrowserContext();
+  const coldPage = await coldCtx.newPage();
+  await coldPage.goto(URL, { waitUntil: 'load' });
+  await coldPage.waitForFunction(() => document.documentElement.dataset.ready === '1', { timeout: 8000 });
+  await coldPage.evaluate(() => {
+    window.__cold = { docs: 0, loads: 0, providers: 0 };
+    const realDoc = KB.Core.YDoc.create;
+    KB.Core.YDoc.create = function (options) {
+      window.__cold.docs += 1;
+      return realDoc(options);
+    };
+    const realProvider = KB.SyncProvider.create;
+    KB.SyncProvider.create = function (options) {
+      window.__cold.providers += 1;
+      return realProvider(options);
+    };
+    KB.SyncDocs = {
+      key: KB.SyncDocs.key,
+      isAvailable: () => true,
+      load: () => { window.__cold.loads += 1; return Promise.resolve(null); },
+      save: () => Promise.resolve(null),
+      remove: () => Promise.resolve(null)
+    };
+    // Not awaited: the demotion has to land while Yjs is still in flight.
+    window.__cold.pending = KB.SyncSession
+      .enable('probe-cold', 'ws://cold.example/sync', { create: true })
+      .catch(() => {});
+    // The lease moves, synchronously, before that fetch can possibly finish.
+    localStorage.setItem('kanban.owner.v1', JSON.stringify({ id: 'another-tab', ts: Date.now() }));
+    KB.MultiTab.canWrite();
+  });
+  const cold = await coldPage.evaluate(async () => {
+    await window.__cold.pending;
+    await new Promise((r) => setTimeout(r, 400));
+    return {
+      docs: window.__cold.docs,
+      loads: window.__cold.loads,
+      providers: window.__cold.providers,
+      demoted: KB.MultiTab.readOnly(),
+      state: KB.SyncSession.state(),
+      hasY: !!window.Y
+    };
+  });
+  check('a tab demoted mid-startup was genuinely mid-startup', cold.demoted && cold.hasY);
+  check('and builds no document, reads no store and opens no socket',
+    cold.docs === 0 && cold.loads === 0 && cold.providers === 0);
+  check('and reports itself read-only rather than syncing',
+    cold.state.fault === 'read-only-tab' && cold.state.status === 'error');
+  await coldPage.close();
+  await coldCtx.close();
+
   // ---- Losing the write lease retires a live session ----
   // In its own browser context, so the foreign claim written below cannot
   // demote the tab the rest of this suite is using. The demotion itself is the
