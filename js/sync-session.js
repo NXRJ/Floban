@@ -522,10 +522,18 @@
     // session about to exist. Everything below belongs to it.
     var myEpoch = epoch;
     var run = loadYjs().then(function (Y) {
-      // canApply() as well as the epoch: demotion is announced on a task, so a
-      // lease that moved in the last instant may not have retired the epoch
-      // yet, and this is the last moment before a document exists.
-      if (myEpoch !== epoch || binding || !canApply()) return state();
+      if (myEpoch !== epoch || binding) return state();
+      // The last moment before a document exists, and possibly the first code
+      // to learn the lease is gone: canWrite() demotes synchronously but
+      // announces on a task, so this check can beat the announcement to it.
+      // Retire the startup HERE, while it still owns `starting` — leaving it to
+      // onDemote would mean settled() had already cleared the only evidence
+      // that there was a session to retire, and the tab would sit read-only
+      // reporting no fault at all.
+      if (!canApply()) {
+        onLeaseLost();
+        return state();
+      }
 
       binding = KB.Core.YDoc.create({ Y: Y });
       baseline = clone(KB.State.data());

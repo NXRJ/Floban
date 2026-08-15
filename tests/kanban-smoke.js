@@ -2334,56 +2334,70 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   // find nothing to retire and let the startup finish into a tab that may no
   // longer write. Its own context, because it ends read-only — and a context
   // that has never loaded Yjs, so loadYjs() really does take a network trip.
-  const coldCtx = await browser.createBrowserContext();
-  const coldPage = await coldCtx.newPage();
-  await coldPage.goto(URL, { waitUntil: 'load' });
-  await coldPage.waitForFunction(() => document.documentElement.dataset.ready === '1', { timeout: 8000 });
-  await coldPage.evaluate(() => {
-    window.__cold = { docs: 0, loads: 0, providers: 0 };
-    const realDoc = KB.Core.YDoc.create;
-    KB.Core.YDoc.create = function (options) {
-      window.__cold.docs += 1;
-      return realDoc(options);
-    };
-    const realProvider = KB.SyncProvider.create;
-    KB.SyncProvider.create = function (options) {
-      window.__cold.providers += 1;
-      return realProvider(options);
-    };
-    KB.SyncDocs = {
-      key: KB.SyncDocs.key,
-      isAvailable: () => true,
-      load: () => { window.__cold.loads += 1; return Promise.resolve(null); },
-      save: () => Promise.resolve(null),
-      remove: () => Promise.resolve(null)
-    };
-    // Not awaited: the demotion has to land while Yjs is still in flight.
-    window.__cold.pending = KB.SyncSession
-      .enable('probe-cold', 'ws://cold.example/sync', { create: true })
-      .catch(() => {});
-    // The lease moves, synchronously, before that fetch can possibly finish.
-    localStorage.setItem('kanban.owner.v1', JSON.stringify({ id: 'another-tab', ts: Date.now() }));
-    KB.MultiTab.canWrite();
-  });
-  const cold = await coldPage.evaluate(async () => {
-    await window.__cold.pending;
-    await new Promise((r) => setTimeout(r, 400));
-    return {
-      docs: window.__cold.docs,
-      loads: window.__cold.loads,
-      providers: window.__cold.providers,
-      demoted: KB.MultiTab.readOnly(),
-      state: KB.SyncSession.state(),
-      hasY: !!window.Y
-    };
-  });
-  check('a tab demoted mid-startup was genuinely mid-startup', cold.demoted && cold.hasY);
-  check('and builds no document, reads no store and opens no socket',
-    cold.docs === 0 && cold.loads === 0 && cold.providers === 0);
-  check('and reports itself read-only rather than syncing',
-    cold.state.fault === 'read-only-tab' && cold.state.status === 'error');
-  await coldPage.close();
-  await coldCtx.close();
+  // Run twice, differing only in WHO notices the lease has gone. With the
+  // nudge, MultiTab notices and the queued announcement retires the startup.
+  // Without it, start()'s own continuation is the first code to find out —
+  // canWrite() demotes synchronously but announces on a task, so by the time
+  // the announcement arrives the startup has settled and there is nothing left
+  // for it to recognise. Both must end in the same place.
+  async function coldStartRace(nudge) {
+    const ctx = await browser.createBrowserContext();
+    const coldPage = await ctx.newPage();
+    await coldPage.goto(URL, { waitUntil: 'load' });
+    await coldPage.waitForFunction(() => document.documentElement.dataset.ready === '1', { timeout: 8000 });
+    await coldPage.evaluate((shouldNudge) => {
+      window.__cold = { docs: 0, loads: 0, providers: 0 };
+      const realDoc = KB.Core.YDoc.create;
+      KB.Core.YDoc.create = function (options) {
+        window.__cold.docs += 1;
+        return realDoc(options);
+      };
+      const realProvider = KB.SyncProvider.create;
+      KB.SyncProvider.create = function (options) {
+        window.__cold.providers += 1;
+        return realProvider(options);
+      };
+      KB.SyncDocs = {
+        key: KB.SyncDocs.key,
+        isAvailable: () => true,
+        load: () => { window.__cold.loads += 1; return Promise.resolve(null); },
+        save: () => Promise.resolve(null),
+        remove: () => Promise.resolve(null)
+      };
+      // Not awaited: the lease has to move while Yjs is still in flight.
+      window.__cold.pending = KB.SyncSession
+        .enable('probe-cold', 'ws://cold.example/sync', { create: true })
+        .catch(() => {});
+      localStorage.setItem('kanban.owner.v1', JSON.stringify({ id: 'another-tab', ts: Date.now() }));
+      if (shouldNudge) KB.MultiTab.canWrite();
+    }, nudge);
+    const result = await coldPage.evaluate(async () => {
+      await window.__cold.pending;
+      await new Promise((r) => setTimeout(r, 400));
+      return {
+        docs: window.__cold.docs,
+        loads: window.__cold.loads,
+        providers: window.__cold.providers,
+        demoted: KB.MultiTab.readOnly(),
+        state: KB.SyncSession.state(),
+        hasY: !!window.Y
+      };
+    });
+    await coldPage.close();
+    await ctx.close();
+    return result;
+  }
+
+  for (const nudge of [true, false]) {
+    const how = nudge ? 'when MultiTab notices first' : 'when the startup itself notices first';
+    const cold = await coldStartRace(nudge);
+    check('a tab demoted mid-startup was genuinely mid-startup, ' + how,
+      cold.demoted && cold.hasY);
+    check('and builds no document, reads no store and opens no socket, ' + how,
+      cold.docs === 0 && cold.loads === 0 && cold.providers === 0);
+    check('and reports itself read-only rather than syncing, ' + how,
+      cold.state.fault === 'read-only-tab' && cold.state.status === 'error');
+  }
 
   // ---- Losing the write lease retires a live session ----
   // In its own browser context, so the foreign claim written below cannot

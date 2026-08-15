@@ -148,7 +148,12 @@ provider closed, binding destroyed, `fault: 'read-only-tab'`. A session counts
 as existing from `start()`'s first asynchronous instruction, not from the moment
 its Y.Doc appears — `vendor/yjs.js` is fetched over the network, and a demotion
 that arrived while it was in flight would otherwise find nothing to retire and
-let the startup finish into a tab that may no longer write. The room config
+let the startup finish into a tab that may no longer write. The startup also
+retires *itself* if its own final lease check is what discovers the loss:
+`canWrite()` demotes synchronously but announces on a task, so that check can
+beat the announcement, and by the time it arrived the startup would have settled
+and left nothing to recognise — a tab sitting read-only while reporting no fault
+at all. The room config
 stays, because this device is still a member and takeover reloads the tab, so
 `init()` starts it again on that boot. Stopping rather than idling matters most
 when the relay had granted this tab the seeding right — a demoted seeder that
@@ -282,8 +287,10 @@ sync layer would rely on.
   lands neither the write nor its publication, leaves the `create` right
   unspent, and retires the session. The last two are driven by real demotions
   in their own browser contexts rather than stubs: one against a running
-  session, one against a session still fetching `vendor/yjs.js`, which must end
-  with no document, no store read and no socket.
+  session, and two against a session still fetching `vendor/yjs.js` — run once
+  where MultiTab notices the lease has moved and once where the startup's own
+  check is the first to find out. Both must end with no document, no store read,
+  no socket, and a `read-only-tab` fault.
 - `npm run test:sync` (`tests/sync-devices.js`) drives two browser contexts
   against a live relay: create-vs-join, the dormant-room refusal, and the real
   IndexedDB path end-to-end. Kept out of `npm test` because it spawns a server
