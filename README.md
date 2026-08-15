@@ -1,20 +1,20 @@
 # Floban
 
-A personal, flow-aware board — kanban with the flow made first-class —
-built with vanilla HTML, CSS and JavaScript.
-No build step, no framework, no backend — everything runs in the browser and
-persists locally in **IndexedDB**, with a localStorage crash mirror and rotating
-automatic backups. It is an installable **PWA**: over HTTP(S) it works fully
-offline after the first visit. Opening `index.html` directly from `file://`
-also works, exactly as before (minus the offline cache).
+A personal, flow-aware board: kanban with the flow made first-class, built
+with vanilla HTML, CSS and JavaScript. No build step, no framework, no
+backend; everything runs in the browser and persists locally in **IndexedDB**,
+with a localStorage crash mirror and rotating automatic backups. It is an
+installable **PWA**, and over HTTP(S) it works fully offline after the first
+visit. Opening `index.html` directly from `file://` also works, exactly as
+before, minus the offline cache.
 
-**Seven design worlds.** Not themes — worlds. Each sets its own type families
-*and* scale, corner language, line weights, depth model, texture, motion
-character and card composition, over one unchanged component layer: **Atelier —
-Ink** (the flagship ditherpunk desktop), **Atelier — Paper** (the same desktop
+**Seven design worlds**, not themes. Each sets its own type families *and*
+scale, corner language, line weights, depth model, texture, motion character
+and card composition, over one unchanged component layer: **Atelier — Ink**
+(the flagship ditherpunk desktop), **Atelier — Paper** (the same desktop
 printed rather than emitted), **Cloud Quarry** (chamfered spec plates on a
 survey grid), **Memphis Workshop** (laminate slabs and terrazzo), **Festival
-Lineup** (no chrome at all — priority is billing, and size carries it),
+Lineup** (no chrome at all; priority is billing and size carries it),
 **Industrial Quote** (stockroom hazard stripes and zip ties) and **Specimen
 Archive** (foxed card stock pinned to a linen board). Switch worlds and pick a
 curated accent from the picker in the menu bar. The contract that makes this
@@ -22,8 +22,8 @@ possible is documented in `DESIGN.md`.
 
 **Power-on homescreen.** The app boots like a machine: a live terminal log
 announces your actual board (windows, files, archive), the four-square mark
-winks, a tiny pixel mascot wanders the floor, and `CLICK TO START` blinks —
-click, press any key, or add `?boot=off` to the URL to skip straight to the
+winks, a tiny pixel mascot wanders the floor, and `CLICK TO START` blinks.
+Click, press any key, or add `?boot=off` to the URL to skip straight to the
 desktop.
 
 ## Why it exists
@@ -31,11 +31,11 @@ desktop.
 Most kanban tools track where cards *are*; almost none track how work actually
 moves. Floban is a single-person board where flow is first-class: every card
 records when it started, when it finished, how long it sat, how long it was
-blocked — and the app acts on that data where it changes behaviour (aging
+blocked, and the app acts on that data where it changes behaviour (aging
 chips, service-level expectations, WIP enforcement, a Review queue that
 explains *why* a card is waiting, a bounded daily ritual). It exists because a
 personal task board should be fast to capture into, honest about progress, and
-pleasant enough to live in all day — with no account, no backend and no
+pleasant enough to live in all day, with no account, no backend and no
 subscription.
 
 ## What makes it different
@@ -44,15 +44,15 @@ subscription.
   enforcement, and a Review workspace that ranks the queue and explains every
   entry. One shared placement pipeline applies policies, lifecycle and
   defaults identically on every path that inserts a card.
-- **Seven design worlds over one component layer.** Not themes — each world
+- **Seven design worlds over one component layer.** Not themes; each world
   re-skins type, scale, corners, line weights, depth, texture and motion
   without touching the component layer (see `DESIGN.md`).
 - **Local-first, zero accounts.** No backend, no sign-up, no data leaves the
   browser. IndexedDB plus a crash mirror and rotating automatic backups;
   export/import is one click.
-- **Undo for everything.** Every mutation — moves, edits, even board switches
-  and deletes — is one Ctrl/Cmd+Z away, and destructive actions carry an Undo
-  toast.
+- **Undo for everything.** Every mutation, from moves and edits to board
+  switches and deletes, is one Ctrl/Cmd+Z away, and destructive actions carry
+  an Undo toast.
 - **Boots like a machine.** A power-on homescreen with a live terminal log and
   a pixel mascot, not a login wall.
 - **No build step; runs from a file.** Open `index.html` directly, or serve it
@@ -60,7 +60,7 @@ subscription.
 
 ## Screenshots
 
-**The board — Atelier Ink (dark):**
+**The board in Atelier Ink (dark):**
 
 ![Floban board in the Atelier Ink world](screenshots/board-atelier.png)
 
@@ -90,7 +90,7 @@ npx serve .
 python -m http.server 8000
 ```
 
-Opening `index.html` directly still works over `file://` with no server — all
+Opening `index.html` directly still works over `file://` with no server; all
 assets are local files (fonts included), so nothing needs the network at all.
 
 ## Command palette, menus & shortcuts
@@ -98,15 +98,15 @@ assets are local files (fonts included), so nothing needs the network at all.
 One shared command registry (`js/core/commands.js` + `js/commands.js`) powers
 every action surface, so a command behaves identically wherever it is invoked:
 
-- **Command palette** — press **Ctrl/Cmd+K** (or the ⌘ button in the header):
+- **Command palette.** Press **Ctrl/Cmd+K** (or the ⌘ button in the header):
   filter by title or keywords, arrows + Enter to run, Esc to close. Fully
   keyboard-navigable, `role="combobox"`/`listbox` semantics, focus trapped.
-- **Keyboard shortcuts** — `N`, `C`, `I`, `/`, Ctrl/Cmd+Z/Y and more are
+- **Keyboard shortcuts.** `N`, `C`, `I`, `/`, Ctrl/Cmd+Z/Y and more are
   registered in the same registry (see the table below). Press **Ctrl/Cmd+K →
   "Keyboard shortcuts"** for the full list.
-- **App menu** — the ☰ button opens a registry-driven menu (desktop popover,
+- **App menu.** The ☰ button opens a registry-driven menu (desktop popover,
   mobile bottom sheet) with every category.
-- **Mobile action sheets** — on touch screens, tapping a card opens a bottom
+- **Mobile action sheets.** On touch screens, tapping a card opens a bottom
   sheet (Open, Move to…, Duplicate, Block/Wait/Pause/Clear flow, Archive); the
   column `⋯` opens a column sheet; both route through the same commands and the
   same policy/lifecycle/undo machinery as desktop.
@@ -124,7 +124,7 @@ sheets replace hover-only menus. Desktop is untouched.
 - `manifest.webmanifest` + generated pixel icons (192/512/maskable/Apple
   touch) make the app **installable**; the browser prompt is deferred into an
   **Install app** command in the palette.
-- `sw.js` precaches every local asset (the app has no CDN dependencies — the
+- `sw.js` precaches every local asset (the app has no CDN dependencies; the
   two display fonts are vendored under `fonts/` with their OFL licenses) and
   serves the whole app offline after the first visit.
 - Updates: when a new service worker is found, a toast offers **Reload**;
@@ -134,25 +134,25 @@ sheets replace hover-only menus. Desktop is untouched.
 
 The header switches between eight workspaces:
 
-- **Board** — the classic board experience.
-- **My Desk** — a cross-board focus view with default sections (Blocked, Due
+- **Board.** The classic board experience.
+- **My Desk.** A cross-board focus view with default sections (Blocked, Due
   this week, Active work, Ready to pull, Recently completed) plus built-in and
   saved **lenses** (saved ways of looking at original cards).
-- **Inbox** — global capture and triage (press `I` anywhere to capture).
-- **Review** — flow health and an actionable attention queue.
-- **Date Desk** — a month calendar of every card with a due date (all boards):
+- **Inbox.** Global capture and triage (press `I` anywhere to capture).
+- **Review.** Flow health and an actionable attention queue.
+- **Date Desk.** A month calendar of every card with a due date (all boards):
   colour-labelled card chips in day cells, a dither-highlighted **overdue
   strip**, drag a chip onto another day to reschedule (one undo step), arrows
   walk the grid and Enter opens the day's first card. Press `T` to jump here.
   Mobile renders the same grid; tapping a chip opens the card editor (with
   type-to-snooze) instead of drag.
-- **Work Log** — a copy-ready weekly ledger of completed work (press `L`):
+- **Work Log.** A copy-ready weekly ledger of completed work (press `L`):
   day columns of finished cards with label chips and cycle-time notes, a
   masthead of per-board counts, an **UNSTAMPED** band flagging cards sitting
   in Done columns that never ran the lifecycle (with a one-key STAMP fix),
   `‹ ›` steps weeks, `C` copies a paste-ready summary ("WEEK OF AUG 4–10 —
   12 DONE · TUE · 3: Ship 1.0 release · Fix #42 …") for client updates,
-  invoices and standups, and `P` prints. Pure projection of `completedAt` —
+  invoices and standups, and `P` prints. Pure projection of `completedAt`,
   no new storage.
 
 Your current workspace is remembered across reloads.
@@ -161,7 +161,7 @@ Your current workspace is remembered across reloads.
 
 ### Boards
 - Multiple boards, switched from the board menu in the header (also: new, rename,
-  duplicate, delete). Deleting a board keeps an Undo toast nearby — nothing is
+  duplicate, delete). Deleting a board keeps an Undo toast nearby; nothing is
   unrecoverable.
 - Every board has its own labels, templates, columns and archive.
 
@@ -173,11 +173,11 @@ Your current workspace is remembered across reloads.
 - **Column policies** (column `⋯` menu): WIP mode (off / soft warn / hard
   override), WIP limit, entry and exit criteria, and default labels and default
   assignee on entry.
-- **WIP enforcement**: soft mode warns before a move happens but never blocks —
+- **WIP enforcement**: soft mode warns before a move happens but never blocks;
   the confirmation dialog offers "Move anyway". Hard mode requires an explicit
   confirmation (and optionally a reason) before a card can move in. Every
-  movement and creation path — drag, move-to menu, keyboard move, bulk move,
-  restore, quick-add and new-card creation, inbox triage, recurrence creation —
+  movement and creation path (drag, move-to menu, keyboard move, bulk move,
+  restore, quick-add and new-card creation, inbox triage, recurrence creation)
   runs the same policy evaluator through one shared placement pipeline, so
   entry criteria, entry defaults, lifecycle timestamps and after-completion
   scheduling behave identically everywhere.
@@ -188,7 +188,7 @@ Your current workspace is remembered across reloads.
   in the recurrence manager) rather than silently creating cards past the
   limit; soft-WIP overage on a background occurrence is allowed without a
   dialog, since there is no user to confirm.
-- **Same-column reordering** changes only the array position — no lifecycle
+- **Same-column reordering** changes only the array position: no lifecycle
   transition, no `updatedAt` change, no re-applied defaults. Soft-WIP overage
   when restoring an archived card asks for confirmation like any other move.
 - **Collapse/expand** a column to a title bar with the chevron on the header.
@@ -200,50 +200,50 @@ Your current workspace is remembered across reloads.
 
 ### Cards
 - Create with the `+` in a column header, the inline **quick-add** box at the
-  bottom of every column (type a title, press Enter — paste several lines to
+  bottom of every column (type a title, press Enter; paste several lines to
   add many cards at once), or press `N` to jump to the first quick-add box.
 - **Smart Quick Add** (natural-language capture): the quick-add box parses
-  due dates, priority and labels straight out of the line —
-  `fix login bug in 3 days p2 #Bug` creates a card titled `fix login bug`
-  with a due date in 3 days, HIGH priority and the `Bug` label. Recognized
-  tokens show as live preview chips before you press Enter, and the parsed
-  fields flow through the same placement pipeline as any other add (policies,
-  lifecycle, entry defaults, one undo entry). Grammar (deliberately small and
-  explicit — plain prose is never rewritten): `today` / `tomorrow` / weekday
-  names (`fri`, `next friday`, `this friday` — bare/`next` weekdays are
-  always in the future), `in N days/weeks/months`, `+1d`/`+2w`/`+1m`,
-  `next week`, `eom`, month-day dates (`25 jul`, `jul 25`), ISO dates
-  (`2026-08-20`), times (`5pm`, `17:30` — recognized but not stored, the
-  model is day-granular), priority `p1`–`p4` or `priority:high`, and labels
-  `#name` (resolved against the board's labels; unknown tags stay in the
-  title). Snooze verbs (`snooze 3d`, `push 1w`) work here too.
+  due dates, priority and labels straight out of the line: `fix login bug in
+  3 days p2 #Bug` creates a card titled `fix login bug` with a due date in 3
+  days, HIGH priority and the `Bug` label. Recognized tokens show as live
+  preview chips before you press Enter, and the parsed fields flow through the
+  same placement pipeline as any other add (policies, lifecycle, entry
+  defaults, one undo entry). Grammar (deliberately small and explicit; plain
+  prose is never rewritten): `today` / `tomorrow` / weekday names (`fri`,
+  `next friday`, `this friday`; bare/`next` weekdays are always in the
+  future), `in N days/weeks/months`, `+1d`/`+2w`/`+1m`, `next week`, `eom`,
+  month-day dates (`25 jul`, `jul 25`), ISO dates (`2026-08-20`), times
+  (`5pm`, `17:30`; recognized but not stored, the model is day-granular),
+  priority `p1` to `p4` or `priority:high`, and labels `#name` (resolved
+  against the board's labels; unknown tags stay in the title). Snooze verbs
+  (`snooze 3d`, `push 1w`) work here too.
 - New cards are created through the same placement pipeline as moves: entering
   an `active` column records `startedAt`, entering a `done` column records
   `completedAt`, entry defaults apply, and policy columns ask for confirmation
   before adding (hard WIP, entry criteria, and soft-WIP overage all show the
-  confirm dialog on new-card, template and quick-add creation — multi-line
+  confirm dialog on new-card, template and quick-add creation; multi-line
   pastes are pre-flighted against the whole batch, so the dialog appears if
-  any line would trip a policy). Multi-line quick-add is atomic — either
-  every pasted line becomes a card or none do — and a blocked paste keeps
-  the input text and reports the policy block.
+  any line would trip a policy). Multi-line quick-add is atomic: either every
+  pasted line becomes a card or none do, and a blocked paste keeps the input
+  text and reports the policy block.
 - Every card has a **required title**, a plain-text **description** (with
   light markdown: `**bold**`, `*italic*`, `` `code` ``, `[links](url)`),
   one or more **colour-coded labels**, an optional **assignee** (free text,
   with autocomplete from names already in use), an optional **due date** and
   an optional **checklist** with a pixel-block progress bar on the card.
-- **Priority** (none/low/medium/high/urgent) and **size** (none/XS–XL) render
-  as compact chips and are filterable and sortable.
+- **Priority** (none/low/medium/high/urgent) and **size** (none/XS to XL)
+  render as compact chips and are filterable and sortable.
 - **Flow states**: a card can be marked **Blocked**, **Waiting** or **Paused**
   with a reason. Each state records when it started and keeps a capped history
   of past periods. Filters include blocked / waiting / paused.
 - **Dependencies**: a card can list **blockers** (cross-board allowed) and
   **related** cards. Self-references, duplicates and dependency cycles are
-  rejected. "Ready to pull" is derived — a card with zero unresolved blockers
+  rejected. "Ready to pull" is derived; a card with zero unresolved blockers
   is ready. Cards show a `READY` badge or an unresolved blocker count.
 - Due dates render as chips: red when **overdue**, amber when due today or
   tomorrow. In the card editor, the **type-to-snooze** field reschedules the
-  due date from the keyboard — `push fri`, `snooze 3d`, `+1w` (relative
-  offsets move the current due date, weekday names and dates resolve from
+  due date from the keyboard: `push fri`, `snooze 3d`, `+1w` (relative
+  offsets move the current due date; weekday names and dates resolve from
   today) with a live preview chip and a single Enter to apply; the native
   date picker stays for point-and-click. Filter by overdue / today / this
   week / none, or sort the whole board by due date, priority, size, created
@@ -275,7 +275,7 @@ Your current workspace is remembered across reloads.
 
 ### Undo & redo
 - Every mutation is tracked in memory: press **Ctrl/Cmd+Z** to undo and
-  **Ctrl/Cmd+Shift+Z** (or Ctrl+Y) to redo — including board switches.
+  **Ctrl/Cmd+Shift+Z** (or Ctrl+Y) to redo, including board switches.
 - Destructive actions (archive, delete, purge, restore, duplicate, board
   delete) also show a toast with an **Undo** button for the same 3-second
   window.
@@ -292,8 +292,8 @@ Your current workspace is remembered across reloads.
   forever cleans up every reference to the cards nested inside it in the same
   transaction.
 - Archiving preserves relationships; restoring preserves them too. A blocker
-  that was completed and then archived still counts as resolved — dependency
-  resolution uses the card's preserved `completedAt` — so dependents are not
+  that was completed and then archived still counts as resolved; dependency
+  resolution uses the card's preserved `completedAt`, so dependents are not
   blocked again by archived completed work.
 
 ### Search & filters
@@ -312,7 +312,7 @@ Your current workspace is remembered across reloads.
 - Ctrl/Cmd-click toggles a card; Shift-click selects a visible range. Escape
   clears. A toolbar appears with: **Move…** (with policy confirmation),
   labels, assignee, due date, priority, size, flow state and **Archive**.
-- Bulk operations are atomic — one undo entry restores the whole selection.
+- Bulk operations are atomic: one undo entry restores the whole selection.
   Label and flow-state bulk changes are single transactions too (per-card
   results are computed before one commit).
 
@@ -340,7 +340,7 @@ Your current workspace is remembered across reloads.
   idempotent. The UI states clearly: *Scheduled work is created when this local
   app is open or next opened.*
 - Completing a recurring card schedules the next after-completion occurrence
-  inside the same transaction as the move — drag, move-to menu, cross-board
+  inside the same transaction as the move; drag, move-to menu, cross-board
   moves, bulk moves and restore all trigger it. If a column policy blocks an
   occurrence (hard WIP, entry criteria), creation pauses without erroring and
   the manager shows "waiting: a column policy blocks new cards" until the
@@ -352,13 +352,13 @@ Your current workspace is remembered across reloads.
   `javascript:`/`data:` URLs are never stored as links.
 - **Triage** turns an item into a card (board, column, due date, labels,
   assignee, priority, size) in one atomic, undoable step, through the same
-  placement pipeline as moves — lifecycle timestamps, entry defaults and
+  placement pipeline as moves; lifecycle timestamps, entry defaults and
   column policies apply, and a policy-blocked triage asks for confirmation
   before the item leaves the inbox. Items can also be
   **converted to a recurring definition**, **merged** into an existing card or
   archived as references.
 - The header badge and the workspace show triage pressure ("3 unprocessed ·
-  oldest: 2d") — archived reference items are excluded from both the badge and
+  oldest: 2d"); archived reference items are excluded from both the badge and
   the pressure line.
 
 ### My Desk & lenses
@@ -369,13 +369,13 @@ Your current workspace is remembered across reloads.
   blockers), **Recently completed** (completed within 7 days).
 - Built-in lens semantics: **Aging** matches open work older than 7 days;
   **Needs Triage** matches open cards that carry none of priority, size,
-  assignee or labels — i.e. cards that have never been through triage. The
+  assignee or labels, i.e. cards that have never been through triage. The
   **Blocked** lens includes both dependency-blocked and manually blocked
-  cards. **Ready to Pull** uses the same definition as My Desk — queue-role
+  cards. **Ready to Pull** uses the same definition as My Desk: queue-role
   column, normal flow state, no unresolved blockers.
 - Save the current board view as a **lens** (search, labels, assignees, due,
   priority, size, flow state, ready-only, sort, grouping, density, scope).
-- Lens results are references to the original cards — editing a card from a
+- Lens results are references to the original cards: editing a card from a
   lens edits the original board card. Lenses can never be accidentally deleted
   (built-ins are code-defined), and deleting a board trims lens scopes safely.
 
@@ -387,12 +387,12 @@ Your current workspace is remembered across reloads.
   by priority → top of the Review queue), press `1-9` to fill up to **3
   slots**, Enter (or **STAMP DAY**) to commit.
 - The stamped sheet is the day: checkbox squares tick cards into the Done
-  column (through the normal placement pipeline — policies and lifecycle
+  column (through the normal placement pipeline; policies and lifecycle
   apply), with a `n of 3 DONE` progress line. It persists per date in the
   normal save path (IndexedDB + mirror + backups, included in exports).
 - **End the day** forces a decision on every unfinished commitment: `K`
   keep (carries over to tomorrow's pick band), `P` push +1d, `D` drop the
-  due date, `X` archive — applied as **one atomic, undoable roll**. The
+  due date, `X` archive, applied as **one atomic, undoable roll**. The
   sheet is deliberately local, keyboard-first and bounded: the anti-bloat
   guardrail made concrete (never a 50-item "Today" flood, no $200/yr
   planner subscription needed).
@@ -401,19 +401,19 @@ Your current workspace is remembered across reloads.
 - A task-tied timer: **Start focus** from the card editor (or the card action
   sheet) runs a 25-minute pomodoro; a corner HUD shows the countdown with the
   card's title. Press `F` to stop, or stop from the HUD.
-- Elapsed time is always `now − startedAt` from timestamps — the HUD is a
+- Elapsed time is always `now − startedAt` from timestamps; the HUD is a
   pure render, so it never drifts, and a running session **survives a
   reload**. Sub-minute sessions log nothing (no effort noise).
 - A full pomodoro stamps the card (`⏱ 2h05m · 5 pomo` chip) and both minutes
-  and pomodoro count land in the per-day focus log (`state.focusDays`) — the
+  and pomodoro count land in the per-day focus log (`state.focusDays`), the
   freelancer's timesheet substrate. Starting and stopping are each one atomic,
   undoable state op.
 
 ### Backup & recovery
 - Application data lives in **IndexedDB** (primary). Every save also writes an
   atomic localStorage crash-mirror envelope (`kanban.mirror.v1`) so a tab that
-  closes mid-write can never lose work — on the next boot the newer valid
-  mirror wins and repairs the store.
+  closes mid-write can never lose work; on the next boot the newer valid mirror
+  wins and repairs the store.
 - **Automatic rotating backups**: up to 10 snapshots are kept in IndexedDB (at
   most one per minute), plus an explicit backup before migrations and imports.
   Load order on boot: newer valid mirror → primary → newest valid backup →
@@ -525,7 +525,7 @@ that use them.
 and the Node test suite. Core files never touch `window`, `document`,
 `localStorage`, `KB.el` or the DOM. Functions that need the current time
 receive an explicit timestamp, and functions that generate identifiers
-receive an ID factory — this is what makes the unit tests deterministic.
+receive an ID factory; this is what makes the unit tests deterministic.
 
 ### Data model
 
@@ -583,11 +583,11 @@ results, ready state) is never persisted.
 
 ## Limitations
 
-Honest about what this is and is not, so nobody finds out the hard way:
+Stated plainly, so nobody finds out the hard way:
 
 - **Your data lives in one browser.** Floban is local-first by design: boards
   are stored in that browser profile's IndexedDB. Clearing site data, switching
-  browsers, or using another machine means starting over — unless you use the
+  browsers, or using another machine means starting over unless you use the
   built-in **Backup / restore** export first. There are no accounts and no
   server-side copy.
 - **Multi-device sync is optional and experimental.** Off by default. When

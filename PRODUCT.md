@@ -8,19 +8,19 @@ web
 
 ## Users
 
-Solo developers and freelancers tracking their own work — between meetings, commits, and side projects. One person, one board, quick capture with no ceremony. The same audience doubles as the evaluator of the app's craft: this is a personal task board that is also meant to impress the person who built and uses it.
+Solo developers and freelancers tracking their own work between meetings, commits, and side projects. One person, one board, quick capture without ceremony. The same audience is also the evaluator of the app's craft: this is a personal task board that is also meant to impress the person who built and uses it.
 
 ## Product Purpose
 
-A personal, flow-aware board (Floban) for task management: multiple boards with a switcher; create, rename, reorder, collapse and delete columns; cards with titles, descriptions (light markdown), colour-coded labels, assignees, due dates and checklists; templates and duplication; WIP limits; drag-and-drop between and within columns; archive with restore; undo/redo; search, due-date filters and sorting; JSON backup/export; seven switchable design worlds. Everything persists locally in the browser (IndexedDB with a localStorage crash mirror and rotating automatic backups) — no backend, no accounts.
+A personal, flow-aware board (Floban) for task management: multiple boards with a switcher; create, rename, reorder, collapse and delete columns; cards with titles, descriptions (light markdown), colour-coded labels, assignees, due dates and checklists; templates and duplication; WIP limits; drag-and-drop between and within columns; archive with restore; undo/redo; search, due-date filters and sorting; JSON backup/export; seven switchable design worlds. Everything persists locally in the browser (IndexedDB with a localStorage crash mirror and rotating automatic backups). There is no backend and no accounts.
 
 ## Positioning
 
-An extremely high-end frontend showcase and stress test: the UI itself is the statement. The vibe is fun and premium, executed with production-grade craft — it is the benchmark for what frontend work on this machine should look like, not a generic kanban clone. Design quality is a first-class feature; the product truth it carries (real task management, nothing destroyed, everything persisted) must stay intact underneath.
+An extremely high-end frontend showcase and stress test: the UI itself is the statement. The vibe is fun and premium; the execution has production-grade craft. It is the benchmark for what frontend work on this machine should look like, not a generic kanban clone. Design quality is a first-class feature; the product truth it carries (real task management, nothing destroyed, everything persisted) must stay intact underneath.
 
 ## Operating Context
 
-Opened as a local file or served statically; works offline and without a build step today. Data persists per-browser in IndexedDB, with an atomic localStorage crash-mirror envelope (`kanban.mirror.v1`) and rotating automatic backups. Mouse and keyboard are both used; drag-and-drop is mouse-driven. The user evaluates it both as a daily task tool and as a reference-quality frontend artifact, including via the e2e/headless test workflow already in place.
+Opened as a local file or served statically, it works offline and without a build step today. Data persists per-browser in IndexedDB, with an atomic localStorage crash-mirror envelope (`kanban.mirror.v1`) and rotating automatic backups. Mouse and keyboard are both used; drag-and-drop is mouse-driven. The user evaluates it both as a daily task tool and as a reference-quality frontend artifact, including via the e2e/headless test workflow already in place.
 
 ## Capabilities and Constraints
 
