@@ -51,10 +51,10 @@ const RELAY = 'ws://localhost:' + PORT + '/sync';
   });
   await sleep(900);
 
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: process.env.CI ? ['--no-sandbox'] : []
-  });
+  // Declared before the try, launched inside it: a browser that fails to start
+  // must still take the relay process down with it, or a failed run leaves
+  // something holding the port and the next run fails for the wrong reason.
+  let browser = null;
 
   // Each "device" is its own browser context, so the two get separate origins
   // and therefore separate IndexedDB — a second tab of one origin would share
@@ -83,6 +83,11 @@ const RELAY = 'ws://localhost:' + PORT + '/sync';
   }
 
   try {
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: process.env.CI ? ['--no-sandbox'] : []
+    });
+
     const a = await device();
     await a.page.evaluate((url) => KB.SyncSession.enable('e2e', url, { create: true }), RELAY);
     await connected(a.page);
@@ -169,7 +174,7 @@ const RELAY = 'ws://localhost:' + PORT + '/sync';
       await entry.page.close().catch(() => {});
       await entry.context.close().catch(() => {});
     }
-    await browser.close().catch(() => {});
+    if (browser) await browser.close().catch(() => {});
     if (!server.killed) server.kill('SIGKILL');
   }
 

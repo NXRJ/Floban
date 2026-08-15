@@ -239,11 +239,13 @@
   // exists to prevent, arriving through the one path that guarantees it.
   function persist() {
     if (!binding || !room) return Promise.resolve(false);
-    // A read-only tab must not write: its document may be missing edits the
-    // owning tab made offline, and the record is shared. Nothing is lost by
-    // continuing — it mints no identities of its own, and commit() gates
-    // separately on the write lease.
-    if (!canApply()) return Promise.resolve(true);
+    // A read-only tab must not write the document: the record is shared, and
+    // its own in-memory state may be behind the owning tab's. Fail CLOSED —
+    // a tab that cannot record an identity must not publish one either. It
+    // reaches here only by being demoted mid-session (start() refuses to run
+    // sync in a read-only tab at all); takeover reloads it, and sync starts
+    // again on that boot.
+    if (!canApply()) return Promise.resolve(false);
     // Destination captured HERE, with the snapshot it belongs to. Reading the
     // globals when the queued write finally runs would address whichever room
     // the session had switched to by then, and write room A's document into
@@ -300,6 +302,13 @@
 
   function onRemoteUpdate() {
     var myEpoch = epoch;
+    // A demoted tab keeps the change in its in-memory document and says so in
+    // the banner, exactly as commit() would — but it neither writes the shared
+    // record nor commits, so persist() would fail closed and skip the flag.
+    if (!canApply()) {
+      blockedByReadOnly = true;
+      return;
+    }
     // Same boundary as the local path, inverted: the document is durable
     // before local state is allowed to depend on it, so a crash leaves either
     // the old world everywhere or the new identities safely recorded.
@@ -430,6 +439,15 @@
   // ---- lifecycle ------------------------------------------------------------
 
   function start(config) {
+    // A read-only tab does not sync. It deliberately persists nothing and
+    // applies nothing, so a Y.Doc and a socket would buy it nothing — and the
+    // handshake could still hand it the seeding right, at which point it would
+    // mint a room's founding identities out of its own possibly-stale state
+    // and publish them without ever recording them. That is the lineage fork,
+    // reached from the one direction the write-ahead rule cannot cover.
+    // js/multitab.js reloads a tab that takes over, so sync starts normally on
+    // that boot.
+    if (!canApply()) return Promise.resolve(state());
     // enable()/init() have already called stop(), so this is the number of the
     // session about to exist. Everything below belongs to it.
     var myEpoch = epoch;
@@ -475,13 +493,37 @@
         if (myEpoch !== epoch || !binding || fault) return state();
         restore(saved);
 
+        // Pinned to THIS session, not to whatever the globals hold when the
+        // callback fires. The provider is closed on stop(), but closing a
+        // WebSocket does not un-queue the message events the browser has
+        // already scheduled, so a callback from the old room can still arrive
+        // after the switch. onUpdate is the one that matters: it applies bytes
+        // straight into the document, ahead of any epoch check downstream,
+        // and would merge room A's history into room B. onReady is nearly as
+        // bad — it reads the epoch when it runs, so a stale one looks current.
+        var mySession = binding;
+        function isCurrent() {
+          return myEpoch === epoch && binding === mySession;
+        }
+
         provider = KB.SyncProvider.create({
           room: config.room,
           url: config.url || '',
-          onUpdate: function (update) { binding.applyUpdate(update); },
-          onReady: onReady,
-          onPeers: function (n) { peers = n; notify(); },
+          onUpdate: function (update) {
+            if (!isCurrent()) return;
+            mySession.applyUpdate(update);
+          },
+          onReady: function (info) {
+            if (!isCurrent()) return;
+            onReady(info);
+          },
+          onPeers: function (n) {
+            if (!isCurrent()) return;
+            peers = n;
+            notify();
+          },
           onStatus: function (status) {
+            if (!isCurrent()) return;
             if (status !== 'connected') {
               ready = false;
               // A right granted by a relay we are no longer talking to is not
@@ -490,7 +532,9 @@
             }
             notify();
           },
-          snapshot: function () { return binding.encodeState(); }
+          snapshot: function () {
+            return isCurrent() ? mySession.encodeState() : null;
+          }
         });
 
         notify();
@@ -546,6 +590,12 @@
     if (!/^[\w.-]{1,64}$/.test(id)) {
       return Promise.reject(
         new Error('A room name may use letters, digits, dot, dash and underscore')
+      );
+    }
+    // Say why, rather than silently accepting a room this tab will not join.
+    if (!canApply()) {
+      return Promise.reject(
+        new Error('This tab is read-only. Take over the board here first, then enable sync.')
       );
     }
     var config = {
