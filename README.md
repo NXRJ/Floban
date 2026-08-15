@@ -26,6 +26,58 @@ winks, a tiny pixel mascot wanders the floor, and `CLICK TO START` blinks —
 click, press any key, or add `?boot=off` to the URL to skip straight to the
 desktop.
 
+## Why it exists
+
+Most kanban tools track where cards *are*; almost none track how work actually
+moves. Floban is a single-person board where flow is first-class: every card
+records when it started, when it finished, how long it sat, how long it was
+blocked — and the app acts on that data where it changes behaviour (aging
+chips, service-level expectations, WIP enforcement, a Review queue that
+explains *why* a card is waiting, a bounded daily ritual). It exists because a
+personal task board should be fast to capture into, honest about progress, and
+pleasant enough to live in all day — with no account, no backend and no
+subscription.
+
+## What makes it different
+
+- **Flow made first-class.** Lifecycle timestamps, aging, SLE, real WIP
+  enforcement, and a Review workspace that ranks the queue and explains every
+  entry. One shared placement pipeline applies policies, lifecycle and
+  defaults identically on every path that inserts a card.
+- **Seven design worlds over one component layer.** Not themes — each world
+  re-skins type, scale, corners, line weights, depth, texture and motion
+  without touching the component layer (see `DESIGN.md`).
+- **Local-first, zero accounts.** No backend, no sign-up, no data leaves the
+  browser. IndexedDB plus a crash mirror and rotating automatic backups;
+  export/import is one click.
+- **Undo for everything.** Every mutation — moves, edits, even board switches
+  and deletes — is one Ctrl/Cmd+Z away, and destructive actions carry an Undo
+  toast.
+- **Boots like a machine.** A power-on homescreen with a live terminal log and
+  a pixel mascot, not a login wall.
+- **No build step; runs from a file.** Open `index.html` directly, or serve it
+  for the offline PWA experience.
+
+## Screenshots
+
+**The board — Atelier Ink (dark):**
+
+![Floban board in the Atelier Ink world](screenshots/board-atelier.png)
+
+**The same board, Memphis Workshop:**
+
+![Floban board in the Memphis Workshop world](screenshots/board-memphis.png)
+
+**A two-second workflow: smart quick-add (due date, priority and label parsed
+from one line, with live preview chips), then a keyboard move to In Progress:**
+
+![Floban workflow: quick-add then move](screenshots/workflow.gif)
+
+**The power-on homescreen and the Date Desk calendar:**
+
+![Floban power-on homescreen](screenshots/homescreen-boot.png)
+![Floban Date Desk calendar](screenshots/date-desk.png)
+
 ## Running the app
 
 The full experience (install prompt, offline cache, service worker) needs
@@ -528,6 +580,33 @@ first load; corrupt or malformed payloads are repaired rather than crashing;
 the boot recovery chain is newer valid mirror → primary → newest valid backup →
 legacy payload → fresh default board. Derived data (review queues, lens
 results, ready state) is never persisted.
+
+## Limitations
+
+Honest about what this is and is not, so nobody finds out the hard way:
+
+- **Your data lives in one browser.** Floban is local-first by design: boards
+  are stored in that browser profile's IndexedDB. Clearing site data, switching
+  browsers, or using another machine means starting over — unless you use the
+  built-in **Backup / restore** export first. There are no accounts and no
+  server-side copy.
+- **Multi-device sync is optional and experimental.** Off by default. When
+  enabled it needs the included WebSocket relay (`npm run serve:sync`) and a
+  shared room name; the relay is not a hosted service. Known limits: one tab
+  per device syncs (secondary tabs are read-only); a moved card is rebuilt in
+  the CRDT, so a peer's concurrent edit to that exact card in that instant can
+  be lost; coarse slices (inbox, lenses, dayplans) are last-writer-wins; the
+  relay keeps its log in memory only. There is no conflict-resolution UI and
+  no team or guest model. Details in [docs/SYNC.md](docs/SYNC.md).
+- **No imports from other tools.** Backup files are Floban's own JSON format;
+  there is no Trello/Notion/CSV import.
+- **Recurring work runs while the app is open.** Scheduled occurrences are
+  created when the app boots or is open; a device that is closed misses that
+  window (missed runs can be caught up on next open, depending on policy).
+- **Mobile web, not a native app.** The board works on touch screens (≤640px
+  single-column pager), but there is no App Store or Play Store build.
+- **Single-user.** Assignees are free text; there is no user system,
+  permissions, or collaboration model beyond the experimental sync.
 
 ## Testing
 
