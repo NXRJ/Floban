@@ -12,14 +12,23 @@ const StateDiff = require('../../js/core/statediff.js');
 // End-to-end over a real socket: the relay's RFC 6455 framing, the tagged
 // application protocol, and the Y.Doc binding in one path.
 //
-// The client is hand-rolled rather than Node's built-in WebSocket, which
-// cannot be used here: it always requests permessage-deflate and then throws a
-// TypeError inside its own failure path when a server declines the extension,
-// closing with 1006. A minimal textbook handshake server fails it the same
-// way, so it is the client that is strict, not this relay. Masking every
-// client frame the way a browser does is the part that matters for coverage.
+// The client is hand-rolled because these tests work at the frame level —
+// tags, sequence numbers, the seeded declaration, deliberately malformed input
+// — which a WebSocket object will not give you. It also masks every client
+// frame the way a browser does, which is the part that matters for coverage.
+//
+// It is NOT hand-rolled because real clients could not talk to this relay.
+// That was once written here as the reason, blaming Node's built-in WebSocket
+// for being strict about permessage-deflate; it was wrong. Real clients could
+// not connect because the relay's accept token was computed from a
+// mistranscribed magic string, and this client had been given the same wrong
+// one. Both Node's built-in WebSocket and Chrome connect happily now.
 
-const GUID = '258EAFA5-E914-47DA-95CA-5AB0DC85B39A';
+// Deliberately NOT a second copy of the magic string. This client used to hold
+// its own, the relay's copy was wrong, and the two agreed with each other for
+// every test in this file while no browser on earth could complete the
+// handshake. The relay is the single source now, and the value it uses is
+// pinned to the RFC's published pair below.
 const TAG_UPDATE = relay.TAG_UPDATE;
 const TAG_SNAPSHOT = relay.TAG_SNAPSHOT;
 const HEADER_BYTES = 5;
@@ -60,7 +69,7 @@ function clientFrame(opcode, payload) {
 function openSocket(port, path) {
   return new Promise((resolve, reject) => {
     const key = crypto.randomBytes(16).toString('base64');
-    const accept = crypto.createHash('sha1').update(key + GUID).digest('base64');
+    const accept = relay.acceptKey(key);
     const socket = net.connect(port, '127.0.0.1');
     let handshake = Buffer.alloc(0);
     let upgraded = false;
@@ -292,6 +301,19 @@ function titles(peer) {
 // NOT make them the same CRDT items — merging two seeded documents yields
 // duplicate boards/columns/cards sharing one id. The relay now hands out the
 // seeding right to exactly one member of an empty room.
+// The one assertion in this file that does not trust anything in this repo.
+// Every other test here drives the relay with a client written alongside it, so
+// the two can agree on a wrong handshake and prove nothing — which is exactly
+// what happened: the magic string was mistranscribed, both copies carried the
+// same error, all of these tests passed, and no browser could ever connect.
+// This pair is published in RFC 6455 section 1.3 and is not ours to get wrong.
+test('the accept token matches the RFC 6455 published pair', () => {
+  assert.equal(
+    relay.acceptKey('dGhlIHNhbXBsZSBub25jZQ=='),
+    's3pPLMBiTxaQ9kYGzzhZRbK+xOo='
+  );
+});
+
 test('only one peer of an empty room is granted the seeding right', async () => {
   const server = await startServer();
   const a = await connect(server.port, 'seed-race');
