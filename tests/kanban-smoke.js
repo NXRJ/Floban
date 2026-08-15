@@ -1987,14 +1987,28 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     // A room name is only unique within one relay.
     isolated: KB.SyncDocs.key('ws://a.example/sync', 'work') !==
       KB.SyncDocs.key('ws://b.example/sync', 'work'),
-    // Cosmetic differences in the same URL are the same relay.
+    // Cosmetic differences in the same URL are the same relay: scheme and host
+    // are case-insensitive, a trailing slash is nothing.
     normalized: KB.SyncDocs.key('WS://Relay.example/sync/', 'work') ===
       KB.SyncDocs.key('ws://relay.example/sync', 'work'),
+    // The path is NOT case-insensitive — these can be two endpoints.
+    pathCase: KB.SyncDocs.key('wss://example.com/Sync', 'work') !==
+      KB.SyncDocs.key('wss://example.com/sync', 'work'),
+    // The default port is implied, not a difference.
+    defaultPort: KB.SyncDocs.key('ws://relay.example:80/sync', 'work') ===
+      KB.SyncDocs.key('ws://relay.example/sync', 'work'),
+    // An empty URL means the same-origin default, so it must key the same
+    // record as naming that endpoint outright.
+    defaultResolved: KB.SyncDocs.key('', 'work') ===
+      KB.SyncDocs.key(KB.SyncProvider.defaultUrl(), 'work'),
     // Two rooms on one relay are not.
     perRoom: KB.SyncDocs.key('', 'work') !== KB.SyncDocs.key('', 'home')
   }));
   check('sync document keys separate relays', docKeys.isolated);
   check('sync document keys normalize one relay', docKeys.normalized);
+  check('sync document keys keep the relay path case', docKeys.pathCase);
+  check('sync document keys ignore the default port', docKeys.defaultPort);
+  check('the default relay keys the same document as naming it', docKeys.defaultResolved);
   check('sync document keys separate rooms', docKeys.perRoom);
 
   const docStore = await page.evaluate(async () => {
@@ -2032,6 +2046,154 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('removing a document clears only that room', docStore.removeClears && docStore.removeIsScoped);
 
   check('the document store reports itself available when it is', await page.evaluate(() => KB.SyncDocs.isAvailable()));
+
+  // ---- The session's async work belongs to the session that started it ----
+  // Four rules that are pure ordering and ownership, so they are tested with
+  // the document store and the transport stubbed out rather than over a live
+  // socket: what matters is WHEN sync-session.js acts and on WHOSE behalf, and
+  // a real relay would only make that timing-dependent. No WebSocket here.
+  const lifecycle = await page.evaluate(async () => {
+    const realDocs = KB.SyncDocs;
+    const realCreate = KB.SyncProvider.create;
+    const settle = async () => {
+      for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
+    };
+
+    let providers = [];
+    let saves = [];
+    let releases = [];
+    let loadGates = [];
+    let saveMode = 'ok';       // 'ok' | 'reject' | 'hold'
+    let loadMode = 'ok';       // 'ok' | 'hold'
+
+    KB.SyncDocs = {
+      key: realDocs.key,
+      isAvailable: () => true,
+      load: () => (loadMode === 'hold'
+        ? new Promise((resolve) => loadGates.push(resolve))
+        : Promise.resolve(null)),
+      save: (url, room) => {
+        saves.push({ url, room });
+        if (saveMode === 'reject') return Promise.reject(new Error('document store gone'));
+        if (saveMode === 'hold') return new Promise((resolve) => releases.push(resolve));
+        return Promise.resolve(null);
+      },
+      remove: () => Promise.resolve(null)
+    };
+    KB.SyncProvider.create = (options) => {
+      const p = {
+        options: options,
+        pushes: [],
+        seededCalls: 0,
+        push(update) { p.pushes.push(update); return true; },
+        seeded() { p.seededCalls += 1; return true; },
+        close() {},
+        room: () => options.room,
+        status: () => 'connected'
+      };
+      providers.push(p);
+      return p;
+    };
+    const last = () => providers[providers.length - 1];
+    const reset = () => { providers = []; saves = []; releases = []; loadGates = []; };
+
+    const out = {};
+    try {
+      // 1. A write that did not land must not be followed by its consequences.
+      //    The whole point of write-ahead ordering is that a peer never learns
+      //    an identity this device cannot prove it owns — and the store
+      //    failing is precisely the case that produces one.
+      saveMode = 'reject';
+      await KB.SyncSession.enable('probe-fail', 'ws://fail.example/sync', { create: true });
+      last().options.onReady({ canSeed: true });
+      await settle();
+      out.failure = {
+        pushed: last().pushes.length,
+        seeded: last().seededCalls,
+        fault: KB.SyncSession.state().fault,
+        status: KB.SyncSession.state().status
+      };
+      KB.SyncSession.disable();
+      await settle();
+
+      // 2. Nothing is published before the write that records it lands. Held
+      //    open deliberately: the ordering is asserted, not raced.
+      reset();
+      saveMode = 'hold';
+      await KB.SyncSession.enable('probe-order', 'ws://order.example/sync', { create: true });
+      const ordered = last();
+      ordered.options.onReady({ canSeed: true });
+      await settle();
+      out.beforeWrite = { pushed: ordered.pushes.length, seeded: ordered.seededCalls, saves: saves.length };
+      releases.forEach((r) => r(null));
+      await settle();
+      releases.forEach((r) => r(null));
+      await settle();
+      out.afterWrite = { pushed: ordered.pushes.length, seeded: ordered.seededCalls };
+      KB.SyncSession.disable();
+      await settle();
+
+      // 3. Two enable() calls for the SAME room leave exactly one live
+      //    session. A room comparison would pass here and leave the first
+      //    session's provider holding a socket nothing will ever close.
+      reset();
+      saveMode = 'ok';
+      loadMode = 'hold';
+      const first = KB.SyncSession.enable('probe-race', 'ws://race.example/sync');
+      await settle();
+      const second = KB.SyncSession.enable('probe-race', 'ws://race.example/sync');
+      await settle();
+      loadGates.forEach((r) => r(null));
+      await Promise.all([first, second]);
+      await settle();
+      out.race = { loads: loadGates.length, providers: providers.length };
+      KB.SyncSession.disable();
+      await settle();
+
+      // 4. A write queued for room A must not follow the session to room B —
+      //    neither into B's document record nor out through B's socket.
+      reset();
+      loadMode = 'ok';
+      saveMode = 'hold';
+      await KB.SyncSession.enable('probe-a', 'ws://a.example/sync', { create: true });
+      const roomA = last();
+      roomA.options.onReady({ canSeed: true }); // seeds: one write starts, one queues
+      await settle();
+      const queuedWhileHeld = saves.length;
+      await KB.SyncSession.enable('probe-b', 'ws://b.example/sync', { create: true });
+      const roomB = last();
+      releases.forEach((r) => r(null)); // let room A's queued write run
+      await settle();
+      out.switched = {
+        held: queuedWhileHeld,
+        leaked: saves.some((s) => s.room === 'probe-b' || s.url.indexOf('b.example') !== -1),
+        throughB: roomB.pushes.length,
+        throughA: roomA.pushes.length
+      };
+      KB.SyncSession.disable();
+      await settle();
+    } finally {
+      KB.SyncDocs = realDocs;
+      KB.SyncProvider.create = realCreate;
+      try { localStorage.removeItem('kanban.sync.v1'); } catch (err) { /* nothing to clean */ }
+    }
+    return out;
+  });
+  check('a failed document write publishes nothing',
+    lifecycle.failure.pushed === 0 && lifecycle.failure.seeded === 0);
+  check('and stops the session with a document-store fault',
+    lifecycle.failure.fault === 'no-document-store' && lifecycle.failure.status === 'error');
+  check('an update is not published while its document write is in flight',
+    lifecycle.beforeWrite.pushed === 0 && lifecycle.beforeWrite.seeded === 0 &&
+    lifecycle.beforeWrite.saves === 1);
+  check('and is published once the write lands',
+    lifecycle.afterWrite.pushed > 0 && lifecycle.afterWrite.seeded > 0);
+  check('enabling the same room twice leaves one live session',
+    lifecycle.race.loads === 2 && lifecycle.race.providers === 1);
+  check('a write queued for one room never reaches another room\'s document',
+    lifecycle.switched.held === 1 && lifecycle.switched.leaked === false);
+  check('and never publishes through another room\'s connection',
+    lifecycle.switched.throughB === 0 && lifecycle.switched.throughA === 0);
 
   // A store that cannot answer must REJECT, never resolve "no document":
   // js/sync-session.js has to tell "this device never joined this room" from

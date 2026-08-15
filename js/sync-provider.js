@@ -236,6 +236,11 @@
 
   KB.SyncProvider = {
     create: create,
+    // Exported so js/sync-docs.js can key an empty (same-origin default) URL
+    // by the endpoint it actually resolves to, rather than by the empty string
+    // — otherwise `enable(room)` and `enable(room, 'ws://localhost/sync')`
+    // address one relay through two different document records.
+    defaultUrl: defaultUrl,
     TAG_UPDATE: TAG_UPDATE,
     TAG_SNAPSHOT: TAG_SNAPSHOT,
     encodeFrame: encodeFrame

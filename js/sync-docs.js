@@ -26,10 +26,40 @@
 
   // A room name is only unique within one relay: two relays can each host a
   // "work" and they are not the same room, so their documents must not share a
-  // record. IndexedDB is already origin-scoped, which is what makes the empty
-  // URL — the same-origin default — safe to leave unqualified.
+  // record.
+  //
+  // Canonicalizing the relay URL is not cosmetic in either direction. Only the
+  // scheme and host are case-insensitive; the path and query are not, so
+  // lowercasing the whole URL would merge `wss://host/Sync` and
+  // `wss://host/sync` — two endpoints that may hold two unrelated rooms — into
+  // one lineage. And the empty URL is not a relay of its own: it means the
+  // same-origin default, so it has to resolve to the endpoint it will actually
+  // connect to or `enable(room)` and `enable(room, 'ws://localhost/sync')`
+  // would keep two documents for one room.
+  function relay(url) {
+    var raw = String(url || '').trim();
+    if (!raw && KB.SyncProvider && KB.SyncProvider.defaultUrl) {
+      raw = KB.SyncProvider.defaultUrl();
+    }
+    if (!raw) return '';
+    var parsed;
+    try {
+      parsed = new URL(raw, window.location.href);
+    } catch (err) {
+      // Not a URL the browser will connect to either. Be consistent about it
+      // rather than clever: the same bad string keys the same record.
+      return raw.toLowerCase();
+    }
+    // The URL parser has already lowercased the scheme and host and dropped a
+    // default port (ws/wss are special schemes), so what is left is the case
+    // that carries meaning.
+    return parsed.protocol + '//' + parsed.hostname +
+      (parsed.port ? ':' + parsed.port : '') +
+      parsed.pathname.replace(/\/+$/, '') + parsed.search;
+  }
+
   function key(url, room) {
-    return String(url || '').trim().toLowerCase().replace(/\/+$/, '') + '::' + room;
+    return relay(url) + '::' + room;
   }
 
   function open() {

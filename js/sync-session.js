@@ -38,6 +38,14 @@
   // Serializes document writes; every consequence of an update is chained
   // behind the write that records it. See persist().
   var persistChain = Promise.resolve();
+  // Sessions are numbered, and every asynchronous continuation carries the
+  // number it was started under. stop() bumps it, so work still in flight from
+  // a session that has ended — a pending document load, a queued write, an
+  // update waiting to be published — finds itself out of date and does
+  // nothing. Comparing `room` is not enough: enable('work') twice in a row is
+  // two sessions with the same room name, and the first one's leftovers would
+  // pass a room check and then act on the second one's provider.
+  var epoch = 0;
   // Why this session is not syncing, when it is enabled but not running:
   // 'no-document-store' (lineage cannot be recorded) or 'no-history' (asked to
   // join a room nobody with its history is online for). Null when healthy.
@@ -222,18 +230,40 @@
   // So the write lands FIRST and everything downstream waits on it. It is one
   // small same-origin IndexedDB put; identity correctness is the entire reason
   // this database exists, and a few milliseconds is not worth trading for it.
+  //
+  // Resolves TRUE only when the consequences may proceed. It never rejects,
+  // because the chain the next write queues behind must stay usable — so the
+  // failure is reported in the value, and every caller gates on it. A write
+  // that did not land must not be followed by a push: that is exactly the
+  // "published an identity this device cannot remember" case the ordering
+  // exists to prevent, arriving through the one path that guarantees it.
   function persist() {
-    if (!binding || !room) return Promise.resolve();
+    if (!binding || !room) return Promise.resolve(false);
     // A read-only tab must not write: its document may be missing edits the
-    // owning tab made offline, and the record is shared.
-    if (!canApply()) return Promise.resolve();
+    // owning tab made offline, and the record is shared. Nothing is lost by
+    // continuing — it mints no identities of its own, and commit() gates
+    // separately on the write lease.
+    if (!canApply()) return Promise.resolve(true);
+    // Destination captured HERE, with the snapshot it belongs to. Reading the
+    // globals when the queued write finally runs would address whichever room
+    // the session had switched to by then, and write room A's document into
+    // room B's record.
+    var myEpoch = epoch;
+    var targetRoom = room;
+    var targetUrl = relayUrl;
     var snapshot = binding.encodeState();
     // Serialized, so two updates in flight cannot land out of order and leave
     // an older document on top of a newer one.
-    persistChain = persistChain
-      .then(function () { return KB.SyncDocs.save(relayUrl, room, snapshot); })
-      .catch(onLineageLost);
-    return persistChain;
+    var write = persistChain.then(function () {
+      if (myEpoch !== epoch) return false;
+      return KB.SyncDocs.save(targetUrl, targetRoom, snapshot).then(function () { return true; });
+    }).catch(function (err) {
+      if (myEpoch !== epoch) return false;
+      onLineageLost(err);
+      return false;
+    });
+    persistChain = write;
+    return write;
   }
 
   // The document store failed. Everything from here would be identity this
@@ -241,11 +271,12 @@
   // is untouched and keeps working exactly as it does with sync switched off.
   function onLineageLost(err) {
     if (fault) return;
+    var myEpoch = epoch;
     fault = 'no-document-store';
     console.warn('KB.SyncSession stopped: the sync document store is unusable', err);
     // Asynchronous so this can be called from inside the chain it tears down.
     setTimeout(function () {
-      if (fault !== 'no-document-store') return;
+      if (myEpoch !== epoch || fault !== 'no-document-store') return;
       stop();
       fault = 'no-document-store';
       notify();
@@ -268,11 +299,12 @@
   }
 
   function onRemoteUpdate() {
+    var myEpoch = epoch;
     // Same boundary as the local path, inverted: the document is durable
     // before local state is allowed to depend on it, so a crash leaves either
     // the old world everywhere or the new identities safely recorded.
-    persist().then(function () {
-      if (!binding || !ready) return;
+    persist().then(function (recorded) {
+      if (!recorded || myEpoch !== epoch || !binding || !ready) return;
       // A seed for a room that still had nothing in it at handshake time.
       // Adopt it now — which also replays the ops buffered while waiting.
       if (!initialized && !binding.isEmpty()) {
@@ -328,6 +360,7 @@
 
   function onReady(info) {
     ready = true;
+    var myEpoch = epoch;
     var config = readConfig() || {};
     var canSeed = !info || info.canSeed !== false;
 
@@ -340,7 +373,12 @@
         'KB.SyncSession: no device with room "' + room + '" history is online. ' +
         'Pass { create: true } to enable() only if this room is genuinely new.'
       );
-      setTimeout(function () { stop(); fault = 'no-history'; notify(); }, 0);
+      setTimeout(function () {
+        if (myEpoch !== epoch) return;
+        stop();
+        fault = 'no-history';
+        notify();
+      }, 0);
       return;
     }
 
@@ -375,8 +413,8 @@
     // relay that restarted empty or dropped history while we were disconnected
     // — with the same document identities we left with, because the Y.Doc was
     // persisted rather than rebuilt (see restore above).
-    persist().then(function () {
-      if (!provider || !binding) return;
+    persist().then(function (recorded) {
+      if (!recorded || myEpoch !== epoch || !provider || !binding) return;
       provider.push(binding.encodeState());
       declareSeeded();
     });
@@ -392,8 +430,11 @@
   // ---- lifecycle ------------------------------------------------------------
 
   function start(config) {
+    // enable()/init() have already called stop(), so this is the number of the
+    // session about to exist. Everything below belongs to it.
+    var myEpoch = epoch;
     return loadYjs().then(function (Y) {
-      if (binding) return state();
+      if (myEpoch !== epoch || binding) return state();
 
       binding = KB.Core.YDoc.create({ Y: Y });
       baseline = clone(KB.State.data());
@@ -407,8 +448,8 @@
       binding.onLocalUpdate(function (update) {
         // Write-ahead: nobody else learns of this identity until this device
         // can prove it owns it.
-        persist().then(function () {
-          if (!provider) return;
+        persist().then(function (recorded) {
+          if (!recorded || myEpoch !== epoch || !provider) return;
           provider.push(update);
           // Covers the one case the handshake cannot: this device held the
           // seeding right with nothing to seed, and has now made its first edit.
@@ -423,11 +464,15 @@
       // A store that cannot be read is not "no document" — it is "cannot
       // tell", and connecting on that footing is how rooms get forked.
       return KB.SyncDocs.load(relayUrl, room).catch(function (err) {
+        if (myEpoch !== epoch) return null;
         onLineageLost(err);
         return null;
       }).then(function (saved) {
-        // enable()/disable() may have torn the session down while we waited.
-        if (!binding || fault || room !== config.room) return state();
+        // enable()/disable() may have torn the session down while we waited —
+        // or replaced it with another session for the SAME room, which is why
+        // this is an epoch and not a room comparison. Getting it wrong leaves
+        // a second provider holding an open socket that nothing will close.
+        if (myEpoch !== epoch || !binding || fault) return state();
         restore(saved);
 
         provider = KB.SyncProvider.create({
@@ -455,6 +500,9 @@
   }
 
   function stop() {
+    // Retires this session's number first: anything still in flight under it
+    // is now a leftover, and every continuation checks before it acts.
+    epoch += 1;
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;
