@@ -45,6 +45,7 @@
   // between lets a bystander tab win the freed lease and boot this one
   // read-only (an infinite handoff churn on slow machines).
   var relocating = false;
+  var demotionListeners = [];
 
   function generateId() {
     return 'tab-' + Math.random().toString(36).slice(2, 10);
@@ -157,6 +158,30 @@
     if (readOnly === value) return;
     readOnly = value;
     renderBanner();
+    if (value) announceDemotion();
+  }
+
+  // Demotion is a one-way door for this page load: a tab that regains the
+  // lease does so through takeOver(), which reloads. Every path that demotes
+  // goes through setReadOnly, so this is the single place a subscriber has to
+  // watch — js/sync-session.js retires its session here, because a tab that
+  // may no longer write must not go on holding a sync room's seeding right.
+  //
+  // Announced asynchronously on purpose. canWrite() is the authoritative gate
+  // and is called from inside persistence paths and Yjs update handlers;
+  // tearing those down underneath their own call stack is how re-entrancy
+  // bugs are made.
+  function announceDemotion() {
+    var pending = demotionListeners.slice();
+    setTimeout(function () {
+      for (var i = 0; i < pending.length; i++) {
+        try {
+          pending[i]();
+        } catch (err) {
+          console.warn('KB.MultiTab demotion listener failed', err);
+        }
+      }
+    }, 0);
   }
 
   // Take the lease and reload fresh state (never save the stale in-memory
@@ -266,6 +291,27 @@
     init: init,
     readOnly: function () { return readOnly; },
     ownsLease: ownsLease,
-    canWrite: canWrite
+    canWrite: canWrite,
+    // Fires once, when this tab loses the write lease. Subscribing after that
+    // has happened calls back immediately: a subscriber that registers late
+    // still needs to know it is already read-only.
+    onDemote: function (fn) {
+      if (typeof fn !== 'function') return function () {};
+      if (readOnly) {
+        setTimeout(function () {
+          try {
+            fn();
+          } catch (err) {
+            console.warn('KB.MultiTab demotion listener failed', err);
+          }
+        }, 0);
+        return function () {};
+      }
+      demotionListeners.push(fn);
+      return function () {
+        var index = demotionListeners.indexOf(fn);
+        if (index !== -1) demotionListeners.splice(index, 1);
+      };
+    }
   };
 })(window.KB = window.KB || {});

@@ -140,10 +140,32 @@ one that must not join a room, because the handshake could hand it the seeding
 right, and it would then mint a room's founding identities out of its own
 possibly-stale state and publish them without ever recording them — a fork
 reached from the one direction write-ahead ordering cannot cover. So sync does
-not start there, `enable()` refuses with an explanation, and a tab demoted
-mid-session fails closed: it keeps remote changes in its in-memory document and
-says so in the banner, but writes nothing and publishes nothing. Taking over
-reloads the tab, and sync starts normally on that boot.
+not start there, and `enable()` refuses with an explanation.
+
+**Losing the lease ends the session.** Demotion is not a mode a session can run
+in, so `js/multitab.js` announces it (`MultiTab.onDemote`) and the session stops:
+provider closed, binding destroyed, `fault: 'read-only-tab'`. The room config
+stays, because this device is still a member and takeover reloads the tab, so
+`init()` starts it again on that boot. Stopping rather than idling matters most
+when the relay had granted this tab the seeding right — a demoted seeder that
+merely went quiet would hold every other peer in the room behind a bootstrap it
+can never complete. Closing the socket makes the relay discard that bootstrap
+and promote a device that can finish it.
+
+Three consequences follow from the lease being able to move at any moment:
+
+- A queued document write re-checks the lease when it *runs* and again when it
+  *lands*, not only when it was requested. The record is shared between tabs, so
+  a late write from a demoted tab could otherwise land on the new owner's newer
+  document.
+- The `create` right is spent only once a document has actually been recorded —
+  never merely because `seed()` made an in-memory one non-empty. A seed that
+  never reached the store leaves nothing to rejoin on, and spending the right on
+  it would strand the room: the user's one-shot "this room is new" would be
+  gone, and every later attempt would refuse to bootstrap a room that no longer
+  exists anywhere.
+- `onReady` checks the lease before it does anything at all, because everything
+  it does either mints identities or takes on an obligation to the room.
 
 **A room the relay has forgotten is not a new room.** The relay drops a room
 when its last peer leaves, so an empty room there means either "never existed"
@@ -251,11 +273,14 @@ sync layer would rely on.
   publishes nothing at all; two `enable()` calls for one room leave one live
   session; a write queued for one room reaches neither another room's record nor
   its connection; a closed session's provider can neither feed nor publish
-  through the session that replaced it; and a read-only tab starts no session,
-  writes no document and publishes nothing.
-- `npm run test:sync` (`tests/sync-devices.js`, **not** part of `npm test`, and
-  **not** run by CI) drives two browser contexts against a live relay:
-  create-vs-join, the dormant-room refusal, and the real IndexedDB path
-  end-to-end. It needs a browser that can open a WebSocket to a local server —
-  see the file's own header. Until it runs somewhere green it is a
-  specification, not evidence.
+  through the session that replaced it; a read-only tab starts no session,
+  writes no document and publishes nothing; and losing the lease mid-write
+  lands neither the write nor its publication, leaves the `create` right
+  unspent, and retires the session — that last one driven by a real demotion in
+  its own browser context, not a stub.
+- `npm run test:sync` (`tests/sync-devices.js`) drives two browser contexts
+  against a live relay: create-vs-join, the dormant-room refusal, and the real
+  IndexedDB path end-to-end. It is **not** in `npm test`, because it needs a
+  browser that can complete a WebSocket handshake against a local server and
+  not every development sandbox can — see the file's own header. CI runs it as
+  its own step, which is where that requirement is actually met.
