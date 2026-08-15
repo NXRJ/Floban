@@ -280,7 +280,11 @@ sync layer would rely on.
   its own browser context, not a stub.
 - `npm run test:sync` (`tests/sync-devices.js`) drives two browser contexts
   against a live relay: create-vs-join, the dormant-room refusal, and the real
-  IndexedDB path end-to-end. It is **not** in `npm test`, because it needs a
-  browser that can complete a WebSocket handshake against a local server and
-  not every development sandbox can — see the file's own header. CI runs it as
-  its own step, which is where that requirement is actually met.
+  IndexedDB path end-to-end. Kept out of `npm test` because it spawns a server
+  and a browser; CI runs it as its own step. It earned its place — it is the
+  only test here that a real browser has to agree with, and it is what
+  uncovered a mistranscribed RFC 6455 magic string that made the relay
+  unreachable from every browser while all 18 relay unit tests passed, because
+  the client they use carried the same wrong constant. The accept computation
+  is now pinned to the RFC's own published pair, which is the one assertion in
+  the suite that trusts nothing in this repo.

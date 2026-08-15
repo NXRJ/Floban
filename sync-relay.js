@@ -26,7 +26,15 @@
 
 const crypto = require('crypto');
 
-const GUID = '258EAFA5-E914-47DA-95CA-5AB0DC85B39A';
+// RFC 6455 section 1.3. Every digit of it matters and none of them are
+// checkable by inspection, so the accept computation is pinned to the RFC's
+// own published key/accept pair in tests/unit/sync-relay.test.js. It was wrong
+// here for a while — one transcription slip — and nothing caught it, because
+// the only other implementation in this repo was the test client, which had
+// been given the same wrong constant. Two parties agreeing on a wrong secret
+// handshake still shake hands; browsers, which know the real one, could not
+// connect at all.
+const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const PATH = '/sync';
 
 // Opcodes.
@@ -566,5 +574,9 @@ module.exports = {
   attach: attach,
   PATH: PATH,
   TAG_UPDATE: TAG_UPDATE,
-  TAG_SNAPSHOT: TAG_SNAPSHOT
+  TAG_SNAPSHOT: TAG_SNAPSHOT,
+  // Exported so the test client cannot hold a second copy of the magic string
+  // and quietly agree with a wrong one. Its correctness is pinned separately,
+  // against the RFC's published pair.
+  acceptKey: acceptKey
 };

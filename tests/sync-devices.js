@@ -1,14 +1,16 @@
 // Two real devices, a real relay, a real browser.
 //
-// NOT part of `npm test`, because it needs a browser that can complete a
-// WebSocket handshake against a local server and not every sandbox can: the one
-// this was written in refuses every local upgrade with "Incorrect
-// 'Sec-WebSocket-Accept' header value" even though a raw socket client proves
-// the token correct on the wire (over IPv4 and IPv6, with and without a proxy,
-// against two independent servers). CI runs it as its own step, which is where
-// that requirement is met. Locally:
+// Kept out of `npm test` because it spawns a server and drives two browser
+// contexts; CI runs it as its own step. Locally:
 //
 //   npm run test:sync
+//
+// This file spent a while failing with "Incorrect 'Sec-WebSocket-Accept'
+// header value", which was read as a sandbox quirk. It was not: the relay's
+// RFC 6455 magic string was mistranscribed, so no browser could ever complete
+// the handshake, and the unit tests could not see it because the client they
+// use had been given the same wrong constant. This suite is the reason that
+// was found — it is the only test here that a real browser has to agree with.
 //
 // What it covers that nothing else can — every one of these is a policy in
 // js/sync-session.js that only exists on a live handshake:
