@@ -2482,6 +2482,54 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('a failed document store latches closed', docFailure.latched);
   check('and every later read rejects rather than reporting "no document"', docFailure.laterRejected);
 
+  // The latch is fail-closed, not fail-forever: a transient IndexedDB abort
+  // should cost a retry, not a page reload. Nothing clears it automatically —
+  // only the user asking for sync again.
+  const docRecovery = await page.evaluate(async () => {
+    const stillShut = !KB.SyncDocs.isAvailable();
+
+    const realCreate = KB.SyncProvider.create;
+    KB.SyncProvider.create = (options) => ({
+      options: options,
+      push: () => true,
+      seeded: () => true,
+      close: () => {},
+      room: () => options.room,
+      status: () => 'connected'
+    });
+    let clearedByEnable = false;
+    try {
+      await KB.SyncSession.enable('probe-retry', 'ws://retry.example/sync', { create: true });
+      clearedByEnable = KB.SyncDocs.isAvailable();
+    } catch (err) {
+      clearedByEnable = false;
+    }
+    KB.SyncSession.disable();
+    KB.SyncProvider.create = realCreate;
+    try { localStorage.removeItem('kanban.sync.v1'); } catch (err) { /* nothing to clean */ }
+
+    // And it really works again, rather than merely reporting that it does.
+    // Caught rather than thrown: a store that is still latched rejects here,
+    // and that is a failed check, not a crashed suite.
+    let roundTrip = false;
+    try {
+      await KB.SyncDocs.save('ws://one.example/sync', 'work', new Uint8Array([4, 2]));
+      const value = await KB.SyncDocs.load('ws://one.example/sync', 'work');
+      await KB.SyncDocs.remove('ws://one.example/sync', 'work');
+      roundTrip = !!value && value.length === 2 && value[0] === 4 && value[1] === 2;
+    } catch (err) {
+      roundTrip = false;
+    }
+    return {
+      stillShut: stillShut,
+      clearedByEnable: clearedByEnable,
+      roundTrip: roundTrip
+    };
+  });
+  check('a latched document store stays shut until asked', docRecovery.stillShut);
+  check('enabling sync again retries the document store', docRecovery.clearedByEnable);
+  check('and the store genuinely works after a transient failure', docRecovery.roundTrip);
+
   // ---- Command palette (Ctrl+K) ----
   await page.evaluate(() => KB.Workspaces.set('board'));
   await page.evaluate(() => KB.App.refresh());

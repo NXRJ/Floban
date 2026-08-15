@@ -697,6 +697,12 @@
       create: !!(options && options.create)
     };
     stop();
+    // Asking for sync is also asking to retry the document store. A single
+    // aborted IndexedDB transaction latches it shut, and without this the only
+    // way back from a transient one would be reloading the page. Safe because
+    // it clears nothing else: if the store is still broken the first write
+    // latches it again and the session stops with the same fault.
+    if (KB.SyncDocs && KB.SyncDocs.reopen) KB.SyncDocs.reopen();
     writeConfig(config);
     return start(config).catch(function (err) {
       stop();

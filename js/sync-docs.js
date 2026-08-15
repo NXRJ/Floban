@@ -138,11 +138,36 @@
     return tx('readwrite', function (store) { return store.delete(key(url, room)); });
   }
 
+  // Clear the latch and let the next call try IndexedDB again, dropping the
+  // handle it failed on so open() genuinely reconnects.
+  //
+  // Deliberately NOT automatic. Nothing retries its way back into a store that
+  // has already failed — resuming on a store that cannot record identities is
+  // the entire hazard, and a reconnect or a queued write must never be what
+  // decides the store is fine now. It is wired to enable(), which is the user
+  // explicitly asking for sync again, so a transient abort costs a retry
+  // rather than a page reload. If the store is still broken the next call
+  // latches it shut again and the session stops with the same fault, which is
+  // the safe outcome either way.
+  function reopen() {
+    available = true;
+    if (db) {
+      try {
+        db.close();
+      } catch (err) {
+        // Already gone; the point is only that we stop using this handle.
+      }
+    }
+    db = null;
+    opening = null;
+  }
+
   KB.SyncDocs = {
     key: key,
     load: load,
     save: save,
     remove: remove,
+    reopen: reopen,
     isAvailable: function () { return available; }
   };
 })(window.KB = window.KB || {});

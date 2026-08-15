@@ -116,6 +116,14 @@ that landed, so nothing downstream of it runs either — the session stops with
 `fault: 'no-document-store'` rather than publishing an identity it cannot
 remember. The board itself is untouched and keeps working.
 
+The store latches shut on that failure and stays shut: nothing retries its way
+back into a store that cannot record identities, because a reconnect or a queued
+write must never be what decides it is healthy again. But fail-closed is not
+fail-forever — `enable()` reopens it, that being the user explicitly asking for
+sync again, so a transient IndexedDB abort costs a retry rather than a page
+reload. If the store is still broken the next write latches it again and the
+session stops with the same fault.
+
 **Asynchronous work belongs to the session that started it.** Sessions are
 numbered and `stop()` retires the number, so a pending document load, a queued
 write or an update waiting to be published is dropped if the session it was
@@ -273,8 +281,9 @@ sync layer would rely on.
 - `tests/unit/ydoc.test.js` pins the identity property the whole design rests
   on — re-seeding the same plain state forks, restoring does not.
 - `tests/kanban-smoke.js` tests the document store directly: key isolation per
-  relay and per room, round-trip, overwrite, scoped removal, and that an
-  unusable store rejects rather than reporting "no document".
+  relay and per room, round-trip, overwrite, scoped removal, that an unusable
+  store rejects rather than reporting "no document", and that the latch it sets
+  survives everything except the user asking for sync again.
 - `tests/kanban-smoke.js` also pins the session's ordering and ownership rules
   with the store and the transport stubbed, because they are questions of *when*
   it acts and *on whose behalf* — a real socket would only make them
