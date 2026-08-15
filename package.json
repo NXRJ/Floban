@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/NXRJ/kanban.git"
+    "url": "https://github.com/NXRJ/Floban.git"
   },
   "engines": {
     "node": ">=22.13.0"
