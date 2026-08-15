@@ -1979,6 +1979,86 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   check('sync observer sees change/undo/redo/import',
     syncEvents.hasChange && syncEvents.hasUndo && syncEvents.hasRedo && syncEvents.hasImport);
 
+  // ---- The sync document store (js/sync-docs.js) ----
+  // It is not bookkeeping: a lost document makes a rejoining device a second
+  // CRDT lineage of the same board, so it gets tested directly rather than
+  // only through whatever happens to exercise it.
+  const docKeys = await page.evaluate(() => ({
+    // A room name is only unique within one relay.
+    isolated: KB.SyncDocs.key('ws://a.example/sync', 'work') !==
+      KB.SyncDocs.key('ws://b.example/sync', 'work'),
+    // Cosmetic differences in the same URL are the same relay.
+    normalized: KB.SyncDocs.key('WS://Relay.example/sync/', 'work') ===
+      KB.SyncDocs.key('ws://relay.example/sync', 'work'),
+    // Two rooms on one relay are not.
+    perRoom: KB.SyncDocs.key('', 'work') !== KB.SyncDocs.key('', 'home')
+  }));
+  check('sync document keys separate relays', docKeys.isolated);
+  check('sync document keys normalize one relay', docKeys.normalized);
+  check('sync document keys separate rooms', docKeys.perRoom);
+
+  const docStore = await page.evaluate(async () => {
+    const bytes = new Uint8Array([7, 0, 255, 3]);
+    const other = new Uint8Array([1, 1]);
+    await KB.SyncDocs.save('ws://one.example/sync', 'work', bytes);
+    await KB.SyncDocs.save('ws://two.example/sync', 'work', other);
+
+    const loaded = await KB.SyncDocs.load('ws://one.example/sync', 'work');
+    const neighbour = await KB.SyncDocs.load('ws://two.example/sync', 'work');
+    const missing = await KB.SyncDocs.load('ws://one.example/sync', 'never-joined');
+
+    // An overwrite replaces rather than accumulates.
+    await KB.SyncDocs.save('ws://one.example/sync', 'work', new Uint8Array([9]));
+    const replaced = await KB.SyncDocs.load('ws://one.example/sync', 'work');
+
+    await KB.SyncDocs.remove('ws://one.example/sync', 'work');
+    const removed = await KB.SyncDocs.load('ws://one.example/sync', 'work');
+    const survivor = await KB.SyncDocs.load('ws://two.example/sync', 'work');
+    await KB.SyncDocs.remove('ws://two.example/sync', 'work');
+
+    return {
+      roundTrip: loaded instanceof Uint8Array && Array.from(loaded).join(',') === '7,0,255,3',
+      isolation: neighbour && Array.from(neighbour).join(',') === '1,1',
+      missingIsNull: missing === null,
+      overwrite: replaced && replaced.length === 1 && replaced[0] === 9,
+      removeClears: removed === null,
+      removeIsScoped: !!survivor
+    };
+  });
+  check('sync document round-trips its bytes', docStore.roundTrip);
+  check('sync documents of different relays do not collide', docStore.isolation);
+  check('an unjoined room has no document rather than an error', docStore.missingIsNull);
+  check('saving a room again replaces its document', docStore.overwrite);
+  check('removing a document clears only that room', docStore.removeClears && docStore.removeIsScoped);
+
+  check('the document store reports itself available when it is', await page.evaluate(() => KB.SyncDocs.isAvailable()));
+
+  // A store that cannot answer must REJECT, never resolve "no document":
+  // js/sync-session.js has to tell "this device never joined this room" from
+  // "this device cannot tell", because it seeds plain state on the first and
+  // must refuse on the second. LAST of the document-store checks — a failure
+  // latches the store closed for the rest of the page, which is the point.
+  const docFailure = await page.evaluate(async () => {
+    // A value IndexedDB cannot structured-clone fails the write for real,
+    // rather than through a stub that would only test the stub.
+    let rejected = false;
+    try {
+      await KB.SyncDocs.save('ws://one.example/sync', 'work', { length: 1, nope: () => {} });
+    } catch (err) {
+      rejected = true;
+    }
+    let laterRejected = false;
+    try {
+      await KB.SyncDocs.load('ws://one.example/sync', 'work');
+    } catch (err) {
+      laterRejected = true;
+    }
+    return { rejected: rejected, latched: !KB.SyncDocs.isAvailable(), laterRejected: laterRejected };
+  });
+  check('a failed document write rejects rather than resolving', docFailure.rejected);
+  check('a failed document store latches closed', docFailure.latched);
+  check('and every later read rejects rather than reporting "no document"', docFailure.laterRejected);
+
   // ---- Command palette (Ctrl+K) ----
   await page.evaluate(() => KB.Workspaces.set('board'));
   await page.evaluate(() => KB.App.refresh());

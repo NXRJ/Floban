@@ -28,15 +28,20 @@
   // Log replay on connect arrives as a burst of updates. Coalesce them into a
   // single commit rather than re-rendering the board once per message.
   var COMMIT_DEBOUNCE_MS = 60;
-  // Persisting the document is bookkeeping, not the save path — the user's
-  // board is already durable through KB.Storage before any of this runs.
-  var PERSIST_DEBOUNCE_MS = 500;
 
   var binding = null;
   var provider = null;
   var baseline = null;
   var room = null;
+  var relayUrl = '';
   var ready = false;
+  // Serializes document writes; every consequence of an update is chained
+  // behind the write that records it. See persist().
+  var persistChain = Promise.resolve();
+  // Why this session is not syncing, when it is enabled but not running:
+  // 'no-document-store' (lineage cannot be recorded) or 'no-history' (asked to
+  // join a room nobody with its history is online for). Null when healthy.
+  var fault = null;
   // Set while the relay has granted this peer the right to seed an unseeded
   // room and it has not yet declared the bootstrap complete.
   var holdsSeedingRight = false;
@@ -46,7 +51,6 @@
   var initialized = false;
   var pendingOps = [];
   var pendingCommit = null;
-  var pendingPersist = null;
   var blockedByReadOnly = false;
   var peers = 0;
   var loading = null;
@@ -62,8 +66,9 @@
     return {
       enabled: !!config,
       room: config ? config.room : '',
-      status: provider ? provider.status() : 'offline',
-      peers: peers
+      status: fault ? 'error' : (provider ? provider.status() : 'offline'),
+      peers: peers,
+      fault: fault
     };
   }
 
@@ -91,7 +96,13 @@
     try {
       var parsed = JSON.parse(raw);
       if (!parsed || typeof parsed.room !== 'string' || !parsed.room) return null;
-      return { room: parsed.room, url: typeof parsed.url === 'string' ? parsed.url : '' };
+      return {
+        room: parsed.room,
+        url: typeof parsed.url === 'string' ? parsed.url : '',
+        // "This device is bringing this room into existence." Spent on the
+        // first successful bootstrap — see onReady.
+        create: parsed.create === true
+      };
     } catch (err) {
       return null;
     }
@@ -196,24 +207,55 @@
 
   // ---- document memory ------------------------------------------------------
 
-  // Keep this device's copy of the Y.Doc across reloads. Rebuilding it from
-  // plain state instead would give the same board a second CRDT identity — see
-  // js/sync-docs.js — so this is what makes a reconnect a merge rather than a
-  // fork. Debounced, and skipped in a read-only tab: its document may be
-  // missing edits the owning tab made offline, and this key is shared.
+  // WRITE-AHEAD, deliberately, and NOT debounced.
+  //
+  // The consequences of a Yjs update — peers learning the new CRDT identity,
+  // local state materialising it — must never outlive the record of it. Plain
+  // Floban state is already crash-safe before any of this runs (State.save()
+  // writes the localStorage mirror synchronously, then emits), so a crash
+  // between "identity created and published" and "identity persisted" leaves
+  // this device holding a board whose cards exist in plain state but not in
+  // its document. restore() would then rebuild those cards as fresh identities
+  // and the peer that received the originals would merge them as duplicates —
+  // the lineage bug again, on a 500ms fuse instead of a reload.
+  //
+  // So the write lands FIRST and everything downstream waits on it. It is one
+  // small same-origin IndexedDB put; identity correctness is the entire reason
+  // this database exists, and a few milliseconds is not worth trading for it.
   function persist() {
-    if (pendingPersist || !KB.SyncDocs) return;
-    pendingPersist = setTimeout(function () {
-      pendingPersist = null;
-      if (!binding || !room || !canApply()) return;
-      KB.SyncDocs.save(room, binding.encodeState());
-    }, PERSIST_DEBOUNCE_MS);
+    if (!binding || !room) return Promise.resolve();
+    // A read-only tab must not write: its document may be missing edits the
+    // owning tab made offline, and the record is shared.
+    if (!canApply()) return Promise.resolve();
+    var snapshot = binding.encodeState();
+    // Serialized, so two updates in flight cannot land out of order and leave
+    // an older document on top of a newer one.
+    persistChain = persistChain
+      .then(function () { return KB.SyncDocs.save(relayUrl, room, snapshot); })
+      .catch(onLineageLost);
+    return persistChain;
+  }
+
+  // The document store failed. Everything from here would be identity this
+  // device cannot prove it owns, so the sync session stops — the board itself
+  // is untouched and keeps working exactly as it does with sync switched off.
+  function onLineageLost(err) {
+    if (fault) return;
+    fault = 'no-document-store';
+    console.warn('KB.SyncSession stopped: the sync document store is unusable', err);
+    // Asynchronous so this can be called from inside the chain it tears down.
+    setTimeout(function () {
+      if (fault !== 'no-document-store') return;
+      stop();
+      fault = 'no-document-store';
+      notify();
+    }, 0);
   }
 
   // Reload the document this device left the room with, then bring it up to
-  // date with local state: edits made while sync was off — or while it was
-  // offline and buffering — live in KB.State only, and without this the
-  // handshake's adopt() would commit the older document over the newer board.
+  // date with local state: edits made while sync was off live in KB.State
+  // only, and without this the handshake's adopt() would commit the older
+  // document over the newer board.
   function restore(saved) {
     if (!saved || saved.length === 0) return;
     binding.restore(saved);
@@ -226,17 +268,19 @@
   }
 
   function onRemoteUpdate() {
-    persist();
-    // Updates arriving before `ready` are the room's history replaying. The
-    // handshake below decides what to do with them once the replay is done.
-    if (!ready) return;
-    // A seed for a room that still had nothing in it at handshake time. Adopt
-    // it now — which is also what replays the ops buffered while waiting.
-    if (!initialized && !binding.isEmpty()) {
-      adopt();
-      return;
-    }
-    scheduleCommit();
+    // Same boundary as the local path, inverted: the document is durable
+    // before local state is allowed to depend on it, so a crash leaves either
+    // the old world everywhere or the new identities safely recorded.
+    persist().then(function () {
+      if (!binding || !ready) return;
+      // A seed for a room that still had nothing in it at handshake time.
+      // Adopt it now — which also replays the ops buffered while waiting.
+      if (!initialized && !binding.isEmpty()) {
+        adopt();
+        return;
+      }
+      scheduleCommit();
+    });
   }
 
   // ---- handshake ------------------------------------------------------------
@@ -267,21 +311,50 @@
     provider.seeded();
   }
 
+  // An empty room at the relay means one of two things it cannot tell apart:
+  // a room that has never existed, or an established room whose history-holding
+  // devices all happen to be offline right now — the relay forgets a room the
+  // moment its last peer leaves. Seeding plain state into the second case
+  // starts a rival lineage that collides with the real one when a real member
+  // returns. So a device may only bootstrap a room it has grounds to:
+  //
+  //   - it holds the room's document already (reconnect, or a relay restart), or
+  //   - the user said this room is new (`enable(room, url, { create: true })`).
+  //
+  // Anything else is a join, and a join needs somebody to join.
+  function mayBootstrap(config) {
+    return !binding.isEmpty() || config.create === true;
+  }
+
   function onReady(info) {
     ready = true;
+    var config = readConfig() || {};
     var canSeed = !info || info.canSeed !== false;
+
+    if (canSeed && !mayBootstrap(config)) {
+      // Refuse, and leave: the relay promotes the next peer in line, which may
+      // well be a device that does hold the history. Staying connected would
+      // only hold the room shut behind a device that cannot open it.
+      fault = 'no-history';
+      console.warn(
+        'KB.SyncSession: no device with room "' + room + '" history is online. ' +
+        'Pass { create: true } to enable() only if this room is genuinely new.'
+      );
+      setTimeout(function () { stop(); fault = 'no-history'; notify(); }, 0);
+      return;
+    }
+
     // Granted on an unseeded room whether or not this device is empty: after a
     // relay restart the peer that reconnects first is asked to seed a room it
     // already has the document for, and the push below is that seed.
     holdsSeedingRight = canSeed;
 
     if (binding.isEmpty() && canSeed) {
-      // First peer in an empty room, and the relay confirmed we hold the
-      // seeding right. seed() reads current state, so anything edited while
-      // the handshake was in flight is already captured — the buffered ops
-      // would only re-apply it, and an `add` op would duplicate. Drop them.
-      // It publishes through onLocalUpdate, which declares the bootstrap
-      // complete on the way out.
+      // First peer in a room the user created. seed() reads current state, so
+      // anything edited while the handshake was in flight is already captured
+      // — the buffered ops would only re-apply it, and an `add` op would
+      // duplicate. Drop them. It publishes through onLocalUpdate, which
+      // declares the bootstrap complete on the way out.
       binding.seed(KB.State.data());
       baseline = clone(KB.State.data());
       pendingOps = [];
@@ -302,9 +375,17 @@
     // relay that restarted empty or dropped history while we were disconnected
     // — with the same document identities we left with, because the Y.Doc was
     // persisted rather than rebuilt (see restore above).
-    provider.push(binding.encodeState());
-    declareSeeded();
-    persist();
+    persist().then(function () {
+      if (!provider || !binding) return;
+      provider.push(binding.encodeState());
+      declareSeeded();
+    });
+    // The seeding right is spent once used: a later session on this device
+    // must earn the right to bootstrap by holding the document, not by
+    // remembering that it created the room a year ago on a since-wiped store.
+    if (config.create && !binding.isEmpty()) {
+      writeConfig({ room: config.room, url: config.url, create: false });
+    }
     notify();
   }
 
@@ -317,28 +398,36 @@
       binding = KB.Core.YDoc.create({ Y: Y });
       baseline = clone(KB.State.data());
       room = config.room;
+      relayUrl = config.url || '';
       ready = false;
       initialized = false;
       holdsSeedingRight = false;
       pendingOps = [];
 
       binding.onLocalUpdate(function (update) {
-        persist();
-        if (!provider) return;
-        provider.push(update);
-        // Covers the one case the handshake cannot: this device held the
-        // seeding right with nothing to seed, and has now made its first edit.
-        declareSeeded();
+        // Write-ahead: nobody else learns of this identity until this device
+        // can prove it owns it.
+        persist().then(function () {
+          if (!provider) return;
+          provider.push(update);
+          // Covers the one case the handshake cannot: this device held the
+          // seeding right with nothing to seed, and has now made its first edit.
+          declareSeeded();
+        });
       });
       binding.onRemoteUpdate(onRemoteUpdate);
       unsubscribe = KB.Sync.subscribe(onLocalSave);
 
       // The persisted document has to be in place BEFORE the socket opens, or
       // the handshake would find an empty binding and seed a fresh lineage.
-      var loaded = KB.SyncDocs ? KB.SyncDocs.load(room) : Promise.resolve(null);
-      return loaded.then(function (saved) {
+      // A store that cannot be read is not "no document" — it is "cannot
+      // tell", and connecting on that footing is how rooms get forked.
+      return KB.SyncDocs.load(relayUrl, room).catch(function (err) {
+        onLineageLost(err);
+        return null;
+      }).then(function (saved) {
         // enable()/disable() may have torn the session down while we waited.
-        if (!binding || room !== config.room) return state();
+        if (!binding || fault || room !== config.room) return state();
         restore(saved);
 
         provider = KB.SyncProvider.create({
@@ -365,7 +454,7 @@
     });
   }
 
-  function stop(forget) {
+  function stop() {
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;
@@ -374,17 +463,8 @@
       clearTimeout(pendingCommit);
       pendingCommit = null;
     }
-    if (pendingPersist) {
-      clearTimeout(pendingPersist);
-      pendingPersist = null;
-    }
-    // Last chance to record where this device got to; the next session rejoins
-    // as the same document rather than a second lineage of the same board.
-    // `forget` is disable(): writing the document and deleting it in the same
-    // turn is a race, and the loser is whichever promise settles second.
-    if (!forget && binding && room && KB.SyncDocs && canApply()) {
-      KB.SyncDocs.save(room, binding.encodeState());
-    }
+    // No final save: persist() is write-ahead, so the document on disk is
+    // already at least as current as the one being torn down here.
     if (provider) {
       provider.close();
       provider = null;
@@ -395,9 +475,11 @@
     }
     baseline = null;
     room = null;
+    relayUrl = '';
     ready = false;
     initialized = false;
     holdsSeedingRight = false;
+    fault = null;
     pendingOps = [];
     peers = 0;
     blockedByReadOnly = false;
@@ -405,14 +487,24 @@
 
   // Turn sync on for a room and remember it across reloads. Rejects if the
   // vendored Yjs bundle cannot be fetched — offline on a cold cache, say.
-  function enable(room, url) {
+  //
+  // `options.create` is the difference between "this room is new" and "put me
+  // in the room my other device is already using". It matters because the
+  // relay forgets a room when its last peer leaves, so an empty room there
+  // means either — and only the user knows which. Join is the default: getting
+  // it wrong that way waits, getting it wrong the other way forks the board.
+  function enable(room, url, options) {
     var id = String(room || '').trim();
     if (!/^[\w.-]{1,64}$/.test(id)) {
       return Promise.reject(
         new Error('A room name may use letters, digits, dot, dash and underscore')
       );
     }
-    var config = { room: id, url: String(url || '').trim() };
+    var config = {
+      room: id,
+      url: String(url || '').trim(),
+      create: !!(options && options.create)
+    };
     stop();
     writeConfig(config);
     return start(config).catch(function (err) {
@@ -425,10 +517,21 @@
   function disable() {
     // Turning sync off ends this device's membership of the room, so the
     // document it was holding is no longer its place in a shared history —
-    // just a stale copy of the board it already has in KB.Storage.
+    // just a stale copy of the board it already has in KB.Storage. Deleting it
+    // behind the write chain, not beside it: an in-flight persist landing
+    // after the delete would leave the record it was meant to retire.
     var leaving = room;
-    stop(true);
-    if (leaving && KB.SyncDocs) KB.SyncDocs.remove(leaving);
+    var leavingUrl = relayUrl;
+    var writes = persistChain;
+    stop();
+    if (leaving) {
+      writes.catch(function () {}).then(function () {
+        return KB.SyncDocs.remove(leavingUrl, leaving);
+      }).catch(function () {
+        // Nothing to recover: the record is stale either way, and the next
+        // enable() for this room will overwrite it.
+      });
+    }
     writeConfig(null);
     notify();
   }

@@ -1,22 +1,20 @@
 (function (KB) {
   // Local persistence for the CRDT document itself, one encoded update per
-  // room. Sync metadata, not application data: js/storage.js remains the only
-  // owner of board state, and losing everything here costs a device nothing
-  // but its place in the room's document history.
+  // room. It is not board data — js/storage.js remains the only owner of that
+  // — but it is not optional bookkeeping either.
   //
-  // WHY IT IS NEEDED: the plain snapshot in IndexedDB is not enough to rejoin
-  // a room safely. A reloaded device that rebuilds its Y.Doc from plain state
-  // produces a NEW set of Y.Map items, because Yjs identity is (clientId,
-  // clock) and not `board.id`. If it then seeds a relay that restarted empty,
-  // a peer that never reloaded merges that as a SECOND lineage and keeps both
-  // — one board id, two boards. Persisting the encoded document keeps the
-  // identities across the reload, and the merge becomes the no-op it should be.
+  // WHY IT IS CORRECTNESS-CRITICAL: a board rebuilt from plain state is a NEW
+  // set of Y.Map items even when every application id matches, because Yjs
+  // identity is (clientId, clock) and not `board.id`. A device that rejoins a
+  // room without the document it left with therefore rejoins as a SECOND
+  // lineage, and the peer that still holds the first merges them into
+  // duplicates of everything — one board id, two boards. So losing this store
+  // is not "sync without a memory", it is "sync that can corrupt the room".
+  // js/sync-session.js stops the session rather than continue without it.
   //
   // WHY ITS OWN DATABASE: the board store is at version 1 and its records are
   // the user's data. A separate database keeps a schema bump for sync metadata
-  // from ever touching a migration path that matters, and lets this whole file
-  // fail silently — every function resolves rather than rejects, because sync
-  // must degrade to "no lineage memory", never to "no sync".
+  // from ever touching a migration path that matters.
 
   var DB_NAME = 'kanban-sync';
   var DB_VERSION = 1;
@@ -25,6 +23,14 @@
   var db = null;
   var opening = null;
   var available = true;
+
+  // A room name is only unique within one relay: two relays can each host a
+  // "work" and they are not the same room, so their documents must not share a
+  // record. IndexedDB is already origin-scoped, which is what makes the empty
+  // URL — the same-origin default — safe to leave unqualified.
+  function key(url, room) {
+    return String(url || '').trim().toLowerCase().replace(/\/+$/, '') + '::' + room;
+  }
 
   function open() {
     if (db) return Promise.resolve(db);
@@ -52,7 +58,7 @@
   }
 
   function tx(mode, fn) {
-    if (!available) return Promise.resolve(null);
+    if (!available) return Promise.reject(new Error('KB.SyncDocs is unavailable'));
     return open().then(function (database) {
       return new Promise(function (resolve, reject) {
         var transaction = database.transaction(STORE, mode);
@@ -73,18 +79,18 @@
         };
       });
     }).catch(function (err) {
-      if (available) {
-        available = false;
-        console.warn('KB.SyncDocs unavailable — sync continues without document memory', err);
-      }
-      return null;
+      // Latch and rethrow. The caller has to know: a write that did not land
+      // is a document identity this device can no longer prove it owns.
+      available = false;
+      throw err;
     });
   }
 
-  // The encoded document for a room, or null if this device has never held one
-  // (or storage is unusable, which is the same thing from here).
-  function load(room) {
-    return tx('readonly', function (store) { return store.get(room); })
+  // The encoded document for a room, or null if this device has never held one.
+  // Rejects — it does not resolve null — when the store itself is unusable, so
+  // "no document yet" and "cannot tell" stay distinguishable.
+  function load(url, room) {
+    return tx('readonly', function (store) { return store.get(key(url, room)); })
       .then(function (value) {
         if (!value) return null;
         // Browsers hand back an ArrayBuffer or a typed array depending on how
@@ -93,16 +99,17 @@
       });
   }
 
-  function save(room, update) {
+  function save(url, room, update) {
     if (!update || update.length === 0) return Promise.resolve(null);
-    return tx('readwrite', function (store) { return store.put(update, room); });
+    return tx('readwrite', function (store) { return store.put(update, key(url, room)); });
   }
 
-  function remove(room) {
-    return tx('readwrite', function (store) { return store.delete(room); });
+  function remove(url, room) {
+    return tx('readwrite', function (store) { return store.delete(key(url, room)); });
   }
 
   KB.SyncDocs = {
+    key: key,
     load: load,
     save: save,
     remove: remove,
