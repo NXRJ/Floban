@@ -24,7 +24,7 @@ Opened as a local file or served statically, it works offline and without a buil
 
 ## Capabilities and Constraints
 
-- Capabilities: boards (create, rename, duplicate, delete, switch), columns (add, rename, reorder by header drag, collapse, delete with card archiving, WIP limits), cards (title, markdown-lite description, one or more labels, optional assignee, due date, checklist with progress, aging indicator), templates, card duplication, completion indicator on Done columns, undo/redo, archive + restore + permanent delete, search plus label/assignee/due filters and sorting, JSON backup/export/import, dark/light theme, toast feedback with undo, empty states.
+- Capabilities: boards (create, rename, duplicate, delete, switch), columns (add, rename, reorder by header drag, collapse, delete with card archiving, WIP limits), cards (title, markdown-lite description, one or more labels, optional assignee, due date, checklist with progress, aging indicator), templates, card duplication, completion indicator on Done columns, undo/redo, archive + restore + permanent delete, search plus label/assignee/due filters and sorting, JSON backup/export/import, seven switchable design worlds, toast feedback with undo, empty states.
 - Current implementation: vanilla HTML/CSS/JS, no dependencies, no build step, works from `file://`. These are facts, not commitments: future design work is free to change architecture or add libraries.
 - Terminology: board, column, card, label, assignee, archive, Done/completion column.
 

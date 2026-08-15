@@ -116,17 +116,19 @@ every action surface, so a command behaves identically wherever it is invoked:
 At ≤640px the board is a **single-column pager**, not a squashed bench: one
 column window at a time, swiped or stepped with ◀ ▶ and dots, with snap
 scrolling. A collapsible **Filters** drawer, a bottom workspace tab bar
-(Board / Desk / Inbox / Review), bigger touch targets, and card/column action
-sheets replace hover-only menus. Desktop is untouched.
+(Board, Desk, Inbox, Review, Cal, Log, Tune, Ping), bigger touch targets, and
+card/column action sheets replace hover-only menus. Desktop is untouched.
 
 ## PWA & offline
 
 - `manifest.webmanifest` + generated pixel icons (192/512/maskable/Apple
   touch) make the app **installable**; the browser prompt is deferred into an
   **Install app** command in the palette.
-- `sw.js` precaches every local asset (the app has no CDN dependencies; the
-  two display fonts are vendored under `fonts/` with their OFL licenses) and
-  serves the whole app offline after the first visit.
+- `sw.js` precaches the app shell and the default Atelier fonts (the display
+  fonts are vendored under `fonts/` with their OFL licenses), so the app
+  works offline after the first visit. The other worlds' fonts and assets
+  are cached on first use, keeping the initial install lean, and Yjs is
+  never precached: it loads on demand when sync is switched on.
 - Updates: when a new service worker is found, a toast offers **Reload**;
   the new worker only takes over after you accept.
 
@@ -154,6 +156,14 @@ The header switches between eight workspaces:
   12 DONE · TUE · 3: Ship 1.0 release · Fix #42 …") for client updates,
   invoices and standups, and `P` prints. Pure projection of `completedAt`,
   no new storage.
+- **Tuning.** Estimate versus actual: what your size estimates (XS to XL)
+  predict against the cycle times the board actually recorded. Per-size
+  gauges show the median and 85th percentile, plus a "your realistic day"
+  capacity readout; completing sized cards sharpens the numbers, which feed
+  the Day Sheet reality check and the card editor.
+- **Ping.** Follow-ups on waiting cards. A card set to Waiting can carry a
+  ping, and this workspace groups those cards by contact, ordered by how
+  stale the follow-up is, with fresh / due / overdue states and escalation.
 
 Your current workspace is remembered across reloads.
 
@@ -426,8 +436,10 @@ Your current workspace is remembered across reloads.
   references are dropped on import with a count.
 
 ### Theme
-- Dark/light toggle in the header, applied consistently across the whole app
-  and remembered across reloads.
+- The design-world picker in the menu bar replaces the old dark/light toggle
+  and is remembered across reloads. The registry holds Atelier Ink and Paper,
+  Cloud Quarry, Memphis Workshop, Festival Lineup, Industrial Quote and
+  Specimen Archive; dark and light survive only as legacy migration aliases.
 
 ### Feedback & empty states
 - Toasts confirm every action (added, saved, archived, restored, deleted) and
@@ -536,7 +548,7 @@ State **version 3** (persisted to IndexedDB; an atomic localStorage envelope
 ```js
 {
   version: 3,
-  theme: 'dark' | 'light',
+  theme: 'atelier' | 'atelier-paper' | 'quarry' | 'memphis' | 'lineup' | 'quote' | 'archive',
   activeBoardId: '…',
   inbox: { items: [ { id, title, note, url, archived, capturedAt, updatedAt } ] },
   lenses: [ { id, name, scope, boardIds, query, sort, display, createdAt, updatedAt } ],
@@ -598,8 +610,9 @@ Stated plainly, so nobody finds out the hard way:
   be lost; coarse slices (inbox, lenses, dayplans) are last-writer-wins; the
   relay keeps its log in memory only. There is no conflict-resolution UI and
   no team or guest model. Details in [docs/SYNC.md](docs/SYNC.md).
-- **No imports from other tools.** Backup files are Floban's own JSON format;
-  there is no Trello/Notion/CSV import.
+- **Imports.** Todoist JSON, Trello JSON and generic CSV, via the ARRIVAL
+  import wizard; no Notion importer currently. Backup files are Floban's own
+  JSON format.
 - **Recurring work runs while the app is open.** Scheduled occurrences are
   created when the app boots or is open; a device that is closed misses that
   window (missed runs can be caught up on next open, depending on policy).

@@ -1,8 +1,10 @@
 /* Kanban service worker — offline app shell.
  *
  * Strategy:
- *  - PRECACHE every local asset on install (the app has no CDN dependencies;
- *    fonts and icons are local files).
+ *  - PRECACHE the app shell and the default Atelier fonts on install (the
+ *    app has no CDN dependencies; fonts and icons are local files). Other
+ *    worlds' fonts and vendored assets are cached on first use, and
+ *    vendor/yjs.js is never precached (see the list below).
  *  - App shell (navigation) requests: network-first with cache fallback, so
  *    deployed updates reach the next load while offline still works.
  *  - Static assets: cache-first.
